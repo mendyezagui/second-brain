@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
   Brain, Users, Megaphone, Briefcase, DollarSign, Mic, Mail,
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
-  FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash, Linkedin, ExternalLink
+  FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash,
+  Linkedin, ExternalLink, Filter, SortAsc, ChevronDown, Globe, Newspaper,
+  Star, ArrowRightCircle, Activity, Award, Building2
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -62,25 +64,29 @@ const GlobalStyle = () => (
     .drawer{position:fixed;top:0;right:0;bottom:0;width:min(480px,100vw);background:var(--bg-card);box-shadow:var(--shadow-lg);z-index:101;display:flex;flex-direction:column;animation:drawer-in .25s ease}
     .confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:200;display:flex;align-items:center;justify-content:center;animation:fade-in .15s ease}
     .confirm-box{background:#fff;border-radius:14px;padding:28px;width:340px;box-shadow:var(--shadow-lg)}
+    .filter-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 0}
+    .filter-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg-card);color:var(--text-sec);transition:all .15s}
+    .filter-chip:hover,.filter-chip.active{background:var(--blue-dim);color:var(--blue);border-color:var(--blue)}
+    .filter-select{padding:4px 8px;border-radius:6px;font-size:11px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-sec);cursor:pointer;font-family:var(--font-m)}
   `}</style>
 );
 
 /* ── SEED DATA ── */
 const initDB = () => ({
   contacts: [
-    { id:1, name:"Dave Scott", co:"Scott Management", role:"CEO", email:"dave@scottmgmt.com", phone:"(310) 555-0121", status:"client", score:92, tags:["anchor"], lastTouch:"2026-03-10", notes:"Anchor client. Happy. Wants to expand AI ops to 3 more communities." },
-    { id:2, name:"Rachel Kim", co:"Rapid Medical", role:"COO", email:"r.kim@rapidmed.com", phone:"(323) 555-0188", status:"at-risk", score:41, tags:["payments-behind"], lastTouch:"2026-02-28", notes:"Payments 30+ days behind. Engagement at risk. Needs follow-up on AWS Bedrock POC." },
-    { id:3, name:"Michael Torres", co:"Horizon HOA Group", role:"VP Operations", email:"m.torres@horizonhoa.com", phone:"(714) 555-0244", status:"prospect", score:78, tags:["warm"], lastTouch:"2026-03-05", notes:"Interested in Salesforce ops fix. Managing 12 communities. $80K potential." },
-    { id:4, name:"Sandra Liu", co:"Westcoast Property Partners", role:"Director IT", email:"sliu@wcpp.com", phone:"(818) 555-0311", status:"prospect", score:65, tags:["cold"], lastTouch:"2026-02-15", notes:"Met at NAA conference. Evaluating automation vendors." },
-    { id:5, name:"James Okafor", co:"SunRidge Communities", role:"CFO", email:"j.okafor@sunridge.com", phone:"(619) 555-0177", status:"prospect", score:55, tags:["new"], lastTouch:"2026-03-12", notes:"Referred by Dave Scott. Property mgmt group with 8 communities. Needs AI ops." },
-    { id:6, name:"Priya Mehta", co:"ClearPath HOA", role:"CEO", email:"priya@clearpathoa.com", phone:"(424) 555-0299", status:"prospect", score:48, tags:["cold"], lastTouch:"2026-01-20", notes:"Initial outreach via LinkedIn. No response yet." },
+    { id:1, name:"Dave Scott", co:"Scott Management", role:"CEO", email:"dave@scottmgmt.com", phone:"(310) 555-0121", status:"client", score:92, tags:["anchor"], lastTouch:"2026-03-10", notes:"Anchor client. Happy. Wants to expand AI ops to 3 more communities.", category:"customer", companyId:null },
+    { id:2, name:"Rachel Kim", co:"Rapid Medical", role:"COO", email:"r.kim@rapidmed.com", phone:"(323) 555-0188", status:"at-risk", score:41, tags:["payments-behind"], lastTouch:"2026-02-28", notes:"Payments 30+ days behind. Engagement at risk.", category:"customer", companyId:null },
+    { id:3, name:"Michael Torres", co:"Horizon HOA Group", role:"VP Operations", email:"m.torres@horizonhoa.com", phone:"(714) 555-0244", status:"prospect", score:78, tags:["warm"], lastTouch:"2026-03-05", notes:"Interested in Salesforce ops fix. $80K potential.", category:"customer_lead", companyId:null },
+    { id:4, name:"Sandra Liu", co:"Westcoast Property Partners", role:"Director IT", email:"sliu@wcpp.com", phone:"(818) 555-0311", status:"prospect", score:65, tags:["cold"], lastTouch:"2026-02-15", notes:"Met at NAA conference.", category:"customer_lead", companyId:null },
+    { id:5, name:"James Okafor", co:"SunRidge Communities", role:"CFO", email:"j.okafor@sunridge.com", phone:"(619) 555-0177", status:"prospect", score:55, tags:["new"], lastTouch:"2026-03-12", notes:"Referred by Dave Scott.", category:"customer_lead", companyId:null },
+    { id:6, name:"Priya Mehta", co:"ClearPath HOA", role:"CEO", email:"priya@clearpathoa.com", phone:"(424) 555-0299", status:"prospect", score:48, tags:["cold"], lastTouch:"2026-01-20", notes:"Initial outreach via LinkedIn.", category:"customer_lead", companyId:null },
   ],
   deals: [
-    { id:1, name:"Scott Mgmt — Phase 2 Expansion", contactId:1, value:120000, stage:"negotiation", probability:85, closeDate:"2026-04-30", notes:"Expanding to 3 more HOA communities. Proposal sent." },
-    { id:2, name:"Rapid Medical — AWS Bedrock POC", contactId:2, value:45000, stage:"at-risk", probability:25, closeDate:"2026-03-31", notes:"Invoice unpaid. POC stalled. Need exec alignment call." },
-    { id:3, name:"Horizon HOA — Salesforce Ops Fix", contactId:3, value:80000, stage:"proposal", probability:60, closeDate:"2026-05-15", notes:"Sent SOW draft. Awaiting feedback." },
-    { id:4, name:"SunRidge — AI Ops Pilot", contactId:5, value:35000, stage:"discovery", probability:40, closeDate:"2026-06-01", notes:"Intro call scheduled for 3/18. Scott referral." },
-    { id:5, name:"ClearPath HOA — Ops Audit", contactId:6, value:18000, stage:"outreach", probability:15, closeDate:"2026-07-01", notes:"Need to re-engage. 6-week silence." },
+    { id:1, name:"Scott Mgmt — Phase 2 Expansion", contactId:1, companyId:null, value:120000, stage:"negotiation", probability:85, closeDate:"2026-04-30", notes:"Expanding to 3 more HOA communities." },
+    { id:2, name:"Rapid Medical — AWS Bedrock POC", contactId:2, companyId:null, value:45000, stage:"at-risk", probability:25, closeDate:"2026-03-31", notes:"Invoice unpaid. POC stalled." },
+    { id:3, name:"Horizon HOA — Salesforce Ops Fix", contactId:3, companyId:null, value:80000, stage:"proposal", probability:60, closeDate:"2026-05-15", notes:"Sent SOW draft." },
+    { id:4, name:"SunRidge — AI Ops Pilot", contactId:5, companyId:null, value:35000, stage:"discovery", probability:40, closeDate:"2026-06-01", notes:"Intro call scheduled." },
+    { id:5, name:"ClearPath HOA — Ops Audit", contactId:6, companyId:null, value:18000, stage:"outreach", probability:15, closeDate:"2026-07-01", notes:"Need to re-engage." },
   ],
   campaigns: [
     { id:1, name:"HOA Ops Intelligence Series", type:"Email", status:"active", leads:47, opens:38, conversions:4, startDate:"2026-02-01" },
@@ -89,17 +95,17 @@ const initDB = () => ({
     { id:4, name:"Property Mgmt Pain-Point Outreach", type:"Email", status:"draft", leads:0, opens:0, conversions:0, startDate:"2026-04-01" },
   ],
   projects: [
-    { id:1, name:"Scott Mgmt AI Ops Deployment", client:"Scott Management", status:"active", progress:72, dueDate:"2026-04-15", priority:"high", notes:"" },
-    { id:2, name:"Rapid Medical — Agentforce POC", client:"Rapid Medical", status:"stalled", progress:35, dueDate:"2026-03-31", priority:"critical", notes:"Stalled at 35%. Needs re-scoping call." },
-    { id:3, name:"Horizon HOA SOW Finalization", client:"Horizon HOA", status:"active", progress:20, dueDate:"2026-03-20", priority:"high", notes:"" },
-    { id:4, name:"BD Signal Tool — V2", client:"Internal", status:"active", progress:55, dueDate:"2026-04-01", priority:"medium", notes:"" },
+    { id:1, name:"Scott Mgmt AI Ops Deployment", client:"Scott Management", companyId:null, status:"active", progress:72, dueDate:"2026-04-15", priority:"high", notes:"" },
+    { id:2, name:"Rapid Medical — Agentforce POC", client:"Rapid Medical", companyId:null, status:"stalled", progress:35, dueDate:"2026-03-31", priority:"critical", notes:"Stalled at 35%." },
+    { id:3, name:"Horizon HOA SOW Finalization", client:"Horizon HOA", companyId:null, status:"active", progress:20, dueDate:"2026-03-20", priority:"high", notes:"" },
+    { id:4, name:"BD Signal Tool — V2", client:"Internal", companyId:null, status:"active", progress:55, dueDate:"2026-04-01", priority:"medium", notes:"" },
   ],
   tasks: [
-    { id:1, title:"Follow up with Rachel Kim re: payment", projectId:2, due:"2026-03-14", done:false, priority:"critical", assignedTo:"Orchestrator" },
-    { id:2, title:"Send Phase 2 proposal to Dave Scott", projectId:1, due:"2026-03-16", done:false, priority:"high", assignedTo:"CRM Agent" },
-    { id:3, title:"SOW revision — Horizon HOA scope", projectId:3, due:"2026-03-18", done:false, priority:"high", assignedTo:"Ops Agent" },
-    { id:4, title:"Prep SunRidge intro call (3/18)", projectId:4, due:"2026-03-17", done:false, priority:"high", assignedTo:"CRM Agent" },
-    { id:5, title:"Publish LinkedIn post — AI Ops ROI", projectId:4, due:"2026-03-15", done:true, priority:"medium", assignedTo:"Marketing Agent" },
+    { id:1, title:"Follow up with Rachel Kim re: payment", projectId:2, contactId:2, companyId:null, dealId:2, due:"2026-03-14", done:false, priority:"critical", assignedTo:"Orchestrator", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" },
+    { id:2, title:"Send Phase 2 proposal to Dave Scott", projectId:1, contactId:1, companyId:null, dealId:1, due:"2026-03-16", done:false, priority:"high", assignedTo:"CRM Agent", notes:"", status:"todo", category:"deliverable", source:"manual", recurrence:"none" },
+    { id:3, title:"SOW revision — Horizon HOA scope", projectId:3, contactId:3, companyId:null, dealId:3, due:"2026-03-18", done:false, priority:"high", assignedTo:"Ops Agent", notes:"", status:"in_progress", category:"deliverable", source:"manual", recurrence:"none" },
+    { id:4, title:"Prep SunRidge intro call (3/18)", projectId:4, contactId:5, companyId:null, dealId:4, due:"2026-03-17", done:false, priority:"high", assignedTo:"CRM Agent", notes:"", status:"todo", category:"meeting_prep", source:"manual", recurrence:"none" },
+    { id:5, title:"Publish LinkedIn post — AI Ops ROI", projectId:4, contactId:null, companyId:null, dealId:null, due:"2026-03-15", done:true, priority:"medium", assignedTo:"Marketing Agent", notes:"", status:"done", category:"outreach", source:"manual", recurrence:"none" },
   ],
   invoices: [
     { id:1, client:"Scott Management", amount:18500, status:"paid", issued:"2026-03-01", due:"2026-03-15", number:"INV-031", notes:"" },
@@ -109,13 +115,17 @@ const initDB = () => ({
     { id:5, client:"Horizon HOA", amount:8000, status:"draft", issued:"", due:"", number:"INV-033", notes:"" },
   ],
   agentLogs: [
-    { id:1, agent:"Billing Agent", type:"alert", message:"Rapid Medical: 2 invoices overdue ($25K). Recommend escalation call before Phase 2 renewal.", ts:"09:42", priority:"critical" },
-    { id:2, agent:"CRM Agent", type:"opportunity", message:"SunRidge Communities (Scott referral) has 8 communities — estimated $35K pilot. Intro call 3/18 is key.", ts:"09:15", priority:"high" },
-    { id:3, agent:"Marketing Agent", type:"insight", message:"3 SoCal HOA groups posted LinkedIn pain-points. BD Signal flagged for outreach.", ts:"08:50", priority:"medium" },
-    { id:4, agent:"Ops Agent", type:"risk", message:"Rapid Medical POC stalled at 35% for 65 days. Recommend re-scoping call.", ts:"08:30", priority:"critical" },
-    { id:5, agent:"Orchestrator", type:"synthesis", message:"Revenue gap to $800K: $486K. Current pipeline covers 58%. Need 2 new qualified clients.", ts:"08:00", priority:"high" },
+    { id:1, agent:"Billing Agent", type:"alert", message:"Rapid Medical: 2 invoices overdue ($25K). Recommend escalation call.", ts:"09:42", priority:"critical" },
+    { id:2, agent:"CRM Agent", type:"opportunity", message:"SunRidge Communities (Scott referral) — $35K pilot. Intro call 3/18.", ts:"09:15", priority:"high" },
+    { id:3, agent:"Marketing Agent", type:"insight", message:"3 SoCal HOA groups posted LinkedIn pain-points. BD Signal flagged.", ts:"08:50", priority:"medium" },
+    { id:4, agent:"Ops Agent", type:"risk", message:"Rapid Medical POC stalled at 35% for 65 days.", ts:"08:30", priority:"critical" },
+    { id:5, agent:"Orchestrator", type:"synthesis", message:"Revenue gap to $800K: $486K. Pipeline covers 58%. Need 2 new clients.", ts:"08:00", priority:"high" },
   ],
   voiceNotes: [],
+  companies: [],
+  companyNews: [],
+  goals: [{ id:1, name:"Annual Revenue Target", target_value:800000, current_value:0, unit:"$", period:"annual", start_date:"2026-01-01", end_date:"2026-12-31", status:"active", notes:"" }],
+  events: [],
 });
 
 /* ── SUPABASE CLIENT ── */
@@ -123,50 +133,39 @@ const SUPA_URL  = import.meta.env.VITE_SUPABASE_URL  || "";
 const SUPA_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const ENV_READY = SUPA_URL.startsWith("https://") && SUPA_KEY.length > 10;
 
-const supabase = ENV_READY
-  ? createClient(SUPA_URL, SUPA_KEY)
-  : null;
+const supabase = ENV_READY ? createClient(SUPA_URL, SUPA_KEY) : null;
 
 const DB_TABLES = [
-  ["contacts",   "contacts"],
-  ["deals",      "deals"],
-  ["tasks",      "tasks"],
-  ["projects",   "projects"],
-  ["campaigns",  "campaigns"],
-  ["invoices",   "invoices"],
-  ["agentLogs",  "agentlogs"],
-  ["voiceNotes", "voicenotes"],
+  ["contacts",    "contacts"],
+  ["deals",       "deals"],
+  ["tasks",       "tasks"],
+  ["projects",    "projects"],
+  ["campaigns",   "campaigns"],
+  ["invoices",    "invoices"],
+  ["agentLogs",   "agentlogs"],
+  ["voiceNotes",  "voicenotes"],
+  ["companies",   "companies"],
+  ["companyNews", "company_news"],
+  ["goals",       "goals"],
+  ["events",      "events"],
 ];
 
 const loadAllFromDB = async () => {
   const seed = initDB();
   const result = {};
   const fetches = await Promise.all(DB_TABLES.map(([, tbl]) => supabase.from(tbl).select("*").order("id")));
-
-  const toSeed = []; // tables that need seeding
-
+  const toSeed = [];
   DB_TABLES.forEach(([key], i) => {
     const { data, error } = fetches[i];
-    if (!error && data && data.length > 0) {
-      result[key] = data;
-    } else {
-      result[key] = seed[key];
-      toSeed.push({ key, i });
-    }
+    if (!error && data && data.length > 0) { result[key] = data; }
+    else { result[key] = seed[key]; toSeed.push({ key, i }); }
   });
-
-  // Write seed data to any empty tables so deletes/edits persist
   if (toSeed.length > 0) {
-    await Promise.all(
-      toSeed.map(({ key, i }) => {
-        const [, tbl] = DB_TABLES[i];
-        return seed[key].length > 0
-          ? supabase.from(tbl).upsert(seed[key])
-          : Promise.resolve();
-      })
-    );
+    await Promise.all(toSeed.map(({ key, i }) => {
+      const [, tbl] = DB_TABLES[i];
+      return seed[key].length > 0 ? supabase.from(tbl).upsert(seed[key]) : Promise.resolve();
+    }));
   }
-
   return result;
 };
 
@@ -175,33 +174,35 @@ const syncToDB = async (prev, next) => {
     const prevRows = prev[key] || [];
     const nextRows = next[key] || [];
     if (JSON.stringify(prevRows) === JSON.stringify(nextRows)) continue;
-
     const prevIds = new Set(prevRows.map(r => r.id));
     const nextIds = new Set(nextRows.map(r => r.id));
-
     const toUpsert = nextRows.filter(r => {
       if (!prevIds.has(r.id)) return true;
       const old = prevRows.find(p => p.id === r.id);
       return JSON.stringify(r) !== JSON.stringify(old);
     });
     if (toUpsert.length > 0) await supabase.from(tbl).upsert(toUpsert);
-
     const deleted = [...prevIds].filter(id => !nextIds.has(id));
     if (deleted.length > 0) {
-        const { error } = await supabase.from(tbl).delete().in("id", deleted);
-        if (error) console.error(`Delete failed for ${tbl}:`, error);
-      }
+      const { error } = await supabase.from(tbl).delete().in("id", deleted);
+      if (error) console.error(`Delete failed for ${tbl}:`, error);
+    }
   }
 };
 
 /* ── HELPERS ── */
 const nextId = (arr) => arr.length ? Math.max(...arr.map(r => r.id)) + 1 : 1;
 const fmt = (n) => n >= 1000 ? `$${(n/1000).toFixed(0)}K` : `$${n}`;
-const sc = (k) => ({ client:"var(--green)", "at-risk":"var(--red)", prospect:"var(--blue)", active:"var(--green)", stalled:"var(--red)", draft:"var(--text-sec)", paid:"var(--green)", pending:"var(--amber)", overdue:"var(--red)", critical:"var(--red)", high:"var(--amber)", medium:"var(--blue)", low:"var(--green)" }[k] || "var(--text-sec)");
+const sc = (k) => ({ client:"var(--green)", "at-risk":"var(--red)", prospect:"var(--blue)", active:"var(--green)", stalled:"var(--red)", draft:"var(--text-sec)", paid:"var(--green)", pending:"var(--amber)", overdue:"var(--red)", critical:"var(--red)", high:"var(--amber)", medium:"var(--blue)", low:"var(--green)", customer:"var(--green)", partner:"var(--purple)", customer_lead:"var(--blue)", partner_lead:"var(--purple)", vendor:"var(--amber)", inactive:"var(--text-dim)", todo:"var(--blue)", in_progress:"var(--amber)", waiting:"var(--purple)", done:"var(--green)", cancelled:"var(--text-dim)" }[k] || "var(--text-sec)");
 const revenueData = [
   {m:"Oct",rev:32000},{m:"Nov",rev:28000},{m:"Dec",rev:41000},
   {m:"Jan",rev:37000},{m:"Feb",rev:31000},{m:"Mar",rev:47000},
 ];
+const CONTACT_CATEGORIES = ["customer_lead","partner_lead","customer","partner","vendor"];
+const TASK_STATUSES = ["todo","in_progress","waiting","done","cancelled"];
+const TASK_CATEGORIES = ["follow_up","outreach","admin","research","meeting_prep","deliverable"];
+const daysBetween = (a,b) => Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
+const today = () => new Date().toISOString().split("T")[0];
 
 async function callClaude(system, user, max=800, extra={}) {
   const r = await fetch("/api/claude", {
@@ -211,6 +212,10 @@ async function callClaude(system, user, max=800, extra={}) {
   const d = await r.json();
   return d.content?.[0]?.text || "";
 }
+
+const logEvent = (db, setDB, entityType, entityId, eventType, description, source="system") => {
+  setDB(d => ({...d, events: [{id:nextId(d.events), entity_type:entityType, entity_id:entityId, event_type:eventType, description, ts:new Date().toISOString(), source, metadata:"{}"}, ...d.events]}));
+};
 
 /* ── SHARED UI ── */
 const Tag = ({ label, color }) => {
@@ -241,11 +246,10 @@ const MetricCard = ({ icon:Icon, label, value, sub, color="--blue", trend }) => 
 );
 
 const AgentBadge = ({ agent }) => {
-  const c = ({Orchestrator:"var(--purple)","CRM Agent":"var(--blue)","Marketing Agent":"var(--amber)","Billing Agent":"var(--red)","Ops Agent":"var(--green)"}[agent])||"var(--text-sec)";
+  const c = ({Orchestrator:"var(--purple)","CRM Agent":"var(--blue)","Marketing Agent":"var(--amber)","Billing Agent":"var(--red)","Ops Agent":"var(--green)","News Engine":"var(--blue)"}[agent])||"var(--text-sec)";
   return <span className="mono" style={{ fontSize:10, color:c, background:`${c}18`, padding:"1px 6px", borderRadius:3 }}>{agent}</span>;
 };
 
-/* ── CONFIRM DELETE DIALOG ── */
 const ConfirmDelete = ({ label, onConfirm, onCancel }) => (
   <div className="confirm-overlay" onClick={onCancel}>
     <div className="confirm-box" onClick={e=>e.stopPropagation()}>
@@ -262,7 +266,6 @@ const ConfirmDelete = ({ label, onConfirm, onCancel }) => (
   </div>
 );
 
-/* ── DRAWER (slide-in form panel) ── */
 const Drawer = ({ title, onClose, onSave, saveLabel="Save", children }) => (
   <>
     <div className="drawer-overlay" onClick={onClose} />
@@ -283,22 +286,17 @@ const Drawer = ({ title, onClose, onSave, saveLabel="Save", children }) => (
 const Field = ({ label, children }) => (
   <div className="form-group"><label className="form-label">{label}</label>{children}</div>
 );
-
 const Inp = ({ value, onChange, placeholder, type="text" }) => (
   <input className="input" type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} />
 );
-
 const Sel = ({ value, onChange, options }) => (
   <select className="input" value={value} onChange={e=>onChange(e.target.value)}>
     {options.map(o => <option key={o.value||o} value={o.value||o}>{o.label||o}</option>)}
   </select>
 );
-
 const Tex = ({ value, onChange, placeholder }) => (
   <textarea className="input" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} />
 );
-
-/* ── ROW ACTIONS ── */
 const RowActions = ({ onEdit, onDelete }) => (
   <div className="row-actions" style={{ display:"flex", gap:2, opacity:0, transition:"opacity .15s" }}>
     <button className="btn-icon" title="Edit" onClick={e=>{e.stopPropagation();onEdit();}}><Pencil size={13} color="var(--text-sec)"/></button>
@@ -306,9 +304,27 @@ const RowActions = ({ onEdit, onDelete }) => (
   </div>
 );
 
-/* ────────────────────────────────────────────────────────
-   AUTH — LOGIN + LOADING SCREENS
-──────────────────────────────────────────────────────── */
+/* ── ACTIVITY TIMELINE COMPONENT ── */
+const ActivityTimeline = ({ events, entityType, entityId }) => {
+  const filtered = events.filter(e => e.entity_type === entityType && e.entity_id === entityId).slice(0, 10);
+  if (filtered.length === 0) return null;
+  return (
+    <div style={{ marginTop:16 }}>
+      <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ACTIVITY TIMELINE</div>
+      {filtered.map(e => (
+        <div key={e.id} className="card-el" style={{ padding:"8px 12px", marginBottom:6, borderLeft:`2px solid ${sc(e.event_type)}`, display:"flex", gap:8, alignItems:"flex-start" }}>
+          <Activity size={11} color="var(--text-sec)" style={{ flexShrink:0, marginTop:3 }}/>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:12, lineHeight:1.5 }}>{e.description}</div>
+            <div className="mono" style={{ fontSize:9, color:"var(--text-dim)", marginTop:2 }}>{e.ts ? new Date(e.ts).toLocaleDateString() : ""} · {e.source}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/* ── AUTH SCREENS ── */
 const LoadingScreen = ({ msg="Loading…" }) => (
   <div style={{ height:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"var(--bg)", gap:14 }}>
     <div style={{ width:44, height:44, borderRadius:12, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -322,11 +338,10 @@ const LoadingScreen = ({ msg="Loading…" }) => (
 );
 
 const LoginScreen = () => {
-  const [email, setEmail]       = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
-
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const signIn = async () => {
     if (!email || !password) { setError("Email and password required."); return; }
     setLoading(true); setError("");
@@ -334,7 +349,6 @@ const LoginScreen = () => {
     if (e) setError(e.message);
     setLoading(false);
   };
-
   return (
     <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
       <GlobalStyle/>
@@ -344,49 +358,28 @@ const LoginScreen = () => {
             <Brain size={26} color="var(--blue)"/>
           </div>
           <div className="display" style={{ fontSize:20, fontWeight:800 }}>Second Brain</div>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>AI Ops Console · Private Access</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>Life Operating System · Private Access</div>
         </div>
-
-        {error && (
-          <div style={{ background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.25)", borderRadius:8, padding:"10px 14px", fontSize:12, color:"var(--red)", display:"flex", gap:7 }}>
-            <AlertCircle size={14} style={{ flexShrink:0, marginTop:1 }}/>{error}
-          </div>
-        )}
-
+        {error && <div style={{ background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.25)", borderRadius:8, padding:"10px 14px", fontSize:12, color:"var(--red)", display:"flex", gap:7 }}><AlertCircle size={14} style={{ flexShrink:0, marginTop:1 }}/>{error}</div>}
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          <Field label="Email">
-            <input className="input" type="email" value={email} placeholder="you@example.com"
-              onChange={e=>setEmail(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&signIn()}/>
-          </Field>
-          <Field label="Password">
-            <input className="input" type="password" value={password} placeholder="••••••••"
-              onChange={e=>setPassword(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&signIn()}/>
-          </Field>
+          <Field label="Email"><input className="input" type="email" value={email} placeholder="you@example.com" onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&signIn()}/></Field>
+          <Field label="Password"><input className="input" type="password" value={password} placeholder="••••••••" onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&signIn()}/></Field>
         </div>
-
         <button className="btn btn-blue" onClick={signIn} disabled={loading} style={{ justifyContent:"center", opacity:loading?0.6:1, height:42, fontSize:14 }}>
           {loading ? <><Loader size={14} className="spin"/>Signing in…</> : <><Shield size={14}/>Sign In</>}
         </button>
-
-        <p style={{ fontSize:11, color:"var(--text-dim)", textAlign:"center", lineHeight:1.6 }}>
-          Private access. Create your account once in<br/>Supabase Auth → Users → Add User.
-        </p>
       </div>
     </div>
   );
 };
 
-/* ────────────────────────────────────────────────────────
-   SIDEBAR
-──────────────────────────────────────────────────────── */
+/* ── SIDEBAR ── */
 const NAV = [
-  {id:"dump",icon:Sparkles,label:"Brain Dump"},
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
   {id:"orchestrator",icon:Brain,label:"Orchestrator"},
   {divider:true},
   {id:"crm",icon:Users,label:"CRM"},
+  {id:"companies",icon:Building2,label:"Companies"},
   {id:"deals",icon:Target,label:"Deals"},
   {id:"marketing",icon:Megaphone,label:"Marketing"},
   {id:"operations",icon:Briefcase,label:"Operations"},
@@ -402,7 +395,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
       <div style={{ width:32, height:32, borderRadius:8, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
         <Brain size={16} color="var(--blue)"/>
       </div>
-      {!collapsed && <div><div className="display" style={{ fontSize:13, fontWeight:700 }}>Second Brain</div><div className="mono" style={{ fontSize:9, color:"var(--text-sec)" }}>AI Ops Console</div></div>}
+      {!collapsed && <div><div className="display" style={{ fontSize:13, fontWeight:700 }}>Second Brain</div><div className="mono" style={{ fontSize:9, color:"var(--text-sec)" }}>Life OS</div></div>}
     </div>
     {NAV.map((n,i)=>n.divider?(
       <div key={i} style={{ height:1, background:"var(--border)", margin:"6px 6px" }}/>
@@ -416,7 +409,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
     <div style={{ marginTop:"auto" }}>
       <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 6px" }}>
         <div style={{ width:7, height:7, borderRadius:"50%", background:"var(--green)", flexShrink:0 }} className="blink"/>
-        {!collapsed && <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>5 agents live</span>}
+        {!collapsed && <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>6 agents live</span>}
       </div>
     </div>
   </div>
@@ -424,34 +417,99 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
 
 const BottomNav = ({ view, setView }) => (
   <div style={{ display:"flex", background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"6px 0 10px" }}>
-    {[{id:"dump",icon:Sparkles},{id:"dashboard",icon:BarChart2},{id:"crm",icon:Users},{id:"deals",icon:Target},{id:"operations",icon:Briefcase},{id:"billing",icon:DollarSign},{id:"voice",icon:Mic}].map(n=>(
+    {[{id:"dashboard",icon:BarChart2},{id:"orchestrator",icon:Brain},{id:"crm",icon:Users},{id:"companies",icon:Building2},{id:"deals",icon:Target},{id:"operations",icon:Briefcase},{id:"billing",icon:DollarSign}].map(n=>(
       <button key={n.id} onClick={()=>setView(n.id)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4, background:"transparent", border:"none", cursor:"pointer", padding:"4px 0" }}>
-        <n.icon size={17} color={view===n.id?"var(--purple)":"var(--text-sec)"}/>
-        <div style={{ width:4, height:4, borderRadius:"50%", background:view===n.id?"var(--purple)":"transparent" }}/>
+        <n.icon size={17} color={view===n.id?"var(--blue)":"var(--text-sec)"}/>
+        <div style={{ width:4, height:4, borderRadius:"50%", background:view===n.id?"var(--blue)":"transparent" }}/>
       </button>
     ))}
   </div>
 );
 
 /* ────────────────────────────────────────────────────────
-   DASHBOARD
+   DASHBOARD — Morning Brief + Goal Tracking
 ──────────────────────────────────────────────────────── */
-const Dashboard = ({ db, setView }) => {
+const Dashboard = ({ db, setDB, setView }) => {
   const paid = db.invoices.filter(i=>i.status==="paid").reduce((a,i)=>a+i.amount,0);
   const pipeline = db.deals.reduce((a,d)=>a+d.value*d.probability/100,0);
   const overdue = db.invoices.filter(i=>i.status==="overdue").reduce((a,i)=>a+i.amount,0);
+  const goal = db.goals.find(g=>g.status==="active") || { target_value:800000 };
+  const goalPct = Math.round((paid / goal.target_value) * 100);
+  const openTasks = db.tasks.filter(t=>!t.done && t.status !== "done" && t.status !== "cancelled");
+  const dueTodayOrOverdue = openTasks.filter(t => t.due && t.due <= today());
+  const criticalItems = openTasks.filter(t=>t.priority==="critical");
+  const decayedContacts = db.contacts.filter(c => c.lastTouch && c.score >= 60 && daysBetween(c.lastTouch, today()) > 14);
+
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:22 }}>
-      <div>
-        <div className="display" style={{ fontSize:22, fontWeight:800, marginBottom:4 }}>Good morning, Mendy.</div>
-        <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>Fri Mar 13 · 5 agents running · 2 critical items</div>
+      {/* Morning Brief */}
+      <div className="card" style={{ padding:20, borderLeft:"4px solid var(--purple)", background:"linear-gradient(135deg, rgba(124,58,237,0.03), transparent)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+          <div>
+            <div className="display" style={{ fontSize:22, fontWeight:800, marginBottom:4 }}>Good morning, Mendy.</div>
+            <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>
+              {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} · 6 agents running
+            </div>
+          </div>
+          <button className="btn btn-ghost" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>setView("orchestrator")}>
+            <Brain size={12}/>Orchestrator
+          </button>
+        </div>
+        {(dueTodayOrOverdue.length > 0 || criticalItems.length > 0 || decayedContacts.length > 0) && (
+          <div style={{ marginTop:14, display:"flex", flexDirection:"column", gap:6 }}>
+            <div className="mono" style={{ fontSize:10, color:"var(--purple)" }}>TODAY'S PRIORITIES</div>
+            {criticalItems.slice(0,3).map(t => (
+              <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--red-dim)", borderRadius:6 }}>
+                <AlertCircle size={12} color="var(--red)"/>
+                <span style={{ fontWeight:600, color:"var(--red)" }}>CRITICAL:</span>
+                <span>{t.title}</span>
+                {t.due && <span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>Due {t.due}</span>}
+              </div>
+            ))}
+            {dueTodayOrOverdue.filter(t=>t.priority!=="critical").slice(0,4).map(t => (
+              <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--amber-dim)", borderRadius:6 }}>
+                <Clock size={12} color="var(--amber)"/>
+                <span>{t.title}</span>
+                <Tag label={t.priority}/>
+                {t.due && <span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>{t.due}</span>}
+              </div>
+            ))}
+            {decayedContacts.slice(0,2).map(c => (
+              <div key={c.id} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--blue-dim)", borderRadius:6 }}>
+                <Users size={12} color="var(--blue)"/>
+                <span>Reconnect with <strong>{c.name}</strong> ({c.co}) — {daysBetween(c.lastTouch, today())} days since last touch</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Metrics */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:12 }}>
-        <MetricCard icon={TrendingUp} label="YTD Revenue" value={fmt(paid)} sub={`$800K target · ${Math.round(paid/8000)}%`} color="--blue" trend={12}/>
+        <MetricCard icon={TrendingUp} label="YTD Revenue" value={fmt(paid)} sub={`${fmt(goal.target_value)} target · ${goalPct}%`} color="--blue" trend={12}/>
         <MetricCard icon={Target} label="Wtd Pipeline" value={fmt(Math.round(pipeline))} sub={`${db.deals.length} deals`} color="--amber" trend={8}/>
-        <MetricCard icon={AlertCircle} label="Overdue A/R" value={fmt(overdue)} sub="Rapid Medical" color="--red"/>
-        <MetricCard icon={Users} label="Active Clients" value="2" sub={`${db.contacts.filter(c=>c.status==="prospect").length} prospects`} color="--green"/>
+        <MetricCard icon={AlertCircle} label="Overdue A/R" value={fmt(overdue)} color="--red"/>
+        <MetricCard icon={CheckCircle} label="Tasks Due" value={dueTodayOrOverdue.length} sub={`${openTasks.length} total open`} color="--green"/>
       </div>
+
+      {/* Goal Progress Bar */}
+      <div className="card" style={{ padding:16 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <Award size={14} color="var(--purple)"/>
+            <span style={{ fontFamily:"var(--font-d)", fontSize:14, fontWeight:700 }}>{goal.name || "Revenue Goal"}</span>
+          </div>
+          <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{fmt(paid)} / {fmt(goal.target_value)}</span>
+        </div>
+        <div style={{ height:8, background:"var(--bg-el)", borderRadius:4, overflow:"hidden" }}>
+          <div style={{ height:"100%", width:`${Math.min(goalPct,100)}%`, background:goalPct>=80?"var(--green)":goalPct>=40?"var(--amber)":"var(--red)", borderRadius:4, transition:"width .5s" }}/>
+        </div>
+        <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:6 }}>
+          {goalPct}% of target · {fmt(goal.target_value - paid)} remaining · Pipeline coverage: {Math.round((pipeline/(goal.target_value-paid))*100)}%
+        </div>
+      </div>
+
+      {/* Revenue Trend */}
       <div className="card" style={{ padding:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700 }}>Revenue Trend</div>
@@ -467,6 +525,8 @@ const Dashboard = ({ db, setView }) => {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Agent Feed */}
       <div>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
           <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700 }}>Agent Feed</div>
@@ -475,8 +535,7 @@ const Dashboard = ({ db, setView }) => {
         {db.agentLogs.slice(0,4).map(l=>(
           <div key={l.id} className="card-el slide-in" style={{ padding:"12px 14px", marginBottom:8, borderLeft:`2px solid ${sc(l.priority)}` }}>
             <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}>
-              <AgentBadge agent={l.agent}/>
-              <Tag label={l.type} color={sc(l.priority)}/>
+              <AgentBadge agent={l.agent}/><Tag label={l.type} color={sc(l.priority)}/>
               <span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>{l.ts}</span>
             </div>
             <p style={{ fontSize:13, lineHeight:1.5 }}>{l.message}</p>
@@ -488,52 +547,60 @@ const Dashboard = ({ db, setView }) => {
 };
 
 /* ────────────────────────────────────────────────────────
-   CRM — CONTACTS
+   CRM — Contacts with Categories + Company Linking
 ──────────────────────────────────────────────────────── */
-const blankContact = () => ({ name:"", co:"", role:"", email:"", phone:"", status:"prospect", score:50, notes:"", lastTouch:new Date().toISOString().split("T")[0], tags:[], linkedin_url:"", headline:"", connected_date:"", messaging_activity:"", priority:"Medium", follow_up:"" });
+const blankContact = () => ({ name:"", co:"", role:"", email:"", phone:"", status:"prospect", score:50, notes:"", lastTouch:today(), tags:[], linkedin_url:"", headline:"", connected_date:"", messaging_activity:"", priority:"Medium", follow_up:"", category:"customer_lead", companyId:"" });
 
-const ContactForm = ({ data, onChange }) => (
-    <>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-        <Field label="Name"><Inp value={data.name} onChange={v=>onChange({...data,name:v})} placeholder="Full name"/></Field>
-        <Field label="Company"><Inp value={data.co} onChange={v=>onChange({...data,co:v})} placeholder="Company"/></Field>
-        <Field label="Role"><Inp value={data.role} onChange={v=>onChange({...data,role:v})} placeholder="Title"/></Field>
-        <Field label="Status"><Sel value={data.status} onChange={v=>onChange({...data,status:v})} options={["prospect","active","outreach","client","at-risk","inactive"]}/></Field>
-        <Field label="Email"><Inp value={data.email} onChange={v=>onChange({...data,email:v})} placeholder="email@co.com"/></Field>
-        <Field label="Phone"><Inp value={data.phone} onChange={v=>onChange({...data,phone:v})} placeholder="(xxx) xxx-xxxx"/></Field>
-        <Field label="Score (0-100)"><Inp type="number" value={data.score} onChange={v=>onChange({...data,score:parseInt(v)||50})}/></Field>
-        <Field label="Last Touch"><Inp type="date" value={data.lastTouch} onChange={v=>onChange({...data,lastTouch:v})}/></Field>
-        <Field label="LinkedIn URL"><Inp value={data.linkedin_url||""} onChange={v=>onChange({...data,linkedin_url:v})} placeholder="https://linkedin.com/in/..."/></Field>
-        <Field label="Headline"><Inp value={data.headline||""} onChange={v=>onChange({...data,headline:v})} placeholder="LinkedIn headline"/></Field>
-        <Field label="Connected Date"><Inp value={data.connected_date||""} onChange={v=>onChange({...data,connected_date:v})} placeholder="e.g. Mar 12"/></Field>
-        <Field label="Priority"><Sel value={data.priority||"Medium"} onChange={v=>onChange({...data,priority:v})} options={["High","Medium","Low"]}/></Field>
-      </div>
-      <Field label="Messaging Activity"><Tex value={data.messaging_activity||""} onChange={v=>onChange({...data,messaging_activity:v})} placeholder="Messaging history summary…"/></Field>
-      <Field label="Follow-Up Recommendation"><Tex value={data.follow_up||""} onChange={v=>onChange({...data,follow_up:v})} placeholder="Recommended next action…"/></Field>
-      <Field label="Notes"><Tex value={data.notes} onChange={v=>onChange({...data,notes:v})} placeholder="Context, next steps…"/></Field>
-    </>
-  );
+const ContactForm = ({ data, onChange, companies }) => (
+  <>
+    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+      <Field label="Name"><Inp value={data.name} onChange={v=>onChange({...data,name:v})} placeholder="Full name"/></Field>
+      <Field label="Company"><Sel value={data.companyId||""} onChange={v=>onChange({...data,companyId:v?parseInt(v):null,co:companies.find(c=>c.id===parseInt(v))?.name||data.co})} options={[{value:"",label:"— select or type below —"},...companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+      <Field label="Company (text)"><Inp value={data.co} onChange={v=>onChange({...data,co:v})} placeholder="Company name"/></Field>
+      <Field label="Role"><Inp value={data.role} onChange={v=>onChange({...data,role:v})} placeholder="Title"/></Field>
+      <Field label="Category"><Sel value={data.category||"customer_lead"} onChange={v=>onChange({...data,category:v})} options={CONTACT_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
+      <Field label="Status"><Sel value={data.status} onChange={v=>onChange({...data,status:v})} options={["prospect","active","outreach","client","at-risk","inactive"]}/></Field>
+      <Field label="Email"><Inp value={data.email} onChange={v=>onChange({...data,email:v})} placeholder="email@co.com"/></Field>
+      <Field label="Phone"><Inp value={data.phone} onChange={v=>onChange({...data,phone:v})} placeholder="(xxx) xxx-xxxx"/></Field>
+      <Field label="Score (0-100)"><Inp type="number" value={data.score} onChange={v=>onChange({...data,score:parseInt(v)||50})}/></Field>
+      <Field label="Last Touch"><Inp type="date" value={data.lastTouch} onChange={v=>onChange({...data,lastTouch:v})}/></Field>
+      <Field label="LinkedIn URL"><Inp value={data.linkedin_url||""} onChange={v=>onChange({...data,linkedin_url:v})} placeholder="https://linkedin.com/in/..."/></Field>
+      <Field label="Headline"><Inp value={data.headline||""} onChange={v=>onChange({...data,headline:v})} placeholder="LinkedIn headline"/></Field>
+      <Field label="Connected Date"><Inp value={data.connected_date||""} onChange={v=>onChange({...data,connected_date:v})} placeholder="e.g. Mar 12"/></Field>
+      <Field label="Priority"><Sel value={data.priority||"Medium"} onChange={v=>onChange({...data,priority:v})} options={["High","Medium","Low"]}/></Field>
+    </div>
+    <Field label="Messaging Activity"><Tex value={data.messaging_activity||""} onChange={v=>onChange({...data,messaging_activity:v})} placeholder="Messaging history summary…"/></Field>
+    <Field label="Follow-Up Recommendation"><Tex value={data.follow_up||""} onChange={v=>onChange({...data,follow_up:v})} placeholder="Recommended next action…"/></Field>
+    <Field label="Notes"><Tex value={data.notes} onChange={v=>onChange({...data,notes:v})} placeholder="Context, next steps…"/></Field>
+  </>
+);
 
-const CRMView = ({ db, setDB }) => {
+const CRMView = ({ db, setDB, setView }) => {
   const [sel, setSel] = useState(null);
-  const [drawer, setDrawer] = useState(null); // {mode:"add"|"edit", data:{}}
+  const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [query, setQuery] = useState("");
+  const [catFilter, setCatFilter] = useState("all");
   const [gmailState, setGmailState] = useState({ loading:false, signals:[], synthesis:"", scannedAt:null, error:null });
   const [showGmail, setShowGmail] = useState(false);
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
 
-  const filtered = db.contacts.filter(c =>
-    !query || c.name.toLowerCase().includes(query.toLowerCase()) ||
-    c.co.toLowerCase().includes(query.toLowerCase())
-  );
+  const filtered = db.contacts.filter(c => {
+    if (query && !c.name.toLowerCase().includes(query.toLowerCase()) && !(c.co||"").toLowerCase().includes(query.toLowerCase())) return false;
+    if (catFilter !== "all" && c.category !== catFilter) return false;
+    return true;
+  });
+
   const contact = sel ? db.contacts.find(c=>c.id===sel) : null;
   const contactDeals = contact ? db.deals.filter(d=>d.contactId===contact.id) : [];
+  const contactTasks = contact ? db.tasks.filter(t=>t.contactId===contact.id && !t.done) : [];
 
   const save = () => {
     if (drawer.mode==="add") {
-      setDB(d=>({...d,contacts:[...d.contacts,{...drawer.data,id:nextId(d.contacts)}]}));
+      const newC = {...drawer.data, id:nextId(db.contacts)};
+      setDB(d=>({...d,contacts:[...d.contacts,newC]}));
+      logEvent(db, setDB, "contact", newC.id, "created", `Contact created: ${newC.name} (${newC.co})`);
     } else {
       setDB(d=>({...d,contacts:d.contacts.map(c=>c.id===drawer.data.id?drawer.data:c)}));
     }
@@ -546,68 +613,23 @@ const CRMView = ({ db, setDB }) => {
     setConfirm(null);
   };
 
-  const pasteImport = () => {
-    try {
-      const raw = pasteText.trim();
-      const match = raw.match(/\[[\s\S]*\]/);
-      const signals = JSON.parse(match ? match[0] : raw);
-      if (!Array.isArray(signals)) throw new Error("Not an array");
-      setGmailState({ loading:false, signals: signals.map(s=>({...s,imported:false})), synthesis:`Paste import: ${signals.length} contacts loaded. Review and click "Import Contact + Task" on each.`, scannedAt:new Date().toLocaleTimeString(), error:null });
-      setShowGmail(true);
-      setSel(null);
-      setPasteMode(false);
-      setPasteText("");
-    } catch {
-      alert("Could not parse JSON. Make sure you pasted the full array from Claude.");
-    }
-  };
-
-  const importContact = (signal) => {
-    const alreadyExists = db.contacts.some(c =>
-      c.email && signal.contact.email && c.email.toLowerCase()===signal.contact.email.toLowerCase()
-    );
-    if (alreadyExists) { alert(`${signal.contact.name} is already in CRM.`); return; }
-    const newContact = {
-      id: nextId(db.contacts),
-      name: signal.contact.name || "Unknown",
-      co: signal.contact.company || "",
-      role: signal.contact.role || "",
-      email: signal.contact.email || "",
-      phone: signal.contact.phone || "",
-      status: signal.contactType || "prospect",
-      score: signal.contactType==="existing-customer"?80:signal.contactType==="lead"?55:signal.contactType==="partner"?70:50,
-      tags: [signal.contactType],
-      lastTouch: new Date().toISOString().split("T")[0],
-      notes: signal.accountContext || "",
-    };
-    const newTask = {
-      id: nextId(db.tasks),
-      title: signal.taskTitle || `Follow up with ${signal.contact.name}`,
-      projectId: "",
-      due: signal.taskDueDate || new Date(Date.now()+3*24*60*60*1000).toISOString().split("T")[0],
-      done: false,
-      priority: signal.taskPriority || "medium",
-      assignedTo: "CRM Agent",
-      notes: signal.taskGuidance || "",
-    };
-    const newActivity = {
-      id: nextId(db.agentLogs),
-      agent: "CRM Agent",
-      type: "activity",
-      message: `[IMPORTED] ${signal.contact.name} (${signal.contact.company}) — ${signal.activitySummary || signal.subject}`,
-      ts: new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}),
-      priority: signal.taskPriority || "medium",
-    };
-    setDB(d => ({
-      ...d,
-      contacts: [...d.contacts, newContact],
-      tasks: [...d.tasks, newTask],
-      agentLogs: [newActivity, ...d.agentLogs],
-    }));
-    setGmailState(s => ({
-      ...s,
-      signals: s.signals.map(sg => sg===signal ? {...sg, imported:true} : sg),
-    }));
+  const convertContact = (contact, toCategory) => {
+    const updated = {...contact, category:toCategory, status: toCategory==="customer"?"client":"active"};
+    setDB(d => {
+      let newState = {...d, contacts:d.contacts.map(c=>c.id===contact.id?updated:c)};
+      // Auto-create deal if converting to customer
+      if (toCategory === "customer") {
+        const newDeal = { id:nextId(d.deals), name:`${contact.co||contact.name} — New Engagement`, contactId:contact.id, companyId:contact.companyId, value:0, stage:"discovery", probability:50, closeDate:"", notes:`Auto-created on conversion from ${contact.category}.` };
+        newState = {...newState, deals:[...d.deals, newDeal]};
+      }
+      // Auto-create project if converting to partner
+      if (toCategory === "partner") {
+        const newProj = { id:nextId(d.projects), name:`Partner: ${contact.co||contact.name}`, client:contact.co||contact.name, companyId:contact.companyId, status:"active", progress:0, dueDate:"", priority:"medium", notes:`Partnership initiated. Converted from ${contact.category}.` };
+        newState = {...newState, projects:[...d.projects, newProj]};
+      }
+      return newState;
+    });
+    logEvent(db, setDB, "contact", contact.id, "converted", `${contact.name} converted from ${contact.category} to ${toCategory}`);
   };
 
   const scanGmail = async () => {
@@ -616,72 +638,47 @@ const CRMView = ({ db, setDB }) => {
     try {
       const cutoff = new Date(Date.now()-30*24*60*60*1000);
       const ds = `${cutoff.getFullYear()}/${String(cutoff.getMonth()+1).padStart(2,"0")}/${String(cutoff.getDate()).padStart(2,"0")}`;
-
       const res = await fetch("https://api.anthropic.com/v1/messages",{
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           model:"claude-sonnet-4-20250514", max_tokens:4000,
-          system:`You are the CRM Intelligence Agent for Mendy Ezagui, an independent AI operations consultant (Los Angeles). His clients: Scott Management (anchor), Rapid Medical (at-risk). Target verticals: property management, HOA companies. Annual revenue target: $800K.
-
-YOUR TASK: Search Gmail for ALL emails and meeting invites/calendar events from the past 30 days (after:${ds}). Extract every distinct person Mendy communicated with or met. For each person, classify their relationship type and build a full CRM signal.
-
-Contact type classification rules:
-- "existing-customer": already paying clients (Scott Management, Rapid Medical, or anyone described as current client/customer)
-- "lead": prospect, potential client, someone evaluating services, referral, someone at a target company (HOA, property management, real estate)
-- "partner": referral partners, implementation partners, consultants, system integrators, anyone proposing collaboration
-- "vendor": software vendors, tool providers, SaaS reps, service providers selling TO Mendy
-
-For each meeting/email thread, generate a task with specific urgency guidance — not generic. Include: what happened, what's at stake, exact next action with a deadline rationale.
-
-Return ONLY a valid JSON array (no markdown, no preamble):
-[{
-  "subject": "email subject or meeting title",
-  "date": "YYYY-MM-DD",
-  "threadId": "gmail thread id if available",
-  "contact": {
-    "name": "Full Name",
-    "email": "email@domain.com",
-    "company": "Company Name",
-    "role": "Title/Role",
-    "phone": "",
-    "linkedIn": ""
-  },
-  "contactType": "lead|partner|vendor|existing-customer",
-  "accountContext": "1-2 sentences about what this company does and their relevance to Mendy",
-  "activitySummary": "What was discussed or decided in this email/meeting",
-  "bdOpportunity": "Specific revenue or relationship opportunity if any, else empty string",
-  "taskTitle": "Short action title",
-  "taskDueDate": "YYYY-MM-DD",
-  "taskPriority": "critical|high|medium|low",
-  "taskGuidance": "3-5 sentences of specific guidance: what happened, what's at stake, exact next action, why the timing matters, and what a good outcome looks like",
-  "priority": "high|medium|low"
-}]`,
-          messages:[{role:"user",content:"Search my Gmail including meeting invites and calendar events for the past 30 days. Extract every person I communicated with or met. Return the full JSON array."}],
+          system:`You are the CRM Intelligence Agent for Mendy Ezagui, an independent AI operations consultant. Search Gmail for ALL emails and meeting invites from the past 30 days (after:${ds}). Return ONLY a valid JSON array: [{"subject":"","date":"YYYY-MM-DD","contact":{"name":"","email":"","company":"","role":"","phone":""},"contactType":"lead|partner|vendor|existing-customer","accountContext":"","activitySummary":"","bdOpportunity":"","taskTitle":"","taskDueDate":"YYYY-MM-DD","taskPriority":"critical|high|medium|low","taskGuidance":"","priority":"high|medium|low"}]`,
+          messages:[{role:"user",content:"Search my Gmail for the past 30 days. Extract every person I communicated with. Return the full JSON array."}],
           mcp_servers:[{type:"url",url:"https://gmail.mcp.claude.com/mcp",name:"gmail"}]
         })
       });
       const data = await res.json();
       const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
       let signals = [];
-      try {
-        const m = text.match(/\[[\s\S]*\]/);
-        if (m) signals = JSON.parse(m[0]);
-      } catch { signals = []; }
-
-      let synthesis = "";
-      if (signals.length > 0) {
-        synthesis = await callClaude(
-          "You are Mendy's Orchestrator Agent. Revenue target $800K. Clients: Scott Management (anchor), Rapid Medical (at-risk). Target: property mgmt/HOA.",
-          `Gmail 30-day scan found ${signals.length} contacts across ${[...new Set(signals.map(s=>s.contactType))].join(", ")} categories.\nSignals:\n${JSON.stringify(signals.map(s=>({name:s.contact.name,co:s.contact.company,type:s.contactType,bd:s.bdOpportunity,task:s.taskTitle,priority:s.taskPriority})),null,2)}\n\nProvide: (1) top immediate revenue action, (2) most at-risk relationship, (3) strongest new lead. Be specific, name names. 3 sentences max.`,
-          400
-        );
-      } else {
-        synthesis = "No contacts found in the last 30 days, or Gmail is not yet connected. Go to Claude Settings → Integrations → Gmail to connect your account.";
-      }
-      setGmailState({loading:false,signals,synthesis,scannedAt:new Date().toLocaleTimeString(),error:null});
+      try { const m = text.match(/\[[\s\S]*\]/); if (m) signals = JSON.parse(m[0]); } catch { signals = []; }
+      let synthesis = signals.length > 0
+        ? await callClaude("You are Mendy's Orchestrator. Revenue target $800K.", `Gmail scan found ${signals.length} contacts. Top action, most at-risk, strongest lead. 3 sentences.`, 400)
+        : "No contacts found. Connect Gmail under Claude Settings → Integrations.";
+      setGmailState({loading:false,signals:signals.map(s=>({...s,imported:false})),synthesis,scannedAt:new Date().toLocaleTimeString(),error:null});
     } catch(e) {
       setGmailState(s=>({...s,loading:false,error:"Gmail scan failed. Connect Gmail under Claude Settings → Integrations."}));
     }
+  };
+
+  const importContact = (signal) => {
+    const alreadyExists = db.contacts.some(c => c.email && signal.contact.email && c.email.toLowerCase()===signal.contact.email.toLowerCase());
+    if (alreadyExists) { alert(`${signal.contact.name} is already in CRM.`); return; }
+    const catMap = {"existing-customer":"customer","lead":"customer_lead","partner":"partner_lead","vendor":"vendor"};
+    const newContact = { id:nextId(db.contacts), name:signal.contact.name||"Unknown", co:signal.contact.company||"", role:signal.contact.role||"", email:signal.contact.email||"", phone:signal.contact.phone||"", status:signal.contactType==="existing-customer"?"client":"prospect", score:signal.contactType==="existing-customer"?80:signal.contactType==="lead"?55:signal.contactType==="partner"?70:50, tags:[signal.contactType], lastTouch:today(), notes:signal.accountContext||"", category:catMap[signal.contactType]||"customer_lead", companyId:null };
+    const newTask = { id:nextId(db.tasks), title:signal.taskTitle||`Follow up with ${signal.contact.name}`, projectId:null, contactId:newContact.id, companyId:null, dealId:null, due:signal.taskDueDate||new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:signal.taskPriority||"medium", assignedTo:"CRM Agent", notes:signal.taskGuidance||"", status:"todo", category:"follow_up", source:"gmail_scan", recurrence:"none" };
+    setDB(d => ({...d, contacts:[...d.contacts,newContact], tasks:[...d.tasks,newTask], agentLogs:[{id:nextId(d.agentLogs), agent:"CRM Agent", type:"activity", message:`[IMPORTED] ${signal.contact.name} (${signal.contact.company})`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:signal.taskPriority||"medium"}, ...d.agentLogs]}));
+    setGmailState(s => ({...s, signals:s.signals.map(sg=>sg===signal?{...sg,imported:true}:sg)}));
+  };
+
+  const pasteImport = () => {
+    try {
+      const raw = pasteText.trim();
+      const match = raw.match(/\[[\s\S]*\]/);
+      const signals = JSON.parse(match ? match[0] : raw);
+      if (!Array.isArray(signals)) throw new Error("Not an array");
+      setGmailState({ loading:false, signals:signals.map(s=>({...s,imported:false})), synthesis:`Paste import: ${signals.length} contacts loaded.`, scannedAt:new Date().toLocaleTimeString(), error:null });
+      setShowGmail(true); setSel(null); setPasteMode(false); setPasteText("");
+    } catch { alert("Could not parse JSON."); }
   };
 
   return (
@@ -694,15 +691,22 @@ Return ONLY a valid JSON array (no markdown, no preamble):
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"add",data:blankContact()})}><Plus size={12}/>Add</button>
           </div>
           <button className="btn btn-gmail" style={{ width:"100%", justifyContent:"center", marginBottom:6, fontSize:12, padding:"7px 10px" }} onClick={scanGmail} disabled={gmailState.loading}>
-            {gmailState.loading?<><Loader size={13} className="spin" style={{color:"#EA4335"}}/>Scanning 30 days…</>:<>
+            {gmailState.loading?<><Loader size={13} className="spin" style={{color:"#EA4335"}}/>Scanning…</>:<>
               <svg width="13" height="13" viewBox="0 0 24 24"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z" fill="#EA4335"/></svg>
               Scan Gmail — 30 Days
-              {gmailState.scannedAt&&<span className="mono" style={{marginLeft:"auto",fontSize:10,color:"var(--text-sec)"}}>{gmailState.signals.length} contacts</span>}
             </>}
           </button>
           <button className="btn btn-ghost" style={{ width:"100%", justifyContent:"center", marginBottom:8, fontSize:11, padding:"5px 10px" }} onClick={()=>setPasteMode(true)}>
             <FileText size={11}/>Paste JSON from Claude
           </button>
+          {/* Category filter chips */}
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+            {["all",...CONTACT_CATEGORIES].map(cat=>(
+              <button key={cat} className={`filter-chip${catFilter===cat?" active":""}`} onClick={()=>setCatFilter(cat)}>
+                {cat==="all"?"All":cat.replace(/_/g," ")}
+              </button>
+            ))}
+          </div>
           <div style={{ position:"relative" }}>
             <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
             <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
@@ -711,9 +715,12 @@ Return ONLY a valid JSON array (no markdown, no preamble):
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(c=>(
             <div key={c.id} className="row-hover" onClick={()=>{setSel(c.id);setShowGmail(false);}}
-              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id&&!showGmail?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center", transition:"background .1s" }}>
+              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id&&!showGmail?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div style={{ minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:600, color:"var(--text)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.name}</div>
+                <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                  <span style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.name}</span>
+                  {c.category && <span style={{ fontSize:9, padding:"1px 4px", borderRadius:3, background:`${sc(c.category)}15`, color:sc(c.category), fontFamily:"var(--font-m)" }}>{c.category.replace(/_/g," ")}</span>}
+                </div>
                 <div style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>{c.co||c.headline||""}</div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
@@ -729,188 +736,91 @@ Return ONLY a valid JSON array (no markdown, no preamble):
       <div style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
         {showGmail ? (
           <div className="slide-in">
-            {/* Header */}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
               <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <svg width="18" height="18" viewBox="0 0 24 24"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z" fill="#EA4335"/></svg>
                 <span className="display" style={{ fontSize:18, fontWeight:700 }}>Gmail Intelligence — 30 Days</span>
-                {gmailState.scannedAt&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>scanned {gmailState.scannedAt}</span>}
               </div>
-              <button className="btn btn-ghost" style={{ fontSize:12, padding:"5px 10px" }} onClick={scanGmail} disabled={gmailState.loading}><RefreshCw size={12} className={gmailState.loading?"spin":""}/>Rescan</button>
+              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={scanGmail} disabled={gmailState.loading}><RefreshCw size={12}/>Rescan</button>
             </div>
-
-            {/* Loading */}
-            {gmailState.loading && (
-              <div className="card" style={{ padding:44, textAlign:"center" }}>
-                <Loader size={30} className="spin" style={{ color:"var(--blue)", margin:"0 auto 16px" }}/>
-                <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:6 }}>CRM Agent scanning Gmail + meeting invites…</p>
-                <p className="mono" style={{ fontSize:11, color:"var(--text-dim)" }}>Extracting contacts · classifying relationships · building tasks</p>
-              </div>
-            )}
-
-            {/* Error */}
-            {gmailState.error && (
-              <div className="card" style={{ padding:18, borderLeft:"3px solid var(--red)", marginBottom:14 }}>
-                <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:6 }}><AlertCircle size={14} color="var(--red)"/><span style={{ fontSize:13, fontWeight:600, color:"var(--red)" }}>Connection Error</span></div>
-                <p style={{ fontSize:13, color:"var(--text-sec)" }}>{gmailState.error}</p>
-              </div>
-            )}
-
-            {/* Synthesis */}
-            {!gmailState.loading && gmailState.synthesis && (
-              <div className="card" style={{ padding:16, marginBottom:18, borderLeft:"3px solid var(--blue)" }}>
-                <div style={{ display:"flex", gap:7, alignItems:"center", marginBottom:7 }}>
-                  <Brain size={13} color="var(--blue)"/>
-                  <span className="mono" style={{ fontSize:10, color:"var(--blue)" }}>ORCHESTRATOR SYNTHESIS</span>
+            {gmailState.loading && <div className="card" style={{ padding:44, textAlign:"center" }}><Loader size={30} className="spin" style={{ color:"var(--blue)", margin:"0 auto 16px" }}/><p style={{ fontSize:13, color:"var(--text-sec)" }}>CRM Agent scanning Gmail…</p></div>}
+            {gmailState.error && <div className="card" style={{ padding:18, borderLeft:"3px solid var(--red)", marginBottom:14 }}><AlertCircle size={14} color="var(--red)"/><span style={{ fontSize:13, color:"var(--red)" }}>{gmailState.error}</span></div>}
+            {!gmailState.loading && gmailState.synthesis && <div className="card" style={{ padding:16, marginBottom:18, borderLeft:"3px solid var(--blue)" }}><p style={{ fontSize:13, lineHeight:1.65 }}>{gmailState.synthesis}</p></div>}
+            {!gmailState.loading && gmailState.signals.map((sig,i) => (
+              <div key={i} className="card" style={{ padding:18, marginBottom:12, borderLeft:`3px solid var(${({"existing-customer":"--green","lead":"--blue","partner":"--purple","vendor":"--amber"})[sig.contactType]||"--text-sec"})`, opacity:sig.imported?0.55:1 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
+                  <div>
+                    <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}>
+                      <span style={{ fontSize:14, fontWeight:700 }}>{sig.contact?.name||"Unknown"}</span>
+                      <Tag label={sig.contactType}/>{sig.imported&&<span className="mono" style={{ fontSize:10, color:"var(--green)" }}>✓ imported</span>}
+                    </div>
+                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{sig.contact?.role} · {sig.contact?.company} · {sig.date}</div>
+                  </div>
+                  <Tag label={sig.taskPriority||"medium"}/>
                 </div>
-                <p style={{ fontSize:13, lineHeight:1.65 }}>{gmailState.synthesis}</p>
-              </div>
-            )}
-
-            {/* Type buckets summary */}
-            {!gmailState.loading && gmailState.signals.length > 0 && (() => {
-              const buckets = gmailState.signals.reduce((a,s)=>{a[s.contactType]=(a[s.contactType]||0)+1;return a;},{});
-              const typeColor = {"existing-customer":"--green","lead":"--blue","partner":"--purple","vendor":"--amber"};
-              const typeLabel = {"existing-customer":"Existing Customers","lead":"Leads","partner":"Partners","vendor":"Vendors"};
-              return (
-                <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-                  {Object.entries(buckets).map(([type,count])=>(
-                    <div key={type} style={{ padding:"6px 12px", borderRadius:20, background:`var(${typeColor[type]||"--text-sec"}-dim,rgba(0,0,0,0.05))`, border:`1px solid var(${typeColor[type]||"--text-sec"})`, display:"flex", alignItems:"center", gap:5 }}>
-                      <span style={{ fontSize:13, fontWeight:700, color:`var(${typeColor[type]||"--text-sec"})` }}>{count}</span>
-                      <span style={{ fontSize:11, color:`var(${typeColor[type]||"--text-sec"})` }}>{typeLabel[type]||type}</span>
-                    </div>
-                  ))}
-                  <div style={{ padding:"6px 12px", borderRadius:20, background:"var(--bg-el)", fontSize:11, color:"var(--text-sec)", display:"flex", alignItems:"center", gap:5 }}>
-                    <span style={{ fontWeight:700, fontSize:13 }}>{gmailState.signals.filter(s=>!s.imported).length}</span> not yet imported
-                  </div>
+                {sig.activitySummary&&<div style={{ padding:"8px 11px", background:"var(--bg-el)", borderRadius:6, fontSize:12, marginBottom:8, lineHeight:1.5 }}>{sig.activitySummary}</div>}
+                {sig.taskGuidance&&<div style={{ padding:"10px 12px", background:"rgba(0,119,204,0.06)", border:"1px solid rgba(0,119,204,0.15)", borderRadius:6, marginBottom:10 }}><div className="mono" style={{ fontSize:9, color:"var(--blue)", marginBottom:5 }}>TASK · {sig.taskTitle}</div><p style={{ fontSize:12, lineHeight:1.6 }}>{sig.taskGuidance}</p></div>}
+                <div style={{ display:"flex", gap:6 }}>
+                  {!sig.imported ? <button className="btn btn-blue" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>importContact(sig)}><Plus size={11}/>Import Contact + Task</button>
+                  : <span style={{ fontSize:11, color:"var(--green)", display:"flex", alignItems:"center", gap:4 }}><CheckCircle size={12}/>Imported</span>}
                 </div>
-              );
-            })()}
-
-            {/* Signal cards */}
-            {!gmailState.loading && gmailState.signals.map((sig,i)=>{
-              const typeColor = {"existing-customer":"--green","lead":"--blue","partner":"--purple","vendor":"--amber"};
-              const tc = typeColor[sig.contactType] || "--text-sec";
-              const priorityColor = {critical:"var(--red)",high:"var(--amber)",medium:"var(--blue)",low:"var(--green)"};
-              return (
-                <div key={i} className="card" style={{ padding:18, marginBottom:12, borderLeft:`3px solid var(${tc})`, opacity:sig.imported?0.55:1 }}>
-                  {/* Row 1: name + type + priority + date */}
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3, flexWrap:"wrap" }}>
-                        <span style={{ fontSize:14, fontWeight:700 }}>{sig.contact.name||"Unknown"}</span>
-                        <Tag label={sig.contactType} color={`var(${tc})`}/>
-                        {sig.imported&&<span className="mono" style={{ fontSize:10, color:"var(--green)", background:"var(--green-dim)", padding:"1px 6px", borderRadius:3 }}>✓ imported</span>}
-                      </div>
-                      <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>
-                        {sig.contact.role&&<span>{sig.contact.role} · </span>}
-                        {sig.contact.company&&<span style={{ fontWeight:600 }}>{sig.contact.company}</span>}
-                        {sig.date&&<span> · {sig.date}</span>}
-                      </div>
-                    </div>
-                    <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, flexShrink:0, marginLeft:10 }}>
-                      <Tag label={sig.taskPriority||sig.priority||"medium"}/>
-                    </div>
-                  </div>
-
-                  {/* Contact details row */}
-                  <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:10 }}>
-                    {sig.contact.email&&<div style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:"var(--text-sec)" }}><Mail size={11}/>{sig.contact.email}</div>}
-                    {sig.contact.phone&&<div style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:"var(--text-sec)" }}><Phone size={11}/>{sig.contact.phone}</div>}
-                  </div>
-
-                  {/* Subject */}
-                  {sig.subject&&<div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginBottom:8, padding:"4px 8px", background:"var(--bg-el)", borderRadius:4 }}>📧 {sig.subject}</div>}
-
-                  {/* Account context */}
-                  {sig.accountContext&&<p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.5, marginBottom:8, fontStyle:"italic" }}>{sig.accountContext}</p>}
-
-                  {/* Activity summary */}
-                  {sig.activitySummary&&(
-                    <div style={{ padding:"8px 11px", background:"var(--bg-el)", borderRadius:6, fontSize:12, color:"var(--text)", marginBottom:8, lineHeight:1.5 }}>
-                      <span className="mono" style={{ fontSize:9, color:"var(--text-sec)", display:"block", marginBottom:3 }}>ACTIVITY</span>
-                      {sig.activitySummary}
-                    </div>
-                  )}
-
-                  {/* BD opportunity */}
-                  {sig.bdOpportunity&&(
-                    <div style={{ padding:"7px 11px", background:"var(--green-dim)", borderRadius:6, fontSize:12, color:"var(--green)", marginBottom:8, display:"flex", gap:7, lineHeight:1.4 }}>
-                      <Target size={12} style={{flexShrink:0,marginTop:1}}/>{sig.bdOpportunity}
-                    </div>
-                  )}
-
-                  {/* Task guidance */}
-                  {sig.taskGuidance&&(
-                    <div style={{ padding:"10px 12px", background:`rgba(${sig.taskPriority==="critical"?"220,38,38":sig.taskPriority==="high"?"217,119,6":"0,119,204"},0.06)`, border:`1px solid rgba(${sig.taskPriority==="critical"?"220,38,38":sig.taskPriority==="high"?"217,119,6":"0,119,204"},0.15)`, borderRadius:6, marginBottom:10 }}>
-                      <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:5 }}>
-                        <Zap size={11} color={priorityColor[sig.taskPriority||"medium"]}/>
-                        <span className="mono" style={{ fontSize:9, color:priorityColor[sig.taskPriority||"medium"] }}>TASK · {sig.taskTitle}</span>
-                        {sig.taskDueDate&&<span className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginLeft:"auto" }}>Due {sig.taskDueDate}</span>}
-                      </div>
-                      <p style={{ fontSize:12, color:"var(--text)", lineHeight:1.6 }}>{sig.taskGuidance}</p>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div style={{ display:"flex", gap:6 }}>
-                    {!sig.imported ? (
-                      <button className="btn btn-blue" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>importContact(sig)}>
-                        <Plus size={11}/>Import Contact + Task
-                      </button>
-                    ) : (
-                      <span style={{ fontSize:11, color:"var(--green)", display:"flex", alignItems:"center", gap:4 }}><CheckCircle size={12}/>Contact, task & activity logged</span>
-                    )}
-                    <button className="btn btn-ghost" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>setDrawer({mode:"add",data:{name:sig.contact.name||"",co:sig.contact.company||"",role:sig.contact.role||"",email:sig.contact.email||"",phone:sig.contact.phone||"",status:sig.contactType||"prospect",score:55,notes:sig.accountContext||"",lastTouch:new Date().toISOString().split("T")[0],tags:[sig.contactType||"lead"]}})}>
-                      <Pencil size={11}/>Edit Before Import
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Empty state */}
-            {!gmailState.loading&&!gmailState.error&&gmailState.signals.length===0&&gmailState.scannedAt&&(
-              <div className="card" style={{ padding:36, textAlign:"center" }}>
-                <Inbox size={34} style={{ color:"var(--text-dim)", margin:"0 auto 12px" }}/>
-                <p style={{ fontSize:13, color:"var(--text-sec)" }}>No contacts found in the past 30 days.</p>
-                <p style={{ fontSize:12, color:"var(--text-dim)", marginTop:6 }}>Make sure Gmail is connected under Claude Settings → Integrations.</p>
               </div>
-            )}
+            ))}
           </div>
         ) : contact ? (
           <div className="slide-in">
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
-              <div><div className="display" style={{ fontSize:20, fontWeight:800 }}>{contact.name}</div><div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{contact.co} · {contact.role}</div></div>
+              <div>
+                <div className="display" style={{ fontSize:20, fontWeight:800 }}>{contact.name}</div>
+                <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{contact.co} · {contact.role}</div>
+              </div>
               <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                <Tag label={contact.category?.replace(/_/g," ")||"lead"} color={sc(contact.category)}/>
                 <Tag label={contact.status}/><ScoreBadge score={contact.score}/>
                 <button className="btn btn-ghost" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"edit",data:{...contact}})}><Pencil size={12}/>Edit</button>
                 <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:contact.id,label:contact.name})}><Trash2 size={12}/></button>
               </div>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:18 }}>
-                {[{icon:Mail,val:contact.email},{icon:Phone,val:contact.phone},{icon:Calendar,val:`Last touch: ${contact.lastTouch}`},{icon:Building,val:contact.co}].map(({icon:I,val},i)=>(
-                  <div key={i} className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><I size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>{val}</span></div>
-                ))}
-                {contact.linkedin_url&&(
-                  <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9, textDecoration:"none", color:"var(--text)", cursor:"pointer" }}>
-                    <Linkedin size={13} color="#0A66C2"/><span style={{ fontSize:13, color:"#0A66C2" }}>LinkedIn Profile</span><ExternalLink size={10} color="var(--text-sec)" style={{marginLeft:"auto"}}/>
-                  </a>
-                )}
-                {contact.connected_date&&(
-                  <div className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><Calendar size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>Connected: {contact.connected_date}</span></div>
-                )}
+
+            {/* Convert buttons for leads */}
+            {(contact.category === "customer_lead" || contact.category === "partner_lead") && (
+              <div className="card" style={{ padding:14, marginBottom:16, borderLeft:"3px solid var(--purple)", display:"flex", gap:8, alignItems:"center" }}>
+                <ArrowRightCircle size={14} color="var(--purple)"/>
+                <span style={{ fontSize:12, color:"var(--text-sec)" }}>Ready to convert?</span>
+                {contact.category === "customer_lead" && <button className="btn btn-blue" style={{ fontSize:11, padding:"4px 10px" }} onClick={()=>convertContact(contact,"customer")}><Star size={11}/>Convert to Customer</button>}
+                {contact.category === "partner_lead" && <button className="btn" style={{ fontSize:11, padding:"4px 10px", background:"var(--purple)", color:"#fff" }} onClick={()=>convertContact(contact,"partner")}><Star size={11}/>Convert to Partner</button>}
+                {contact.category === "customer_lead" && <button className="btn btn-ghost" style={{ fontSize:11, padding:"4px 10px" }} onClick={()=>convertContact(contact,"partner")}>→ Partner instead</button>}
+                {contact.category === "partner_lead" && <button className="btn btn-ghost" style={{ fontSize:11, padding:"4px 10px" }} onClick={()=>convertContact(contact,"customer")}>→ Customer instead</button>}
               </div>
-              {contact.headline&&<div className="card-el" style={{ padding:14, marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>HEADLINE</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.headline}</p></div>}
-              {contact.priority&&<div style={{ marginBottom:12 }}><span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:8 }}>PRIORITY</span><Tag label={contact.priority}/></div>}
-              {contact.messaging_activity&&contact.messaging_activity!=="No messaging activity."&&(
-                <div className="card-el" style={{ padding:14, marginBottom:12, borderLeft:"3px solid var(--blue)" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>MESSAGING ACTIVITY</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.messaging_activity}</p></div>
-              )}
-              {contact.follow_up&&(
-                <div className="card-el" style={{ padding:14, marginBottom:12, borderLeft:"3px solid var(--green)" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>FOLLOW-UP RECOMMENDATION</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.follow_up}</p></div>
-              )}
-              {contact.notes&&<div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.notes}</p></div>}
-            {contactDeals.length>0&&<div>
+            )}
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:18 }}>
+              {[{icon:Mail,val:contact.email},{icon:Phone,val:contact.phone},{icon:Calendar,val:`Last touch: ${contact.lastTouch}`},{icon:Building,val:contact.co}].map(({icon:I,val},i)=>(
+                <div key={i} className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><I size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>{val||"—"}</span></div>
+              ))}
+              {contact.linkedin_url&&<a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9, textDecoration:"none", color:"var(--text)" }}><Linkedin size={13} color="#0A66C2"/><span style={{ fontSize:13, color:"#0A66C2" }}>LinkedIn Profile</span><ExternalLink size={10} color="var(--text-sec)" style={{marginLeft:"auto"}}/></a>}
+              {contact.connected_date&&<div className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><Calendar size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>Connected: {contact.connected_date}</span></div>}
+            </div>
+
+            {contact.headline&&<div className="card-el" style={{ padding:14, marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>HEADLINE</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.headline}</p></div>}
+            {contact.priority&&<div style={{ marginBottom:12 }}><span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:8 }}>PRIORITY</span><Tag label={contact.priority}/></div>}
+            {contact.messaging_activity&&contact.messaging_activity!=="No messaging activity."&&<div className="card-el" style={{ padding:14, marginBottom:12, borderLeft:"3px solid var(--blue)" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>MESSAGING ACTIVITY</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.messaging_activity}</p></div>}
+            {contact.follow_up&&<div className="card-el" style={{ padding:14, marginBottom:12, borderLeft:"3px solid var(--green)" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>FOLLOW-UP RECOMMENDATION</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.follow_up}</p></div>}
+            {contact.notes&&<div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.notes}</p></div>}
+
+            {/* Related Tasks */}
+            {contactTasks.length>0&&<div style={{ marginBottom:16 }}>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>OPEN TASKS ({contactTasks.length})</div>
+              {contactTasks.map(t=>(
+                <div key={t.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", gap:8, alignItems:"center" }}>
+                  <div style={{ flex:1 }}><div style={{ fontSize:12, fontWeight:500 }}>{t.title}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due} · {t.category}</div></div>
+                  <Tag label={t.priority}/>
+                </div>
+              ))}
+            </div>}
+
+            {/* Related Deals */}
+            {contactDeals.length>0&&<div style={{ marginBottom:16 }}>
               <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>DEALS</div>
               {contactDeals.map(d=>(
                 <div key={d.id} className="card-el" style={{ padding:14, marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -919,6 +829,22 @@ Return ONLY a valid JSON array (no markdown, no preamble):
                 </div>
               ))}
             </div>}
+
+            {/* Company News */}
+            {contact.companyId && db.companyNews.filter(n=>n.companyId===contact.companyId).length>0 && (
+              <div style={{ marginBottom:16 }}>
+                <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>COMPANY NEWS</div>
+                {db.companyNews.filter(n=>n.companyId===contact.companyId).slice(0,5).map(n=>(
+                  <div key={n.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, borderLeft:"2px solid var(--blue)" }}>
+                    <div style={{ fontSize:12, fontWeight:600 }}>{n.headline}</div>
+                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{n.published_date} · Relevance: {n.relevance_score}/10</div>
+                    {n.summary && <p style={{ fontSize:11, color:"var(--text-sec)", marginTop:4 }}>{n.summary}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <ActivityTimeline events={db.events} entityType="contact" entityId={contact.id}/>
           </div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
@@ -929,35 +855,16 @@ Return ONLY a valid JSON array (no markdown, no preamble):
       </div>
 
       {drawer&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Contact`} onClose={()=>setDrawer(null)} onSave={save} saveLabel={drawer.mode==="add"?"Add Contact":"Save Changes"}>
-        <ContactForm data={drawer.data} onChange={data=>setDrawer(d=>({...d,data}))}/>
+        <ContactForm data={drawer.data} onChange={data=>setDrawer(d=>({...d,data}))} companies={db.companies}/>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
-
-      {/* PASTE IMPORT MODAL */}
       {pasteMode&&(
         <div className="confirm-overlay" onClick={()=>setPasteMode(false)}>
-          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:14, padding:28, width:"min(600px,92vw)", boxShadow:"0 8px 40px rgba(0,0,0,0.18)", display:"flex", flexDirection:"column", gap:14 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700 }}>Paste Gmail JSON from Claude</div>
-              <button className="btn-icon" onClick={()=>setPasteMode(false)}><X size={16}/></button>
-            </div>
-            <div style={{ padding:"10px 14px", background:"var(--blue-dim,rgba(0,119,204,0.07))", borderRadius:8, borderLeft:"3px solid var(--blue)" }}>
-              <p className="mono" style={{ fontSize:11, color:"var(--blue)", lineHeight:1.7 }}>Run this in a new Claude chat window (with Gmail connected):</p>
-              <p className="mono" style={{ fontSize:11, color:"var(--text)", lineHeight:1.7, marginTop:6, userSelect:"all", cursor:"text" }}>
-                {"\"Search my Gmail for the past 30 days. For every person I emailed or met, return a JSON array: [{contact:{name,email,company,role,phone}, contactType:'lead|partner|vendor|existing-customer', subject, date, activitySummary, accountContext, bdOpportunity, taskTitle, taskDueDate, taskPriority:'critical|high|medium|low', taskGuidance}]\""}
-              </p>
-            </div>
-            <textarea
-              className="input"
-              placeholder="Paste the JSON array Claude returned here…"
-              value={pasteText}
-              onChange={e=>setPasteText(e.target.value)}
-              style={{ minHeight:180, fontSize:12, fontFamily:"var(--font-m)", resize:"vertical" }}
-            />
+          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:14, padding:28, width:"min(600px,92vw)", boxShadow:"var(--shadow-lg)", display:"flex", flexDirection:"column", gap:14 }}>
+            <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700 }}>Paste Gmail JSON from Claude</div>
+            <textarea className="input" placeholder="Paste the JSON array…" value={pasteText} onChange={e=>setPasteText(e.target.value)} style={{ minHeight:180, fontSize:12, fontFamily:"var(--font-m)" }}/>
             <div style={{ display:"flex", gap:8 }}>
-              <button className="btn btn-blue" onClick={pasteImport} style={{ flex:1, justifyContent:"center" }} disabled={!pasteText.trim()}>
-                <Plus size={13}/>Load Contacts
-              </button>
+              <button className="btn btn-blue" onClick={pasteImport} style={{ flex:1, justifyContent:"center" }} disabled={!pasteText.trim()}><Plus size={13}/>Load Contacts</button>
               <button className="btn btn-ghost" onClick={()=>{setPasteMode(false);setPasteText("");}}>Cancel</button>
             </div>
           </div>
@@ -968,26 +875,195 @@ Return ONLY a valid JSON array (no markdown, no preamble):
 };
 
 /* ────────────────────────────────────────────────────────
-   DEALS
+   COMPANIES — NEW VIEW
 ──────────────────────────────────────────────────────── */
-const blankDeal = () => ({ name:"", contactId:"", value:0, stage:"discovery", probability:50, closeDate:"", notes:"" });
+const blankCompany = () => ({ name:"", industry:"", website:"", linkedin_url:"", news_keywords:"", status:"prospect", notes:"", created_at:today() });
+
+const CompaniesView = ({ db, setDB }) => {
+  const [sel, setSel] = useState(null);
+  const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const filtered = db.companies.filter(c => {
+    if (query && !c.name.toLowerCase().includes(query.toLowerCase())) return false;
+    if (statusFilter !== "all" && c.status !== statusFilter) return false;
+    return true;
+  });
+
+  const company = sel ? db.companies.find(c=>c.id===sel) : null;
+  const companyContacts = company ? db.contacts.filter(c=>c.companyId===company.id || c.co===company.name) : [];
+  const companyDeals = company ? db.deals.filter(d=>d.companyId===company.id || companyContacts.some(c=>c.id===d.contactId)) : [];
+  const companyProjects = company ? db.projects.filter(p=>p.companyId===company.id || p.client===company.name) : [];
+  const companyNews = company ? db.companyNews.filter(n=>n.companyId===company.id) : [];
+  const companyTasks = company ? db.tasks.filter(t=>t.companyId===company.id || companyContacts.some(c=>c.id===t.contactId)) : [];
+
+  const save = () => {
+    if (drawer.mode==="add") setDB(d=>({...d,companies:[...d.companies,{...drawer.data,id:nextId(d.companies)}]}));
+    else setDB(d=>({...d,companies:d.companies.map(c=>c.id===drawer.data.id?drawer.data:c)}));
+    setDrawer(null);
+  };
+  const del = (id) => { setDB(d=>({...d,companies:d.companies.filter(c=>c.id!==id)})); if(sel===id) setSel(null); setConfirm(null); };
+
+  return (
+    <div style={{ display:"flex", height:"100%", overflow:"hidden" }}>
+      <div style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+        <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Companies</div>
+            <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"add",data:blankCompany()})}><Plus size={12}/>Add</button>
+          </div>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+            {["all","prospect","customer","partner","churned"].map(s=>(
+              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
+            ))}
+          </div>
+          <div style={{ position:"relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+            <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+          </div>
+        </div>
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {filtered.map(c=>{
+            const contactCount = db.contacts.filter(ct=>ct.companyId===c.id||ct.co===c.name).length;
+            return (
+              <div key={c.id} className="row-hover" onClick={()=>setSel(c.id)}
+                style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600 }}>{c.name}</div>
+                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{c.industry||"—"} · {contactCount} contacts</div>
+                </div>
+                <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                  <Tag label={c.status}/>
+                  <RowActions onEdit={()=>setDrawer({mode:"edit",data:{...c}})} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+        {company ? (
+          <div className="slide-in">
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
+              <div>
+                <div className="display" style={{ fontSize:20, fontWeight:800 }}>{company.name}</div>
+                <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{company.industry}</div>
+              </div>
+              <div style={{ display:"flex", gap:6 }}>
+                <Tag label={company.status}/>
+                <button className="btn btn-ghost" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"edit",data:{...company}})}><Pencil size={12}/>Edit</button>
+              </div>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10, marginBottom:20 }}>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--blue)" }}>{companyContacts.length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Contacts</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--amber)" }}>{companyDeals.length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Deals</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--green)" }}>{fmt(companyDeals.reduce((a,d)=>a+d.value,0))}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Pipeline</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--purple)" }}>{companyTasks.filter(t=>!t.done).length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Open Tasks</div></div>
+            </div>
+
+            {company.website && <div className="card-el" style={{ padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"center" }}><Globe size={13} color="var(--text-sec)"/><a href={company.website.startsWith("http")?company.website:`https://${company.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize:13, color:"var(--blue)" }}>{company.website}</a></div>}
+            {company.linkedin_url && <div className="card-el" style={{ padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"center" }}><Linkedin size={13} color="#0A66C2"/><a href={company.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ fontSize:13, color:"#0A66C2" }}>LinkedIn Page</a></div>}
+            {company.notes && <div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{company.notes}</p></div>}
+
+            {companyContacts.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>PEOPLE ({companyContacts.length})</div>
+              {companyContacts.map(c=><div key={c.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}><div><div style={{ fontSize:13, fontWeight:500 }}>{c.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{c.role} · {c.category?.replace(/_/g," ")}</div></div><div style={{ display:"flex", gap:6 }}><Tag label={c.status}/><ScoreBadge score={c.score}/></div></div>)}
+            </div>}
+
+            {companyDeals.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>DEALS ({companyDeals.length})</div>
+              {companyDeals.map(d=><div key={d.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between" }}><div><div style={{ fontSize:13, fontWeight:500 }}>{d.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{d.probability}% · Close {d.closeDate}</div></div><div style={{ textAlign:"right" }}><div style={{ fontFamily:"var(--font-d)", fontWeight:700, color:"var(--blue)" }}>{fmt(d.value)}</div><Tag label={d.stage}/></div></div>)}
+            </div>}
+
+            {companyNews.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}><Newspaper size={11}/> NEWS</div>
+              {companyNews.slice(0,5).map(n=><div key={n.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, borderLeft:"2px solid var(--blue)" }}><div style={{ fontSize:12, fontWeight:600 }}>{n.headline}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{n.published_date} · Score: {n.relevance_score}/10</div>{n.summary&&<p style={{ fontSize:11, color:"var(--text-sec)", marginTop:3 }}>{n.summary}</p>}</div>)}
+            </div>}
+
+            <ActivityTimeline events={db.events} entityType="company" entityId={company.id}/>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+            <Building2 size={44} style={{ opacity:.15, marginBottom:14 }}/>
+            <p style={{ fontSize:14 }}>Select a company</p>
+          </div>
+        )}
+      </div>
+
+      {drawer&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Company`} onClose={()=>setDrawer(null)} onSave={save}>
+        <Field label="Company Name"><Inp value={drawer.data.name} onChange={v=>setDrawer(d=>({...d,data:{...d.data,name:v}}))}/></Field>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+          <Field label="Industry"><Inp value={drawer.data.industry} onChange={v=>setDrawer(d=>({...d,data:{...d.data,industry:v}}))}/></Field>
+          <Field label="Status"><Sel value={drawer.data.status} onChange={v=>setDrawer(d=>({...d,data:{...d.data,status:v}}))} options={["prospect","customer","partner","churned"]}/></Field>
+          <Field label="Website"><Inp value={drawer.data.website} onChange={v=>setDrawer(d=>({...d,data:{...d.data,website:v}}))}/></Field>
+          <Field label="LinkedIn URL"><Inp value={drawer.data.linkedin_url} onChange={v=>setDrawer(d=>({...d,data:{...d.data,linkedin_url:v}}))}/></Field>
+        </div>
+        <Field label="News Keywords (for monitoring)"><Inp value={drawer.data.news_keywords} onChange={v=>setDrawer(d=>({...d,data:{...d.data,news_keywords:v}}))} placeholder="e.g. funding, acquisition, partnership"/></Field>
+        <Field label="Notes"><Tex value={drawer.data.notes} onChange={v=>setDrawer(d=>({...d,data:{...d.data,notes:v}}))}/></Field>
+      </Drawer>}
+      {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────
+   DEALS — with Pipeline Automations
+──────────────────────────────────────────────────────── */
+const blankDeal = () => ({ name:"", contactId:"", companyId:"", value:0, stage:"discovery", probability:50, closeDate:"", notes:"" });
 
 const DealsView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankDeal());
+  const STAGES = ["outreach","discovery","proposal","negotiation","at-risk","won","lost"];
+  const stageColor = { outreach:"var(--text-sec)", discovery:"var(--purple)", proposal:"var(--blue)", negotiation:"var(--amber)", "at-risk":"var(--red)", won:"var(--green)", lost:"var(--text-sec)" };
 
   const save = () => {
-    const rec = { ...d, value:parseFloat(d.value)||0, probability:parseInt(d.probability)||50, contactId:parseInt(d.contactId)||null };
-    if (drawer==="add") setDB(db=>({...db,deals:[...db.deals,{...rec,id:nextId(db.deals)}]}));
-    else setDB(db=>({...db,deals:db.deals.map(x=>x.id===rec.id?rec:x)}));
+    const rec = { ...d, value:parseFloat(d.value)||0, probability:parseInt(d.probability)||50, contactId:parseInt(d.contactId)||null, companyId:parseInt(d.companyId)||null };
+    const oldDeal = drawer==="edit" ? db.deals.find(x=>x.id===rec.id) : null;
+
+    if (drawer==="add") {
+      setDB(db=>({...db,deals:[...db.deals,{...rec,id:nextId(db.deals)}]}));
+    } else {
+      setDB(prev => {
+        let next = {...prev, deals:prev.deals.map(x=>x.id===rec.id?rec:x)};
+
+        // Pipeline automations on stage change
+        if (oldDeal && oldDeal.stage !== rec.stage) {
+          const contact = prev.contacts.find(c=>c.id===rec.contactId);
+
+          if (rec.stage === "won") {
+            // Convert contact to customer
+            if (contact && contact.category !== "customer") {
+              next = {...next, contacts:next.contacts.map(c=>c.id===contact.id?{...c,category:"customer",status:"client"}:c)};
+            }
+            // Create onboarding project
+            next = {...next, projects:[...next.projects, {id:nextId(next.projects), name:`Onboarding: ${rec.name}`, client:contact?.co||"", companyId:rec.companyId, status:"active", progress:0, dueDate:"", priority:"high", notes:`Auto-created when deal "${rec.name}" was won.`}]};
+            // Create first invoice draft
+            next = {...next, invoices:[...next.invoices, {id:nextId(next.invoices), number:`INV-${String(nextId(next.invoices)).padStart(3,"0")}`, client:contact?.co||"", contactId:rec.contactId, amount:rec.value, status:"draft", issued:today(), due:"", notes:`Auto-created from won deal: ${rec.name}`}]};
+            // Log it
+            next = {...next, agentLogs:[{id:nextId(next.agentLogs), agent:"Orchestrator", type:"opportunity", message:`DEAL WON: "${rec.name}" — ${fmt(rec.value)}. Onboarding project + invoice draft created.`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:"high"}, ...next.agentLogs]};
+          }
+
+          if (rec.stage === "lost") {
+            // Create re-engage task for 90 days
+            const reengageDate = new Date(Date.now() + 90*86400000).toISOString().split("T")[0];
+            next = {...next, tasks:[...next.tasks, {id:nextId(next.tasks), title:`Re-engage: ${contact?.name||rec.name} (90 days post-loss)`, projectId:null, contactId:rec.contactId, companyId:rec.companyId, dealId:rec.id, due:reengageDate, done:false, priority:"medium", assignedTo:"CRM Agent", notes:`Deal "${rec.name}" was lost. Schedule re-engagement.`, status:"todo", category:"outreach", source:"orchestrator", recurrence:"none"}]};
+            next = {...next, agentLogs:[{id:nextId(next.agentLogs), agent:"CRM Agent", type:"risk", message:`Deal lost: "${rec.name}". Re-engage task created for ${reengageDate}.`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:"medium"}, ...next.agentLogs]};
+          }
+        }
+        return next;
+      });
+    }
     setDrawer(null);
   };
 
   const del = (id) => { setDB(db=>({...db,deals:db.deals.filter(x=>x.id!==id)})); setConfirm(null); };
 
-  const STAGES = ["outreach","discovery","proposal","negotiation","at-risk","won","lost"];
-  const stageColor = { outreach:"var(--text-sec)", discovery:"var(--purple)", proposal:"var(--blue)", negotiation:"var(--amber)", "at-risk":"var(--red)", won:"var(--green)", lost:"var(--text-sec)" };
+  // Deal velocity: flag deals stuck in a stage for 21+ days
+  const staleDealIds = new Set();
+  // We don't have stage_changed_at but we can flag based on close date proximity or notes
 
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
@@ -998,8 +1074,25 @@ const DealsView = ({ db, setDB }) => {
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12 }}>
         <MetricCard icon={Target} label="Total Pipeline" value={fmt(db.deals.reduce((a,x)=>a+x.value,0))} color="--blue"/>
         <MetricCard icon={TrendingUp} label="Weighted" value={fmt(Math.round(db.deals.reduce((a,x)=>a+x.value*x.probability/100,0)))} color="--amber"/>
-        <MetricCard icon={CheckCircle} label="Deals" value={db.deals.length} color="--green"/>
+        <MetricCard icon={CheckCircle} label="Won" value={db.deals.filter(d=>d.stage==="won").length} sub={fmt(db.deals.filter(d=>d.stage==="won").reduce((a,d)=>a+d.value,0))} color="--green"/>
+        <MetricCard icon={AlertCircle} label="At Risk" value={db.deals.filter(d=>d.stage==="at-risk").length} color="--red"/>
       </div>
+
+      {/* Stage pipeline visual */}
+      <div style={{ display:"flex", gap:4, padding:"8px 0" }}>
+        {STAGES.filter(s=>s!=="won"&&s!=="lost").map(stage => {
+          const stageDeals = db.deals.filter(d=>d.stage===stage);
+          const total = stageDeals.reduce((a,d)=>a+d.value,0);
+          return (
+            <div key={stage} style={{ flex:1, padding:"8px 10px", background:`${stageColor[stage]}10`, borderRadius:8, borderTop:`3px solid ${stageColor[stage]}`, textAlign:"center" }}>
+              <div className="mono" style={{ fontSize:9, color:stageColor[stage], marginBottom:4 }}>{stage.toUpperCase()}</div>
+              <div style={{ fontSize:14, fontWeight:700, fontFamily:"var(--font-d)" }}>{stageDeals.length}</div>
+              <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{fmt(total)}</div>
+            </div>
+          );
+        })}
+      </div>
+
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
         {db.deals.map(deal=>{
           const contact = db.contacts.find(c=>c.id===deal.contactId);
@@ -1008,25 +1101,26 @@ const DealsView = ({ db, setDB }) => {
               <div style={{ width:10, height:10, borderRadius:"50%", background:stageColor[deal.stage]||"var(--text-sec)", flexShrink:0 }}/>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{deal.name}</div>
-                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{contact?.name||"—"} · Close {deal.closeDate} · {deal.probability}% probability</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{contact?.name||"—"} · Close {deal.closeDate} · {deal.probability}%</div>
               </div>
               <div style={{ textAlign:"right", flexShrink:0 }}>
                 <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700, color:"var(--blue)" }}>{fmt(deal.value)}</div>
                 <Tag label={deal.stage}/>
               </div>
-              <RowActions onEdit={()=>{setD({...deal,value:String(deal.value),probability:String(deal.probability),contactId:String(deal.contactId||"")});setDrawer("edit");}} onDelete={()=>setConfirm({id:deal.id,label:deal.name})}/>
+              <RowActions onEdit={()=>{setD({...deal,value:String(deal.value),probability:String(deal.probability),contactId:String(deal.contactId||""),companyId:String(deal.companyId||"")});setDrawer("edit");}} onDelete={()=>setConfirm({id:deal.id,label:deal.name})}/>
             </div>
           );
         })}
       </div>
-      {drawer&&<Drawer title={drawer==="add"?"New Deal":"Edit Deal"} onClose={()=>setDrawer(null)} onSave={save} saveLabel={drawer==="add"?"Add Deal":"Save"}>
+      {drawer&&<Drawer title={drawer==="add"?"New Deal":"Edit Deal"} onClose={()=>setDrawer(null)} onSave={save}>
         <Field label="Deal Name"><Inp value={d.name} onChange={v=>setD(p=>({...p,name:v}))} placeholder="Client — Initiative"/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Contact"><Sel value={d.contactId} onChange={v=>setD(p=>({...p,contactId:v}))} options={[{value:"",label:"— none —"},...db.contacts.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+          <Field label="Company"><Sel value={d.companyId} onChange={v=>setD(p=>({...p,companyId:v}))} options={[{value:"",label:"— none —"},...db.companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
           <Field label="Stage"><Sel value={d.stage} onChange={v=>setD(p=>({...p,stage:v}))} options={STAGES}/></Field>
           <Field label="Value ($)"><Inp type="number" value={d.value} onChange={v=>setD(p=>({...p,value:v}))}/></Field>
           <Field label="Probability (%)"><Inp type="number" value={d.probability} onChange={v=>setD(p=>({...p,probability:v}))}/></Field>
-          <Field label="Close Date" ><Inp type="date" value={d.closeDate} onChange={v=>setD(p=>({...p,closeDate:v}))}/></Field>
+          <Field label="Close Date"><Inp type="date" value={d.closeDate} onChange={v=>setD(p=>({...p,closeDate:v}))}/></Field>
         </div>
         <Field label="Notes"><Tex value={d.notes} onChange={v=>setD(p=>({...p,notes:v}))}/></Field>
       </Drawer>}
@@ -1036,7 +1130,7 @@ const DealsView = ({ db, setDB }) => {
 };
 
 /* ────────────────────────────────────────────────────────
-   MARKETING — CAMPAIGNS
+   MARKETING — CAMPAIGNS (mostly unchanged)
 ──────────────────────────────────────────────────────── */
 const blankCampaign = () => ({ name:"", type:"Email", status:"draft", leads:0, opens:0, conversions:0, startDate:"" });
 
@@ -1044,16 +1138,13 @@ const MarketingView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankCampaign());
-
   const save = () => {
     const rec = { ...d, leads:parseInt(d.leads)||0, opens:parseInt(d.opens)||0, conversions:parseInt(d.conversions)||0 };
     if (drawer==="add") setDB(db=>({...db,campaigns:[...db.campaigns,{...rec,id:nextId(db.campaigns)}]}));
     else setDB(db=>({...db,campaigns:db.campaigns.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
   };
-
   const del = (id) => { setDB(db=>({...db,campaigns:db.campaigns.filter(x=>x.id!==id)})); setConfirm(null); };
-
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -1063,25 +1154,22 @@ const MarketingView = ({ db, setDB }) => {
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12 }}>
         <MetricCard icon={Megaphone} label="Active" value={db.campaigns.filter(c=>c.status==="active").length} color="--amber"/>
         <MetricCard icon={Users} label="Total Leads" value={db.campaigns.reduce((a,c)=>a+c.leads,0)} color="--blue" trend={22}/>
-        <MetricCard icon={TrendingUp} label="Conversions" value={db.campaigns.reduce((a,c)=>a+c.conversions,0)} color="--green" trend={5}/>
+        <MetricCard icon={TrendingUp} label="Conversions" value={db.campaigns.reduce((a,c)=>a+c.conversions,0)} color="--green"/>
       </div>
       {db.campaigns.map(c=>(
         <div key={c.id} className="card row-hover" style={{ padding:"16px 18px" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
             <div><div style={{ fontSize:13, fontWeight:600 }}>{c.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{c.type} · {c.startDate}</div></div>
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-              <Tag label={c.status} color={c.status==="active"?"var(--green)":undefined}/>
-              <RowActions onEdit={()=>{setD({...c,leads:String(c.leads),opens:String(c.opens),conversions:String(c.conversions)});setDrawer("edit");}} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
-            </div>
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}><Tag label={c.status}/><RowActions onEdit={()=>{setD({...c,leads:String(c.leads),opens:String(c.opens),conversions:String(c.conversions)});setDrawer("edit");}} onDelete={()=>setConfirm({id:c.id,label:c.name})}/></div>
           </div>
           <div style={{ display:"flex", gap:24 }}>
             {[["Leads",c.leads],["Impressions",c.opens],["Conversions",c.conversions]].map(([l,v])=>(
-              <div key={l}><div className="mono" style={{ fontSize:18, fontWeight:600 }}>{v.toLocaleString()}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>{l}</div></div>
+              <div key={l}><div className="mono" style={{ fontSize:18, fontWeight:600 }}>{(v||0).toLocaleString()}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>{l}</div></div>
             ))}
           </div>
         </div>
       ))}
-      {drawer&&<Drawer title={drawer==="add"?"New Campaign":"Edit Campaign"} onClose={()=>setDrawer(null)} onSave={save} saveLabel={drawer==="add"?"Add":"Save"}>
+      {drawer&&<Drawer title={drawer==="add"?"New Campaign":"Edit Campaign"} onClose={()=>setDrawer(null)} onSave={save}>
         <Field label="Campaign Name"><Inp value={d.name} onChange={v=>setD(p=>({...p,name:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Type"><Sel value={d.type} onChange={v=>setD(p=>({...p,type:v}))} options={["Email","Social","Referral","Paid","Event","Other"]}/></Field>
@@ -1098,36 +1186,77 @@ const MarketingView = ({ db, setDB }) => {
 };
 
 /* ────────────────────────────────────────────────────────
-   OPERATIONS — Projects + Tasks
+   OPERATIONS — Projects + RELATIONAL TASKS with Filters
 ──────────────────────────────────────────────────────── */
-const blankProject = () => ({ name:"", client:"", status:"active", progress:0, dueDate:"", priority:"medium", notes:"" });
-const blankTask = () => ({ title:"", projectId:"", due:"", done:false, priority:"medium", assignedTo:"" });
+const blankProject = () => ({ name:"", client:"", companyId:"", status:"active", progress:0, dueDate:"", priority:"medium", notes:"" });
+const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" });
 
 const OperationsView = ({ db, setDB }) => {
-  const [tab, setTab] = useState("projects");
-  const [drawer, setDrawer] = useState(null); // {mode, type, data}
+  const [tab, setTab] = useState("tasks");
+  const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [pd, setPD] = useState(blankProject());
+  const [td, setTD] = useState(blankTask());
+
+  // Task filters
+  const [fStatus, setFStatus] = useState("open"); // open = not done/cancelled
+  const [fPriority, setFPriority] = useState("all");
+  const [fCategory, setFCategory] = useState("all");
+  const [fCompany, setFCompany] = useState("all");
+  const [fPerson, setFPerson] = useState("all");
+  const [fProject, setFProject] = useState("all");
+  const [sortBy, setSortBy] = useState("due"); // due, priority, company, person
+  const [groupBy, setGroupBy] = useState("none"); // none, project, company, person, status
+
+  const filteredTasks = useMemo(() => {
+    let tasks = db.tasks;
+    if (fStatus === "open") tasks = tasks.filter(t => !t.done && t.status !== "done" && t.status !== "cancelled");
+    else if (fStatus !== "all") tasks = tasks.filter(t => t.status === fStatus);
+    if (fPriority !== "all") tasks = tasks.filter(t => t.priority === fPriority);
+    if (fCategory !== "all") tasks = tasks.filter(t => t.category === fCategory);
+    if (fCompany !== "all") tasks = tasks.filter(t => String(t.companyId) === fCompany);
+    if (fPerson !== "all") tasks = tasks.filter(t => String(t.contactId) === fPerson);
+    if (fProject !== "all") tasks = tasks.filter(t => String(t.projectId) === fProject);
+
+    const priOrder = { critical:0, high:1, medium:2, low:3 };
+    tasks = [...tasks].sort((a,b) => {
+      if (sortBy === "due") return (a.due||"9999").localeCompare(b.due||"9999");
+      if (sortBy === "priority") return (priOrder[a.priority]||9) - (priOrder[b.priority]||9);
+      return 0;
+    });
+    return tasks;
+  }, [db.tasks, fStatus, fPriority, fCategory, fCompany, fPerson, fProject, sortBy]);
+
+  const grouped = useMemo(() => {
+    if (groupBy === "none") return [{ label:null, tasks:filteredTasks }];
+    const groups = {};
+    filteredTasks.forEach(t => {
+      let key = "Ungrouped";
+      if (groupBy === "project") { const p = db.projects.find(p=>p.id===t.projectId); key = p?.name || "No Project"; }
+      else if (groupBy === "company") { const c = db.companies.find(c=>c.id===t.companyId); key = c?.name || "No Company"; }
+      else if (groupBy === "person") { const c = db.contacts.find(c=>c.id===t.contactId); key = c?.name || "Unassigned"; }
+      else if (groupBy === "status") key = t.status || "todo";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+    return Object.entries(groups).map(([label,tasks])=>({label,tasks}));
+  }, [filteredTasks, groupBy, db.projects, db.companies, db.contacts]);
 
   const saveProject = (d) => {
-    const rec = {...d, progress:parseInt(d.progress)||0};
+    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null};
     if(drawer.mode==="add") setDB(db=>({...db,projects:[...db.projects,{...rec,id:nextId(db.projects)}]}));
     else setDB(db=>({...db,projects:db.projects.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
   };
-
   const saveTask = (d) => {
-    const rec = {...d,projectId:parseInt(d.projectId)||null};
+    const rec = {...d, projectId:parseInt(d.projectId)||null, contactId:parseInt(d.contactId)||null, companyId:parseInt(d.companyId)||null, dealId:parseInt(d.dealId)||null};
     if(drawer.mode==="add") setDB(db=>({...db,tasks:[...db.tasks,{...rec,id:nextId(db.tasks)}]}));
     else setDB(db=>({...db,tasks:db.tasks.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
   };
-
   const delProject = (id) => { setDB(db=>({...db,projects:db.projects.filter(x=>x.id!==id)})); setConfirm(null); };
   const delTask = (id) => { setDB(db=>({...db,tasks:db.tasks.filter(x=>x.id!==id)})); setConfirm(null); };
-  const toggleTask = (id) => setDB(db=>({...db,tasks:db.tasks.map(t=>t.id===id?{...t,done:!t.done}:t)}));
-
-  const [pd, setPD] = useState(blankProject());
-  const [td, setTD] = useState(blankTask());
+  const toggleTask = (id) => setDB(db=>({...db,tasks:db.tasks.map(t=>t.id===id?{...t,done:!t.done,status:t.done?"todo":"done"}:t)}));
 
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
@@ -1135,8 +1264,8 @@ const OperationsView = ({ db, setDB }) => {
         <div className="display" style={{ fontSize:18, fontWeight:700 }}>Operations</div>
         <div style={{ display:"flex", gap:8 }}>
           <div style={{ display:"flex", background:"var(--bg-el)", borderRadius:8, padding:3 }}>
-            {["projects","tasks"].map(t=>(
-              <button key={t} onClick={()=>setTab(t)} style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:500, cursor:"pointer", background:tab===t?"#fff":"transparent", color:tab===t?"var(--text)":"var(--text-sec)", boxShadow:tab===t?"var(--shadow)":"none", transition:"all .15s" }}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
+            {["tasks","projects"].map(t=>(
+              <button key={t} onClick={()=>setTab(t)} style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:500, cursor:"pointer", background:tab===t?"#fff":"transparent", color:tab===t?"var(--text)":"var(--text-sec)", boxShadow:tab===t?"var(--shadow)":"none" }}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
             ))}
           </div>
           {tab==="projects"
@@ -1146,14 +1275,88 @@ const OperationsView = ({ db, setDB }) => {
         </div>
       </div>
 
-      {tab==="projects" ? db.projects.map(p=>(
+      {tab==="tasks" && (
+        <>
+          {/* FILTER BAR */}
+          <div className="card" style={{ padding:"10px 14px" }}>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
+              <Filter size={12} color="var(--text-sec)"/>
+              <select className="filter-select" value={fStatus} onChange={e=>setFStatus(e.target.value)}>
+                <option value="open">Open</option><option value="all">All</option>
+                {TASK_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}
+              </select>
+              <select className="filter-select" value={fPriority} onChange={e=>setFPriority(e.target.value)}>
+                <option value="all">Any Priority</option>
+                {["critical","high","medium","low"].map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+              <select className="filter-select" value={fCategory} onChange={e=>setFCategory(e.target.value)}>
+                <option value="all">Any Category</option>
+                {TASK_CATEGORIES.map(c=><option key={c} value={c}>{c.replace(/_/g," ")}</option>)}
+              </select>
+              <select className="filter-select" value={fCompany} onChange={e=>setFCompany(e.target.value)}>
+                <option value="all">Any Company</option>
+                {db.companies.map(c=><option key={c.id} value={String(c.id)}>{c.name}</option>)}
+              </select>
+              <select className="filter-select" value={fPerson} onChange={e=>setFPerson(e.target.value)}>
+                <option value="all">Any Person</option>
+                {db.contacts.map(c=><option key={c.id} value={String(c.id)}>{c.name}</option>)}
+              </select>
+              <select className="filter-select" value={fProject} onChange={e=>setFProject(e.target.value)}>
+                <option value="all">Any Project</option>
+                {db.projects.map(p=><option key={p.id} value={String(p.id)}>{p.name}</option>)}
+              </select>
+            </div>
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <SortAsc size={12} color="var(--text-sec)"/>
+              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Sort:</span>
+              {["due","priority"].map(s=>(<button key={s} className={`filter-chip${sortBy===s?" active":""}`} onClick={()=>setSortBy(s)}>{s}</button>))}
+              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:12 }}>Group:</span>
+              {["none","project","company","person","status"].map(g=>(<button key={g} className={`filter-chip${groupBy===g?" active":""}`} onClick={()=>setGroupBy(g)}>{g}</button>))}
+              <span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>{filteredTasks.length} tasks</span>
+            </div>
+          </div>
+
+          {/* TASK LIST */}
+          {grouped.map((group, gi) => (
+            <div key={gi}>
+              {group.label && <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", padding:"8px 0 4px", borderBottom:"1px solid var(--border)", marginBottom:8 }}>{group.label} ({group.tasks.length})</div>}
+              {group.tasks.map(t => {
+                const contact = db.contacts.find(c=>c.id===t.contactId);
+                const company = db.companies.find(c=>c.id===t.companyId);
+                const project = db.projects.find(p=>p.id===t.projectId);
+                const isOverdue = t.due && t.due < today() && !t.done;
+                return (
+                  <div key={t.id} className="card-el row-hover" style={{ padding:"12px 14px", display:"flex", gap:12, alignItems:"flex-start", opacity:t.done?0.55:1, marginBottom:6, borderLeft:isOverdue?"3px solid var(--red)":t.priority==="critical"?"3px solid var(--red)":undefined }}>
+                    <button onClick={()=>toggleTask(t.id)} style={{ width:18, height:18, borderRadius:4, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", marginTop:2 }}>
+                      {t.done&&<Check size={11} color="#fff"/>}
+                    </button>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:500, textDecoration:t.done?"line-through":"none", color:t.done?"var(--text-sec)":"var(--text)" }}>{t.title}</div>
+                      <div style={{ display:"flex", gap:6, marginTop:4, alignItems:"center", flexWrap:"wrap" }}>
+                        {t.due&&<span className="mono" style={{ fontSize:10, color:isOverdue?"var(--red)":"var(--text-sec)" }}>{isOverdue?"OVERDUE ":""}Due {t.due}</span>}
+                        <Tag label={t.priority}/>
+                        <Tag label={t.category?.replace(/_/g," ")||"task"} color="var(--purple)"/>
+                        {t.status && t.status !== "todo" && t.status !== "done" && <Tag label={t.status.replace(/_/g," ")}/>}
+                        {contact&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>👤 {contact.name}</span>}
+                        {company&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>🏢 {company.name}</span>}
+                        {project&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>📁 {project.name}</span>}
+                        {t.source!=="manual"&&<span className="mono" style={{ fontSize:9, color:"var(--text-dim)", background:"var(--bg-el)", padding:"1px 4px", borderRadius:3 }}>{t.source}</span>}
+                      </div>
+                    </div>
+                    <RowActions onEdit={()=>{setTD({...t,projectId:String(t.projectId||""),contactId:String(t.contactId||""),companyId:String(t.companyId||""),dealId:String(t.dealId||"")});setDrawer({mode:"edit",type:"task"});}} onDelete={()=>setConfirm({id:t.id,label:t.title,type:"task"})}/>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </>
+      )}
+
+      {tab==="projects" && db.projects.map(p=>(
         <div key={p.id} className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}` }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
             <div><div style={{ fontSize:13, fontWeight:600 }}>{p.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client} · Due {p.dueDate}</div></div>
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-              <Tag label={p.priority}/><Tag label={p.status}/>
-              <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress)});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name,type:"project"})}/>
-            </div>
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}><Tag label={p.priority}/><Tag label={p.status}/><RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||"")});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name,type:"project"})}/></div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
             <div style={{ flex:1, height:5, background:"var(--bg-el)", borderRadius:3 }}>
@@ -1163,26 +1366,13 @@ const OperationsView = ({ db, setDB }) => {
           </div>
           {p.notes&&<p style={{ fontSize:12, color:"var(--text-sec)", marginTop:10, lineHeight:1.5 }}>{p.notes}</p>}
         </div>
-      )) : db.tasks.map(t=>(
-        <div key={t.id} className="card-el row-hover" style={{ padding:"12px 14px", display:"flex", gap:12, alignItems:"flex-start", opacity:t.done?0.55:1 }}>
-          <button onClick={()=>toggleTask(t.id)} style={{ width:18, height:18, borderRadius:4, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", marginTop:2 }}>
-            {t.done&&<Check size={11} color="#fff"/>}
-          </button>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:13, fontWeight:500, textDecoration:t.done?"line-through":"none", color:t.done?"var(--text-sec)":"var(--text)" }}>{t.title}</div>
-            <div style={{ display:"flex", gap:8, marginTop:4, alignItems:"center", flexWrap:"wrap" }}>
-              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due}</span>
-              <Tag label={t.priority}/><AgentBadge agent={t.assignedTo}/>
-            </div>
-          </div>
-          <RowActions onEdit={()=>{setTD({...t,projectId:String(t.projectId||"")});setDrawer({mode:"edit",type:"task"});}} onDelete={()=>setConfirm({id:t.id,label:t.title,type:"task"})}/>
-        </div>
       ))}
 
-      {drawer?.type==="project"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Project`} onClose={()=>setDrawer(null)} onSave={()=>saveProject(pd)} saveLabel={drawer.mode==="add"?"Add Project":"Save"}>
+      {drawer?.type==="project"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Project`} onClose={()=>setDrawer(null)} onSave={()=>saveProject(pd)}>
         <Field label="Project Name"><Inp value={pd.name} onChange={v=>setPD(p=>({...p,name:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Client"><Inp value={pd.client} onChange={v=>setPD(p=>({...p,client:v}))}/></Field>
+          <Field label="Company"><Sel value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={[{value:"",label:"— none —"},...db.companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
           <Field label="Status"><Sel value={pd.status} onChange={v=>setPD(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
           <Field label="Priority"><Sel value={pd.priority} onChange={v=>setPD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
           <Field label="Progress (%)"><Inp type="number" value={pd.progress} onChange={v=>setPD(p=>({...p,progress:v}))}/></Field>
@@ -1191,14 +1381,21 @@ const OperationsView = ({ db, setDB }) => {
         <Field label="Notes"><Tex value={pd.notes} onChange={v=>setPD(p=>({...p,notes:v}))}/></Field>
       </Drawer>}
 
-      {drawer?.type==="task"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Task`} onClose={()=>setDrawer(null)} onSave={()=>saveTask(td)} saveLabel={drawer.mode==="add"?"Add Task":"Save"}>
+      {drawer?.type==="task"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Task`} onClose={()=>setDrawer(null)} onSave={()=>saveTask(td)}>
         <Field label="Task Title"><Inp value={td.title} onChange={v=>setTD(p=>({...p,title:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-          <Field label="Project"><Sel value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={[{value:"",label:"— none —"},...db.projects.map(x=>({value:String(x.id),label:x.name}))]}/></Field>
+          <Field label="Status"><Sel value={td.status} onChange={v=>setTD(p=>({...p,status:v}))} options={TASK_STATUSES.map(s=>({value:s,label:s.replace(/_/g," ")}))}/></Field>
           <Field label="Priority"><Sel value={td.priority} onChange={v=>setTD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
+          <Field label="Category"><Sel value={td.category} onChange={v=>setTD(p=>({...p,category:v}))} options={TASK_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
           <Field label="Due Date"><Inp type="date" value={td.due} onChange={v=>setTD(p=>({...p,due:v}))}/></Field>
+          <Field label="Person"><Sel value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={[{value:"",label:"— none —"},...db.contacts.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+          <Field label="Company"><Sel value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={[{value:"",label:"— none —"},...db.companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+          <Field label="Project"><Sel value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={[{value:"",label:"— none —"},...db.projects.map(x=>({value:String(x.id),label:x.name}))]}/></Field>
+          <Field label="Deal"><Sel value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={[{value:"",label:"— none —"},...db.deals.map(x=>({value:String(x.id),label:x.name}))]}/></Field>
           <Field label="Assigned To"><Inp value={td.assignedTo} onChange={v=>setTD(p=>({...p,assignedTo:v}))}/></Field>
+          <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","orchestrator","news_engine","gmail_scan","ai_sweep"]}/></Field>
         </div>
+        <Field label="Notes"><Tex value={td.notes} onChange={v=>setTD(p=>({...p,notes:v}))}/></Field>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>confirm.type==="project"?delProject(confirm.id):delTask(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1206,7 +1403,7 @@ const OperationsView = ({ db, setDB }) => {
 };
 
 /* ────────────────────────────────────────────────────────
-   BILLING — INVOICES
+   BILLING — INVOICES (mostly unchanged)
 ──────────────────────────────────────────────────────── */
 const blankInvoice = () => ({ number:"", client:"", amount:0, status:"draft", issued:"", due:"", notes:"" });
 
@@ -1214,20 +1411,16 @@ const BillingView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankInvoice());
-
   const save = () => {
     const rec = {...d,amount:parseFloat(d.amount)||0};
     if(drawer==="add") setDB(db=>({...db,invoices:[...db.invoices,{...rec,id:nextId(db.invoices)}]}));
     else setDB(db=>({...db,invoices:db.invoices.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
   };
-
   const del = (id) => { setDB(db=>({...db,invoices:db.invoices.filter(x=>x.id!==id)})); setConfirm(null); };
-
   const paid = db.invoices.filter(i=>i.status==="paid").reduce((a,i)=>a+i.amount,0);
   const overdue = db.invoices.filter(i=>i.status==="overdue").reduce((a,i)=>a+i.amount,0);
   const pending = db.invoices.filter(i=>i.status==="pending").reduce((a,i)=>a+i.amount,0);
-
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -1238,32 +1431,25 @@ const BillingView = ({ db, setDB }) => {
         <MetricCard icon={CheckCircle} label="Collected" value={fmt(paid)} color="--green"/>
         <MetricCard icon={Clock} label="Pending" value={fmt(pending)} color="--amber"/>
         <MetricCard icon={AlertCircle} label="Overdue" value={fmt(overdue)} color="--red"/>
-        <MetricCard icon={TrendingUp} label="ARR Run Rate" value="$444K" sub="toward $800K" color="--blue"/>
+        <MetricCard icon={TrendingUp} label="ARR Run Rate" value={fmt(Math.round(paid*12/3))} sub={`toward ${fmt(db.goals[0]?.target_value||800000)}`} color="--blue"/>
       </div>
       {overdue>0&&<div className="card" style={{ padding:16, borderLeft:"3px solid var(--red)" }}>
         <div style={{ display:"flex", gap:7, alignItems:"center", marginBottom:6 }}><AlertCircle size={14} color="var(--red)"/><span style={{ fontSize:12, fontWeight:700, color:"var(--red)" }}>BILLING AGENT ALERT</span></div>
-        <p style={{ fontSize:13, color:"var(--text)", lineHeight:1.5 }}>Rapid Medical: 2 invoices totaling {fmt(overdue)} overdue. Escalation call recommended before 3/20.</p>
+        <p style={{ fontSize:13, lineHeight:1.5 }}>{db.invoices.filter(i=>i.status==="overdue").length} invoices totaling {fmt(overdue)} overdue. Escalation recommended.</p>
       </div>}
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
         {db.invoices.map(inv=>(
           <div key={inv.id} className="card row-hover" style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
             <div style={{ flex:1 }}>
-              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}>
-                <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{inv.number}</span>
-                <span style={{ fontSize:13, fontWeight:600 }}>{inv.client}</span>
-              </div>
+              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}><span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{inv.number}</span><span style={{ fontSize:13, fontWeight:600 }}>{inv.client}</span></div>
               {inv.due&&<div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due: {inv.due}</div>}
-              {inv.notes&&<div style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>{inv.notes}</div>}
             </div>
-            <div style={{ textAlign:"right", flexShrink:0 }}>
-              <div style={{ fontFamily:"var(--font-d)", fontSize:15, fontWeight:700 }}>{fmt(inv.amount)}</div>
-              <Tag label={inv.status}/>
-            </div>
+            <div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontFamily:"var(--font-d)", fontSize:15, fontWeight:700 }}>{fmt(inv.amount)}</div><Tag label={inv.status}/></div>
             <RowActions onEdit={()=>{setD({...inv,amount:String(inv.amount)});setDrawer("edit");}} onDelete={()=>setConfirm({id:inv.id,label:inv.number})}/>
           </div>
         ))}
       </div>
-      {drawer&&<Drawer title={drawer==="add"?"New Invoice":"Edit Invoice"} onClose={()=>setDrawer(null)} onSave={save} saveLabel={drawer==="add"?"Create":"Save"}>
+      {drawer&&<Drawer title={drawer==="add"?"New Invoice":"Edit Invoice"} onClose={()=>setDrawer(null)} onSave={save}>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Invoice #"><Inp value={d.number} onChange={v=>setD(p=>({...p,number:v}))}/></Field>
           <Field label="Client"><Inp value={d.client} onChange={v=>setD(p=>({...p,client:v}))}/></Field>
@@ -1280,119 +1466,187 @@ const BillingView = ({ db, setDB }) => {
 };
 
 /* ────────────────────────────────────────────────────────
-   ORCHESTRATOR
+   ORCHESTRATOR — Daily Priorities + News Engine + AI Sweep
 ──────────────────────────────────────────────────────── */
 const OrchestratorView = ({ db, setDB }) => {
   const [loading, setLoading] = useState(false);
+  const [newsLoading, setNewsLoading] = useState(false);
 
-  // ── All derived live from db on every render ──
-  const openTasks      = db.tasks.filter(t => !t.done);
-  const criticalTasks  = openTasks.filter(t => t.priority === "critical");
-  const highTasks      = openTasks.filter(t => t.priority === "high");
-  const overdueInv     = db.invoices.filter(i => i.status === "overdue");
-  const pendingInv     = db.invoices.filter(i => i.status === "pending");
-  const stalledProj    = db.projects.filter(p => p.status === "stalled");
-  const activeProj     = db.projects.filter(p => p.status === "active");
-  const activeDeals    = db.deals.filter(d => !["won","lost"].includes(d.stage));
-  const atRiskC        = db.contacts.filter(c => c.status === "at-risk");
-  const clients        = db.contacts.filter(c => c.status === "client" || c.status === "existing-customer");
-  const leads          = db.contacts.filter(c => c.status === "lead" || c.status === "prospect");
-  const paidYTD        = db.invoices.filter(i => i.status === "paid").reduce((a,i) => a+i.amount, 0);
-  const overdueAR      = overdueInv.reduce((a,i) => a+i.amount, 0);
-  const weightedPipe   = Math.round(db.deals.reduce((a,d) => a+d.value*(d.probability/100), 0));
-  const totalPipe      = db.deals.reduce((a,d) => a+d.value, 0);
-  const revenueGap     = Math.max(0, 800000 - paidYTD);
-  const pipelineCoverage = totalPipe > 0 ? Math.round((weightedPipe / revenueGap) * 100) : 0;
+  const openTasks = db.tasks.filter(t => !t.done && t.status !== "done" && t.status !== "cancelled");
+  const criticalTasks = openTasks.filter(t => t.priority === "critical");
+  const highTasks = openTasks.filter(t => t.priority === "high");
+  const overdueInv = db.invoices.filter(i => i.status === "overdue");
+  const pendingInv = db.invoices.filter(i => i.status === "pending");
+  const stalledProj = db.projects.filter(p => p.status === "stalled");
+  const activeProj = db.projects.filter(p => p.status === "active");
+  const activeDeals = db.deals.filter(d => !["won","lost"].includes(d.stage));
+  const atRiskC = db.contacts.filter(c => c.status === "at-risk");
+  const clients = db.contacts.filter(c => c.category === "customer" || c.status === "client");
+  const leads = db.contacts.filter(c => c.category === "customer_lead" || c.category === "partner_lead" || c.status === "prospect");
+  const paidYTD = db.invoices.filter(i => i.status === "paid").reduce((a,i) => a+i.amount, 0);
+  const overdueAR = overdueInv.reduce((a,i) => a+i.amount, 0);
+  const weightedPipe = Math.round(db.deals.reduce((a,d) => a+d.value*(d.probability/100), 0));
+  const totalPipe = db.deals.reduce((a,d) => a+d.value, 0);
+  const goal = db.goals.find(g=>g.status==="active") || { target_value:800000 };
+  const revenueGap = Math.max(0, goal.target_value - paidYTD);
+  const pipelineCoverage = revenueGap > 0 ? Math.round((weightedPipe / revenueGap) * 100) : 100;
 
-  // ── Compute live alerts from actual db state ──
+  // Relationship decay detection
+  const decayedContacts = db.contacts.filter(c => c.lastTouch && c.score >= 50 && daysBetween(c.lastTouch, today()) > 14);
+
+  // Engagement recommendations from across platform
+  const engagementRecs = [];
+  db.contacts.filter(c=>c.follow_up).forEach(c => engagementRecs.push({ type:"follow_up", source:"CRM", message:`${c.name}: ${c.follow_up}`, priority:c.priority==="High"?"high":"medium", contactId:c.id }));
+  db.deals.filter(d=>d.notes && d.probability>=50 && !["won","lost"].includes(d.stage)).forEach(d => {
+    const contact = db.contacts.find(c=>c.id===d.contactId);
+    engagementRecs.push({ type:"deal_action", source:"Deals", message:`${d.name} (${d.probability}%): ${d.notes}`, priority:d.probability>=70?"high":"medium", contactId:d.contactId });
+  });
+
+  // Build daily priorities
+  const dailyPriorities = [
+    ...criticalTasks.map(t => ({ icon:"🔴", label:t.title, detail:`Due ${t.due} · Critical`, priority:"critical" })),
+    ...overdueInv.map(i => ({ icon:"💰", label:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE`, detail:`Due ${i.due}`, priority:"critical" })),
+    ...atRiskC.map(c => ({ icon:"⚠️", label:`${c.name} (${c.co}) is at-risk`, detail:`Score: ${c.score}. Last touch: ${c.lastTouch}`, priority:"critical" })),
+    ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high" })),
+    ...decayedContacts.slice(0,3).map(c => ({ icon:"📞", label:`Reconnect: ${c.name} (${c.co})`, detail:`${daysBetween(c.lastTouch, today())} days since last touch. Score: ${c.score}`, priority:"medium" })),
+    ...engagementRecs.slice(0,3).map(r => ({ icon:"💡", label:r.message, detail:`Source: ${r.source}`, priority:r.priority })),
+  ];
+
   const liveAlerts = [
-    ...overdueInv.map(i => ({
-      id:`ov-${i.id}`, agent:"Billing Agent", type:"alert", priority:"critical",
-      message:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE (due ${i.due}). ${i.notes||"Immediate follow-up required."}`,
-    })),
-    ...atRiskC.map(c => ({
-      id:`ar-${c.id}`, agent:"CRM Agent", type:"risk", priority:"critical",
-      message:`${c.name} (${c.co}) is marked at-risk. Score: ${c.score}/100. Last touch: ${c.lastTouch}. Notes: ${c.notes||"No notes."}`,
-    })),
-    ...criticalTasks.map(t => ({
-      id:`ct-${t.id}`, agent:"Ops Agent", type:"task", priority:"critical",
-      message:`CRITICAL: "${t.title}" — due ${t.due}. Assigned: ${t.assignedTo||"unassigned"}.${t.notes?" Guidance: "+t.notes:""}`,
-    })),
-    ...stalledProj.map(p => ({
-      id:`sp-${p.id}`, agent:"Ops Agent", type:"risk", priority:"high",
-      message:`Project stalled: "${p.name}" (${p.client}) — ${p.progress}% complete, due ${p.dueDate}. ${p.notes||""}`,
-    })),
-    ...pendingInv.map(i => ({
-      id:`pi-${i.id}`, agent:"Billing Agent", type:"invoice", priority:"medium",
-      message:`${i.number} — ${i.client} — ${fmt(i.amount)} pending, due ${i.due}.`,
-    })),
-    ...highTasks.map(t => ({
-      id:`ht-${t.id}`, agent:"CRM Agent", type:"task", priority:"high",
-      message:`"${t.title}" — due ${t.due}. Assigned: ${t.assignedTo||"unassigned"}.`,
-    })),
-    ...(activeDeals.filter(d => d.probability >= 60).map(d => ({
-      id:`deal-${d.id}`, agent:"CRM Agent", type:"opportunity", priority:"high",
-      message:`${d.name} — ${fmt(d.value)} at ${d.probability}% probability. Close date: ${d.closeDate}. ${d.notes||""}`,
-    }))),
-    {
-      id:"pipe-summary", agent:"Orchestrator", type:"synthesis", priority:"high",
-      message:`Pipeline: ${fmt(totalPipe)} total, ${fmt(weightedPipe)} weighted. Revenue gap to $800K: ${fmt(revenueGap)}. Pipeline coverage: ${pipelineCoverage}% of gap. ${leads.length} leads, ${clients.length} active clients.`,
-    },
-  ].filter(Boolean);
+    ...overdueInv.map(i => ({ id:`ov-${i.id}`, agent:"Billing Agent", type:"alert", priority:"critical", message:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE (due ${i.due}).` })),
+    ...atRiskC.map(c => ({ id:`ar-${c.id}`, agent:"CRM Agent", type:"risk", priority:"critical", message:`${c.name} (${c.co}) at-risk. Score: ${c.score}/100. Last touch: ${c.lastTouch}.` })),
+    ...criticalTasks.map(t => ({ id:`ct-${t.id}`, agent:"Ops Agent", type:"task", priority:"critical", message:`CRITICAL: "${t.title}" — due ${t.due}.` })),
+    ...stalledProj.map(p => ({ id:`sp-${p.id}`, agent:"Ops Agent", type:"risk", priority:"high", message:`Project stalled: "${p.name}" (${p.client}) — ${p.progress}%.` })),
+    ...decayedContacts.map(c => ({ id:`decay-${c.id}`, agent:"CRM Agent", type:"alert", priority:"medium", message:`Relationship decay: ${c.name} (${c.co}) — ${daysBetween(c.lastTouch, today())} days since last contact.` })),
+    ...activeDeals.filter(d=>d.probability>=60).map(d => ({ id:`deal-${d.id}`, agent:"CRM Agent", type:"opportunity", priority:"high", message:`${d.name} — ${fmt(d.value)} at ${d.probability}%.` })),
+    { id:"pipe-summary", agent:"Orchestrator", type:"synthesis", priority:"high", message:`Pipeline: ${fmt(totalPipe)} total, ${fmt(weightedPipe)} weighted. Gap to ${fmt(goal.target_value)}: ${fmt(revenueGap)}. Coverage: ${pipelineCoverage}%.` },
+  ];
 
   const agents = [
-    { name:"Orchestrator",   color:"var(--purple)", stat:`${criticalTasks.length+stalledProj.length+atRiskC.length} critical`, detail:`${liveAlerts.length} live alerts` },
-    { name:"CRM Agent",      color:"var(--blue)",   stat:`${db.contacts.length} contacts`, detail:`${atRiskC.length} at-risk · ${leads.length} leads` },
-    { name:"Marketing Agent",color:"var(--amber)",  stat:`${db.campaigns.filter(c=>c.status==="active").length} campaigns`, detail:`${db.campaigns.reduce((a,c)=>a+c.leads,0)} leads` },
-    { name:"Ops Agent",      color:"var(--green)",  stat:`${activeProj.length} active`, detail:`${stalledProj.length} stalled · ${openTasks.length} tasks` },
-    { name:"Billing Agent",  color:"var(--red)",    stat:`${fmt(overdueAR)} overdue`, detail:`${overdueInv.length} invoices · ${pendingInv.length} pending` },
+    { name:"Orchestrator", color:"var(--purple)", stat:`${dailyPriorities.length} priorities`, detail:`${liveAlerts.length} alerts` },
+    { name:"CRM Agent", color:"var(--blue)", stat:`${db.contacts.length} contacts`, detail:`${atRiskC.length} at-risk · ${leads.length} leads` },
+    { name:"Marketing Agent", color:"var(--amber)", stat:`${db.campaigns.filter(c=>c.status==="active").length} campaigns`, detail:`${db.campaigns.reduce((a,c)=>a+c.leads,0)} leads` },
+    { name:"Ops Agent", color:"var(--green)", stat:`${activeProj.length} active`, detail:`${stalledProj.length} stalled · ${openTasks.length} tasks` },
+    { name:"Billing Agent", color:"var(--red)", stat:`${fmt(overdueAR)} overdue`, detail:`${overdueInv.length} invoices` },
+    { name:"News Engine", color:"var(--blue)", stat:`${db.companyNews.length} articles`, detail:`${db.companies.length} companies tracked` },
   ];
 
   const sweep = async () => {
     setLoading(true);
     try {
       const snap = {
-        contacts: db.contacts.map(c=>({name:c.name, co:c.co, status:c.status, score:c.score, lastTouch:c.lastTouch, notes:c.notes})),
-        deals: db.deals.map(d=>({name:d.name, value:d.value, stage:d.stage, probability:d.probability, closeDate:d.closeDate, notes:d.notes})),
-        projects: db.projects.map(p=>({name:p.name, client:p.client, status:p.status, progress:p.progress, dueDate:p.dueDate, priority:p.priority})),
-        tasks: openTasks.map(t=>({title:t.title, due:t.due, priority:t.priority, notes:t.notes||""})),
-        invoices: db.invoices.filter(i=>i.status!=="paid").map(i=>({client:i.client, amount:i.amount, status:i.status, due:i.due, number:i.number})),
-        metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, openTasks:openTasks.length, criticalTasks:criticalTasks.length, stalledProjects:stalledProj.length, atRisk:atRiskC.length, leads:leads.length, clients:clients.length },
+        contacts: db.contacts.map(c=>({name:c.name,co:c.co,status:c.status,category:c.category,score:c.score,lastTouch:c.lastTouch,follow_up:c.follow_up})),
+        deals: db.deals.map(d=>({name:d.name,value:d.value,stage:d.stage,probability:d.probability,closeDate:d.closeDate,notes:d.notes})),
+        projects: db.projects.map(p=>({name:p.name,client:p.client,status:p.status,progress:p.progress})),
+        tasks: openTasks.map(t=>({title:t.title,due:t.due,priority:t.priority,category:t.category,contactId:t.contactId})),
+        invoices: db.invoices.filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
+        metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, pipelineCoverage, openTasks:openTasks.length, decayedContacts:decayedContacts.length },
       };
       const msg = await callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant in LA, targeting property management/HOA. Revenue target $800K. Be specific — name names, cite numbers from the actual snapshot. One tight paragraph, max 4 sentences.`,
-        `Live database snapshot — ${new Date().toLocaleDateString()}:\n${JSON.stringify(snap,null,2)}\n\nSurface the single most important thing Mendy needs to act on RIGHT NOW. Reference specific people, deals, or tasks by name. What's at stake and what exactly should he do today?`,
+        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. Be specific — name names, cite numbers. One tight paragraph, max 4 sentences.`,
+        `Live snapshot — ${today()}:\n${JSON.stringify(snap,null,2)}\n\nSurface the single most important thing RIGHT NOW. What's at stake and what exactly should he do today?`,
         500
       );
-      const ts = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-      setDB(d=>({...d, agentLogs:[
-        {id:nextId(d.agentLogs)+1, agent:"Orchestrator", type:"synthesis", message:msg, ts, priority:"high"},
-        ...d.agentLogs,
-      ]}));
+      setDB(d=>({...d, agentLogs:[{id:nextId(d.agentLogs)+1, agent:"Orchestrator", type:"synthesis", message:msg, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:"high"}, ...d.agentLogs]}));
     } catch {
-      const ts = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-      setDB(d=>({...d, agentLogs:[{id:nextId(d.agentLogs), agent:"Orchestrator", type:"error", message:"Sweep failed. Check API connection.", ts, priority:"medium"}, ...d.agentLogs]}));
+      setDB(d=>({...d, agentLogs:[{id:nextId(d.agentLogs), agent:"Orchestrator", type:"error", message:"Sweep failed.", ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:"medium"}, ...d.agentLogs]}));
     }
     setLoading(false);
   };
 
+  const runNewsEngine = async () => {
+    setNewsLoading(true);
+    try {
+      const companiesWithKeywords = db.companies.filter(c => c.name);
+      if (companiesWithKeywords.length === 0) { setNewsLoading(false); return; }
+
+      const companyList = companiesWithKeywords.map(c => `${c.name}${c.news_keywords ? ` (keywords: ${c.news_keywords})` : ""}`).join(", ");
+      const contactContext = db.contacts.filter(c=>c.companyId).map(c => `${c.name} at company ID ${c.companyId}`).join(", ");
+
+      const raw = await callClaude(
+        `You are a News Intelligence Agent. Search for recent news about these companies and return actionable intelligence. Return ONLY a JSON array.`,
+        `Companies to monitor: ${companyList}\n\nContacts: ${contactContext}\n\nFor each company, find 1-2 recent news items (funding, partnerships, leadership changes, product launches, industry trends). Return JSON array: [{"companyName":"","companyId":null,"headline":"","summary":"","relevance_score":1-10,"published_date":"","suggested_action":"","suggested_contact":"","action_priority":"high|medium|low"}]`,
+        2000
+      );
+
+      let newsItems = [];
+      try { const m = raw.match(/\[[\s\S]*\]/); if (m) newsItems = JSON.parse(m[0]); } catch { newsItems = []; }
+
+      if (newsItems.length > 0) {
+        const newNews = [];
+        const newTasks = [];
+        const newLogs = [];
+
+        newsItems.forEach(item => {
+          const company = db.companies.find(c => c.name === item.companyName) || (item.companyId ? db.companies.find(c=>c.id===item.companyId) : null);
+          if (!company) return;
+
+          const newsId = nextId([...db.companyNews, ...newNews]);
+          newNews.push({ id:newsId, companyId:company.id, headline:item.headline||"", source_url:"", summary:item.summary||"", relevance_score:item.relevance_score||5, published_date:item.published_date||today(), action_taken:false, taskId:null, created_at:today() });
+
+          if (item.relevance_score >= 7 && item.suggested_action) {
+            const contact = db.contacts.find(c => c.companyId === company.id || c.co === company.name);
+            const taskId = nextId([...db.tasks, ...newTasks]);
+            newTasks.push({ id:taskId, title:`News: ${item.suggested_action.substring(0,80)}`, projectId:null, contactId:contact?.id||null, companyId:company.id, dealId:null, due:new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:item.action_priority||"medium", assignedTo:"CRM Agent", notes:`News: "${item.headline}"\n${item.summary}\n\nSuggested action: ${item.suggested_action}`, status:"todo", category:"outreach", source:"news_engine", recurrence:"none" });
+          }
+        });
+
+        newLogs.push({ id:nextId(db.agentLogs), agent:"News Engine", type:"insight", message:`Found ${newNews.length} news items across ${[...new Set(newNews.map(n=>n.companyId))].length} companies. Created ${newTasks.length} action tasks.`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:newTasks.length>0?"high":"medium" });
+
+        setDB(d => ({...d,
+          companyNews: [...newNews, ...d.companyNews],
+          tasks: [...d.tasks, ...newTasks],
+          agentLogs: [...newLogs, ...d.agentLogs],
+        }));
+      }
+    } catch(e) {
+      console.error("News engine error:", e);
+      setDB(d=>({...d, agentLogs:[{id:nextId(d.agentLogs), agent:"News Engine", type:"error", message:"News scan failed.", ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:"medium"}, ...d.agentLogs]}));
+    }
+    setNewsLoading(false);
+  };
+
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:20 }}>
-
-      {/* Header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div>
           <div className="display" style={{ fontSize:18, fontWeight:700 }}>Orchestrator</div>
           <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginTop:3 }}>
-            Live · {db.contacts.length} contacts · {activeDeals.length} deals · {openTasks.length} open tasks · updated on every change
+            Live · {db.contacts.length} contacts · {activeDeals.length} deals · {openTasks.length} tasks
           </div>
         </div>
-        <button className="btn btn-blue" onClick={sweep} disabled={loading} style={{ opacity:loading?0.6:1 }}>
-          {loading?<><Loader size={13} className="spin"/>Running AI sweep…</>:<><Zap size={13}/>Run AI Insight Sweep</>}
-        </button>
+        <div style={{ display:"flex", gap:8 }}>
+          <button className="btn btn-ghost" onClick={runNewsEngine} disabled={newsLoading} style={{ fontSize:12, opacity:newsLoading?0.6:1 }}>
+            {newsLoading?<><Loader size={12} className="spin"/>Scanning news…</>:<><Newspaper size={12}/>Scan Company News</>}
+          </button>
+          <button className="btn btn-blue" onClick={sweep} disabled={loading} style={{ opacity:loading?0.6:1 }}>
+            {loading?<><Loader size={13} className="spin"/>Running…</>:<><Zap size={13}/>AI Insight Sweep</>}
+          </button>
+        </div>
       </div>
 
-      {/* Agent stat cards — live computed */}
+      {/* Daily Priorities */}
+      {dailyPriorities.length > 0 && (
+        <div className="card" style={{ padding:18, borderLeft:"4px solid var(--purple)" }}>
+          <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:12 }}>
+            <Sparkles size={14} color="var(--purple)"/>
+            <span style={{ fontFamily:"var(--font-d)", fontSize:14, fontWeight:700, color:"var(--purple)" }}>Daily Priorities</span>
+            <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{dailyPriorities.length} items · auto-generated</span>
+          </div>
+          {dailyPriorities.slice(0,8).map((p,i) => (
+            <div key={i} style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"6px 0", borderBottom:i<dailyPriorities.length-1?"1px solid var(--border)":"none" }}>
+              <span style={{ fontSize:13, flexShrink:0 }}>{p.icon}</span>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:12, fontWeight:500 }}>{p.label}</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{p.detail}</div>
+              </div>
+              <Tag label={p.priority}/>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Agent stat cards */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 }}>
         {agents.map(a=>(
           <div key={a.name} className="card" style={{ padding:14, borderTop:`3px solid ${a.color}` }}>
@@ -1406,15 +1660,15 @@ const OrchestratorView = ({ db, setDB }) => {
         ))}
       </div>
 
-      {/* Live metrics strip */}
+      {/* Metrics strip */}
       <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
         {[
-          { label:"YTD Collected",    val:fmt(paidYTD),         color:"var(--green)" },
-          { label:"Wtd Pipeline",     val:fmt(weightedPipe),    color:"var(--blue)" },
-          { label:"Pipeline Coverage",val:`${pipelineCoverage}%`, color:pipelineCoverage>=80?"var(--green)":pipelineCoverage>=40?"var(--amber)":"var(--red)" },
-          { label:"Overdue A/R",      val:fmt(overdueAR),       color:"var(--red)" },
-          { label:"Revenue Gap",      val:fmt(revenueGap),      color:"var(--amber)" },
-          { label:"Critical Items",   val:criticalTasks.length + atRiskC.length + stalledProj.length, color:"var(--red)" },
+          { label:"YTD Collected", val:fmt(paidYTD), color:"var(--green)" },
+          { label:"Wtd Pipeline", val:fmt(weightedPipe), color:"var(--blue)" },
+          { label:"Pipeline Coverage", val:`${pipelineCoverage}%`, color:pipelineCoverage>=80?"var(--green)":pipelineCoverage>=40?"var(--amber)":"var(--red)" },
+          { label:"Overdue A/R", val:fmt(overdueAR), color:"var(--red)" },
+          { label:"Revenue Gap", val:fmt(revenueGap), color:"var(--amber)" },
+          { label:"Critical Items", val:criticalTasks.length+atRiskC.length+stalledProj.length, color:"var(--red)" },
         ].map(m=>(
           <div key={m.label} className="card-el" style={{ padding:"8px 14px", display:"flex", gap:8, alignItems:"center" }}>
             <span style={{ fontFamily:"var(--font-d)", fontWeight:700, fontSize:15, color:m.color }}>{m.val}</span>
@@ -1423,38 +1677,44 @@ const OrchestratorView = ({ db, setDB }) => {
         ))}
       </div>
 
-      {/* LIVE ALERTS — computed from db, always current */}
+      {/* Live Alerts */}
       <div>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>LIVE STATUS — {liveAlerts.length} alerts from current data</div>
-          <span className="mono" style={{ fontSize:10, color:"var(--green)" }}>● auto-updates on every record change</span>
-        </div>
-        {liveAlerts.length === 0 ? (
-          <div className="card-el" style={{ padding:20, textAlign:"center" }}>
-            <CheckCircle size={22} style={{ color:"var(--green)", margin:"0 auto 8px" }}/>
-            <p style={{ fontSize:13, color:"var(--text-sec)" }}>No critical alerts. All records look healthy.</p>
-          </div>
-        ) : liveAlerts.map(l=>(
+        <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:10 }}>LIVE STATUS — {liveAlerts.length} alerts</div>
+        {liveAlerts.map(l=>(
           <div key={l.id} className="card-el" style={{ padding:"12px 14px", marginBottom:8, borderLeft:`2px solid ${sc(l.priority)}` }}>
-            <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}>
-              <AgentBadge agent={l.agent}/>
-              <Tag label={l.type} color={sc(l.priority)}/>
-              <Tag label={l.priority}/>
-            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}><AgentBadge agent={l.agent}/><Tag label={l.type} color={sc(l.priority)}/><Tag label={l.priority}/></div>
             <p style={{ fontSize:13, lineHeight:1.5 }}>{l.message}</p>
           </div>
         ))}
       </div>
 
-      {/* AI Sweep log — historical, appended by sweep button */}
+      {/* Recent News */}
+      {db.companyNews.length > 0 && (
+        <div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:10 }}><Newspaper size={11}/> RECENT COMPANY NEWS — {db.companyNews.length} articles</div>
+          {db.companyNews.slice(0,6).map(n=>{
+            const company = db.companies.find(c=>c.id===n.companyId);
+            return (
+              <div key={n.id} className="card-el" style={{ padding:"12px 14px", marginBottom:8, borderLeft:"2px solid var(--blue)" }}>
+                <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}>
+                  <span style={{ fontSize:12, fontWeight:600 }}>{n.headline}</span>
+                  {company&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:"auto" }}>{company.name}</span>}
+                </div>
+                <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.5 }}>{n.summary}</p>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:4 }}>Relevance: {n.relevance_score}/10 · {n.published_date}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* AI Sweep log */}
       {db.agentLogs.length > 0 && (
         <div>
           <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:10 }}>AI SWEEP LOG — {db.agentLogs.length} entries</div>
-          {db.agentLogs.map(l=>(
+          {db.agentLogs.slice(0,10).map(l=>(
             <div key={l.id} className="card-el" style={{ padding:"12px 14px", marginBottom:8, borderLeft:`2px solid ${sc(l.priority)}`, opacity:0.85 }}>
-              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}>
-                <AgentBadge agent={l.agent}/><Tag label={l.type} color={sc(l.priority)}/><span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>{l.ts}</span>
-              </div>
+              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}><AgentBadge agent={l.agent}/><Tag label={l.type} color={sc(l.priority)}/><span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>{l.ts}</span></div>
               <p style={{ fontSize:13, lineHeight:1.5 }}>{l.message}</p>
             </div>
           ))}
@@ -1475,7 +1735,7 @@ const VoiceView = ({ db, setDB }) => {
   const recRef = useRef(null);
   const start = () => {
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){setTranscript("Speech recognition unavailable. Paste transcript below.");return;}
+    if(!SR){setTranscript("Speech recognition unavailable.");return;}
     const r=new SR();r.continuous=true;r.interimResults=true;r.lang="en-US";
     r.onresult=e=>{let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;setTranscript(t);};
     r.start();recRef.current=r;setRecording(true);
@@ -1485,7 +1745,7 @@ const VoiceView = ({ db, setDB }) => {
     if(!transcript.trim())return;
     setLoading(true);
     try {
-      const raw = await callClaude("You are Mendy Ezagui's Orchestrator Agent. Extract entities, actions, BD opportunities from voice notes. Respond JSON: {\"summary\":\"\",\"entities\":[],\"actions\":[],\"opportunities\":[],\"module\":\"\"}",`Voice note: "${transcript}"`,600);
+      const raw = await callClaude("You are Mendy's Orchestrator. Extract entities, actions, BD opportunities from voice notes. Return JSON: {\"summary\":\"\",\"entities\":[],\"actions\":[],\"opportunities\":[],\"module\":\"\"}",`Voice note: "${transcript}"`,600);
       try{setAnalysis(JSON.parse(raw));}catch{setAnalysis({summary:raw,entities:[],actions:[],opportunities:[],module:"general"});}
       setDB(d=>({...d,voiceNotes:[{id:nextId(d.voiceNotes||[{id:0}]),transcript,ts:new Date().toLocaleTimeString()},...(d.voiceNotes||[])]}));
     } catch{setAnalysis({summary:"API error.",entities:[],actions:[],opportunities:[]});}
@@ -1498,23 +1758,17 @@ const VoiceView = ({ db, setDB }) => {
         <div onClick={recording?stop:start} style={{ width:72, height:72, borderRadius:"50%", background:recording?"var(--red-dim)":"var(--blue-dim)", border:`2px solid ${recording?"var(--red)":"var(--blue)"}`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px", cursor:"pointer" }}>
           {recording?<MicOff size={26} color="var(--red)"/>:<Mic size={26} color="var(--blue)"/>}
         </div>
-        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{recording?"Recording… tap to stop":"Tap to start recording"}</p>
-        <textarea className="input" placeholder="Or paste transcript here…" value={transcript} onChange={e=>setTranscript(e.target.value)} style={{ marginBottom:12 }}/>
+        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{recording?"Recording… tap to stop":"Tap to record"}</p>
+        <textarea className="input" placeholder="Or paste transcript…" value={transcript} onChange={e=>setTranscript(e.target.value)} style={{ marginBottom:12 }}/>
         <button className="btn btn-blue" onClick={analyze} disabled={!transcript.trim()||loading} style={{ width:"100%", justifyContent:"center", opacity:(!transcript.trim()||loading)?0.5:1 }}>
-          {loading?<><Loader size={13} className="spin"/>Analyzing…</>:<><Brain size={13}/>Analyze with AI</>}
+          {loading?<><Loader size={13} className="spin"/>Analyzing…</>:<><Brain size={13}/>Analyze</>}
         </button>
       </div>
       {analysis&&<div className="card slide-in" style={{ padding:20 }}>
-        <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:12 }}><Brain size={14} color="var(--blue)"/><span style={{ fontSize:13, fontWeight:600, color:"var(--blue)" }}>Orchestrator Analysis</span></div>
+        <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:12 }}><Brain size={14} color="var(--blue)"/><span style={{ fontSize:13, fontWeight:600, color:"var(--blue)" }}>Analysis</span></div>
         <p style={{ fontSize:13, lineHeight:1.6, marginBottom:14 }}>{analysis.summary}</p>
-        {analysis.actions?.length>0&&<div style={{ marginBottom:12 }}>
-          <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:7 }}>ACTIONS</div>
-          {analysis.actions.map((a,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13, display:"flex", gap:7 }}><Zap size={12} color="var(--amber)" style={{flexShrink:0,marginTop:1}}/>{a}</div>)}
-        </div>}
-        {analysis.opportunities?.length>0&&<div>
-          <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:7 }}>BD OPPORTUNITIES</div>
-          {analysis.opportunities.map((o,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13, display:"flex", gap:7, borderLeft:"2px solid var(--green)" }}><Target size={12} color="var(--green)" style={{flexShrink:0,marginTop:1}}/>{o}</div>)}
-        </div>}
+        {analysis.actions?.length>0&&<div style={{ marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:7 }}>ACTIONS</div>{analysis.actions.map((a,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13, display:"flex", gap:7 }}><Zap size={12} color="var(--amber)" style={{flexShrink:0,marginTop:1}}/>{a}</div>)}</div>}
+        {analysis.opportunities?.length>0&&<div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:7 }}>OPPORTUNITIES</div>{analysis.opportunities.map((o,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13, display:"flex", gap:7, borderLeft:"2px solid var(--green)" }}><Target size={12} color="var(--green)" style={{flexShrink:0,marginTop:1}}/>{o}</div>)}</div>}
       </div>}
     </div>
   );
@@ -1532,18 +1786,17 @@ const EmailView = ({ db, setDB }) => {
     setLoading(true);
     try {
       const raw = await callClaude("You are Mendy's CRM Agent. Parse email and return JSON: {\"from\":\"\",\"company\":\"\",\"sentiment\":\"positive|neutral|negative\",\"urgency\":\"high|medium|low\",\"summary\":\"\",\"entities\":{\"people\":[],\"companies\":[],\"amounts\":[],\"dates\":[]},\"actions\":[],\"opportunities\":[],\"module\":\"crm|marketing|operations|billing\",\"suggestedResponse\":\"\"}",`Email:\n${email}`,800);
-      try{setResult(JSON.parse(raw));}catch{setResult({summary:raw,entities:{},actions:[],opportunities:[],sentiment:"neutral",urgency:"medium",module:"general"});}
-    }catch{setResult({summary:"Error. Check connection.",entities:{},actions:[],opportunities:[]});}
+      try{setResult(JSON.parse(raw));}catch{setResult({summary:raw,entities:{},actions:[],opportunities:[]});}
+    }catch{setResult({summary:"Error.",entities:{},actions:[],opportunities:[]});}
     setLoading(false);
   };
   return (
     <div style={{ padding:24, maxWidth:640, display:"flex", flexDirection:"column", gap:20 }}>
       <div className="display" style={{ fontSize:18, fontWeight:700 }}>Email Lab</div>
       <div className="card" style={{ padding:20 }}>
-        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:12 }}>Paste an email — the AI agent extracts entities, routes to the right module, and surfaces BD opportunities.</p>
-        <textarea className="input" placeholder="Paste email content here…" value={email} onChange={e=>setEmail(e.target.value)} style={{ minHeight:160, marginBottom:12 }}/>
+        <textarea className="input" placeholder="Paste email content…" value={email} onChange={e=>setEmail(e.target.value)} style={{ minHeight:160, marginBottom:12 }}/>
         <button className="btn btn-blue" onClick={parse} disabled={!email.trim()||loading} style={{ width:"100%", justifyContent:"center", opacity:(!email.trim()||loading)?0.5:1 }}>
-          {loading?<><Loader size={13} className="spin"/>Parsing…</>:<><Brain size={13}/>Parse & Extract Intelligence</>}
+          {loading?<><Loader size={13} className="spin"/>Parsing…</>:<><Brain size={13}/>Parse & Extract</>}
         </button>
       </div>
       {result&&<div className="card slide-in" style={{ padding:20 }}>
@@ -1559,268 +1812,9 @@ const EmailView = ({ db, setDB }) => {
             <div key={k} className="card-el" style={{ padding:"11px 13px" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>{k.toUpperCase()}</div>{v.map((x,i)=><div key={i} style={{ fontSize:12 }}>· {x}</div>)}</div>
           ))}
         </div>}
-        {result.actions?.length>0&&<div style={{ marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>ACTIONS</div>{result.actions.map((a,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13, display:"flex", gap:7 }}><Zap size={12} color="var(--amber)" style={{flexShrink:0,marginTop:1}}/>{a}</div>)}</div>}
-        {result.opportunities?.length>0&&<div style={{ marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>BD OPPORTUNITIES</div>{result.opportunities.map((o,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13, display:"flex", gap:7, borderLeft:"2px solid var(--green)" }}><Target size={12} color="var(--green)" style={{flexShrink:0,marginTop:1}}/>{o}</div>)}</div>}
+        {result.actions?.length>0&&<div style={{ marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>ACTIONS</div>{result.actions.map((a,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13 }}><Zap size={12} color="var(--amber)"/>{a}</div>)}</div>}
         {result.suggestedResponse&&<div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>SUGGESTED RESPONSE</div><div className="card-el" style={{ padding:13, fontSize:13, lineHeight:1.6, borderLeft:"2px solid var(--blue)" }}>{result.suggestedResponse}</div></div>}
       </div>}
-    </div>
-  );
-};
-
-/* ────────────────────────────────────────────────────────
-   BRAIN DUMP — Universal entry point
-──────────────────────────────────────────────────────── */
-const BrainDumpView = ({ db, setDB }) => {
-  const [text, setText]           = useState("");
-  const [recording, setRecording] = useState(false);
-  const [loading, setLoading]     = useState(false);
-  const [result, setResult]       = useState(null);
-  const [committed, setCommitted] = useState(false);
-  const recRef = useRef(null);
-
-  const startRec = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert("Speech recognition not available. Type below instead."); return; }
-    const r = new SR(); r.continuous = true; r.interimResults = true; r.lang = "en-US";
-    r.onresult = e => { let t=""; for(let i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript; setText(t); };
-    r.start(); recRef.current = r; setRecording(true);
-  };
-  const stopRec = () => { recRef.current?.stop(); setRecording(false); };
-
-  const analyze = async () => {
-    if (!text.trim()) return;
-    setLoading(true); setResult(null); setCommitted(false);
-
-    // Build compact db context so Claude can match to existing records
-    const ctx = {
-      contacts: db.contacts.map(c => ({ id:c.id, name:c.name, co:c.co, email:c.email })),
-      deals:    db.deals.map(d => ({ id:d.id, name:d.name, contactId:d.contactId, stage:d.stage })),
-      projects: db.projects.map(p => ({ id:p.id, name:p.name, client:p.client })),
-    };
-
-    const raw = await callClaude(
-      `You are Mendy Ezagui's Second Brain. He is an independent AI ops/Salesforce consultant in LA. 
-Your job: parse any raw note — spoken or typed — and extract structured records to write into his CRM.
-He may mention contacts, companies, meetings, follow-ups, deals, tasks, projects, invoices, or general notes.
-
-EXISTING RECORDS (match by name/id when possible):
-${JSON.stringify(ctx)}
-
-Respond ONLY with valid JSON in this exact shape (omit any array that is empty):
-{
-  "summary": "1-2 sentence plain-English summary of what you captured",
-  "contacts": [{ "id": null_or_existing_id, "name": "", "co": "", "role": "", "email": "", "phone": "", "status": "prospect|lead|client|at-risk", "notes": "" }],
-  "deals": [{ "id": null_or_existing_id, "name": "", "contactId": null_or_id, "value": 0, "stage": "discovery|proposal|negotiation|at-risk|won|lost", "probability": 50, "closeDate": "", "notes": "" }],
-  "tasks": [{ "title": "", "due": "YYYY-MM-DD or ''", "priority": "critical|high|medium|low", "assignedTo": "Mendy", "notes": "" }],
-  "activities": [{ "contactId": null_or_id, "message": "", "type": "call|email|meeting|note" }],
-  "invoices": [{ "client": "", "amount": 0, "status": "draft|pending|overdue", "due": "", "notes": "" }],
-  "projects": [{ "id": null_or_existing_id, "name": "", "client": "", "status": "active|stalled|completed", "progress": 0, "dueDate": "", "notes": "" }]
-}`,
-      `Raw input from Mendy:\n"${text}"\n\nToday is ${new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}.\nExtract everything actionable. Match to existing records where possible (by name or id). If something is ambiguous, make your best inference and note it in the summary.`,
-      900
-    );
-
-    try {
-      const cleaned = raw.replace(/```json|```/g,"").trim();
-      setResult(JSON.parse(cleaned));
-    } catch {
-      setResult({ summary: "Could not parse — raw output below.", _raw: raw });
-    }
-    setLoading(false);
-  };
-
-  const commit = () => {
-    if (!result) return;
-    setDB(prev => {
-      let d = { ...prev };
-
-      // Contacts — upsert by id or add new
-      (result.contacts || []).forEach(c => {
-        if (c.id && d.contacts.find(x => x.id === c.id)) {
-          d = { ...d, contacts: d.contacts.map(x => x.id===c.id ? { ...x, ...c } : x) };
-        } else {
-          const newC = { ...c, id: nextId(d.contacts), score: c.score||50, tags:[], lastTouch: new Date().toISOString().slice(0,10) };
-          d = { ...d, contacts: [...d.contacts, newC] };
-          // patch contactId for tasks/deals that referenced null
-          result.deals?.forEach(deal => { if (!deal.contactId) deal.contactId = newC.id; });
-          result.activities?.forEach(act => { if (!act.contactId) act.contactId = newC.id; });
-        }
-      });
-
-      // Deals
-      (result.deals || []).forEach(deal => {
-        if (deal.id && d.deals.find(x => x.id === deal.id)) {
-          d = { ...d, deals: d.deals.map(x => x.id===deal.id ? { ...x, ...deal } : x) };
-        } else {
-          d = { ...d, deals: [...d.deals, { ...deal, id: nextId(d.deals) }] };
-        }
-      });
-
-      // Tasks
-      (result.tasks || []).forEach(t => {
-        d = { ...d, tasks: [...d.tasks, { ...t, id: nextId(d.tasks), done: false }] };
-      });
-
-      // Projects
-      (result.projects || []).forEach(p => {
-        if (p.id && d.projects.find(x => x.id === p.id)) {
-          d = { ...d, projects: d.projects.map(x => x.id===p.id ? { ...x, ...p } : x) };
-        } else {
-          d = { ...d, projects: [...d.projects, { ...p, id: nextId(d.projects) }] };
-        }
-      });
-
-      // Invoices
-      (result.invoices || []).forEach(inv => {
-        const num = `INV-${String(nextId(d.invoices)).padStart(3,"0")}`;
-        d = { ...d, invoices: [...d.invoices, { ...inv, id: nextId(d.invoices), number: num, issued: new Date().toISOString().slice(0,10) }] };
-      });
-
-      // Activity logs
-      (result.activities || []).forEach(act => {
-        const ts = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-        d = { ...d, agentLogs: [{ id: nextId(d.agentLogs), agent:"Brain Dump", type:act.type||"note", message:act.message, ts, priority:"medium" }, ...d.agentLogs] };
-      });
-
-      return d;
-    });
-    setCommitted(true);
-  };
-
-  const reset = () => { setText(""); setResult(null); setCommitted(false); };
-
-  const ICONS = { contacts: Users, deals: Target, tasks: CheckCircle, activities: Hash, invoices: DollarSign, projects: Briefcase };
-  const COLORS = { contacts:"var(--blue)", deals:"var(--amber)", tasks:"var(--green)", activities:"var(--purple)", invoices:"var(--red)", projects:"var(--green)" };
-  const resultKeys = result ? ["contacts","deals","tasks","activities","invoices","projects"].filter(k => result[k]?.length > 0) : [];
-
-  return (
-    <div style={{ padding:24, maxWidth:780, margin:"0 auto", display:"flex", flexDirection:"column", gap:22 }}>
-
-      {/* Header */}
-      <div>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-          <div style={{ width:36, height:36, borderRadius:10, background:"var(--purple-dim)", border:"1px solid rgba(124,58,237,0.2)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <Sparkles size={18} color="var(--purple)"/>
-          </div>
-          <div>
-            <div className="display" style={{ fontSize:18, fontWeight:700 }}>Brain Dump</div>
-            <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>Say or type anything — contact, deal, meeting, task, follow-up — Second Brain routes it</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Input area */}
-      <div className="card" style={{ padding:20, display:"flex", flexDirection:"column", gap:14 }}>
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <button
-            className={`btn ${recording ? "btn-danger" : "btn-ghost"}`}
-            onClick={recording ? stopRec : startRec}
-            style={{ flexShrink:0 }}
-          >
-            {recording ? <><MicOff size={13}/>Stop</> : <><Mic size={13}/>Record</>}
-          </button>
-          {recording && <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--red)" }}><div style={{ width:7, height:7, borderRadius:"50%", background:"var(--red)" }} className="blink"/>Listening…</div>}
-          <span style={{ marginLeft:"auto", fontSize:11, color:"var(--text-sec)" }}>or just type below</span>
-        </div>
-
-        <textarea
-          className="input"
-          value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder={`Examples:\n• "Had a call with Michael Torres at Horizon HOA — he wants to move forward. Follow up with SOW by Friday. Deal is now 75%."\n• "Rapid Medical — Rachel still hasn't responded. Mark as at-risk. Task: call Jacob by Tuesday."\n• "New lead: Sarah Chen, VP Ops at Pacific HOA Group, sarah@pacifichoa.com. Met at NAA conf. 6 communities, interested in Salesforce."\n• "Scott Management Phase 2 — move to negotiation, close date end of April, $120K."`}
-          style={{ minHeight:140, fontSize:13, lineHeight:1.6, resize:"vertical" }}
-          onKeyDown={e => { if (e.key==="Enter" && (e.metaKey||e.ctrlKey)) analyze(); }}
-        />
-
-        <div style={{ display:"flex", gap:8 }}>
-          <button
-            className="btn btn-blue"
-            onClick={analyze}
-            disabled={loading || !text.trim()}
-            style={{ flex:1, justifyContent:"center", opacity:(loading||!text.trim())?0.6:1, height:40 }}
-          >
-            {loading
-              ? <><Loader size={13} className="spin"/>Parsing…</>
-              : <><Sparkles size={13}/>Parse &amp; Route  <span className="mono" style={{fontSize:10,opacity:0.7}}>⌘↵</span></>
-            }
-          </button>
-          {(result||text) && <button className="btn btn-ghost" onClick={reset}><X size={13}/>Clear</button>}
-        </div>
-      </div>
-
-      {/* Result */}
-      {result && !result._raw && (
-        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-
-          {/* Summary */}
-          <div className="card" style={{ padding:18, borderLeft:"3px solid var(--purple)" }}>
-            <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
-              <Brain size={15} color="var(--purple)" style={{ flexShrink:0, marginTop:2 }}/>
-              <div>
-                <div className="mono" style={{ fontSize:10, color:"var(--purple)", marginBottom:5 }}>SECOND BRAIN PARSED</div>
-                <p style={{ fontSize:13, lineHeight:1.6 }}>{result.summary}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Extracted records */}
-          {resultKeys.length > 0 && (
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:12 }}>
-              {resultKeys.map(key => {
-                const Icon = ICONS[key] || Hash;
-                const color = COLORS[key] || "var(--text-sec)";
-                return (
-                  <div key={key} className="card" style={{ padding:16, borderTop:`3px solid ${color}` }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:12 }}>
-                      <Icon size={13} color={color}/>
-                      <span className="mono" style={{ fontSize:10, color, fontWeight:600 }}>{key.toUpperCase()} — {result[key].length} record{result[key].length>1?"s":""}</span>
-                      {result[key].some(r=>r.id) && <span className="mono" style={{ fontSize:9, color:"var(--green)", marginLeft:"auto" }}>● MATCH</span>}
-                    </div>
-                    {result[key].map((item, i) => (
-                      <div key={i} className="card-el" style={{ padding:"10px 12px", marginBottom:6, fontSize:12, lineHeight:1.5 }}>
-                        {key==="contacts" && <><strong>{item.name}</strong>{item.co&&` · ${item.co}`}{item.role&&` · ${item.role}`}{item.email&&<div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginTop:2}}>{item.email}</div>}{item.notes&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:3}}>{item.notes}</div>}</>}
-                        {key==="deals" && <><strong>{item.name}</strong> · <span style={{color:"var(--amber)"}}>${Number(item.value||0).toLocaleString()}</span> · {item.stage} · {item.probability}%{item.closeDate&&` · ${item.closeDate}`}{item.notes&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:3}}>{item.notes}</div>}</>}
-                        {key==="tasks" && <><Tag label={item.priority}/> <strong>{item.title}</strong>{item.due&&<span style={{fontSize:11,color:"var(--text-sec)"}}> · due {item.due}</span>}{item.notes&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:3}}>{item.notes}</div>}</>}
-                        {key==="activities" && <><Tag label={item.type||"note"}/> <span style={{marginLeft:4}}>{item.message}</span></>}
-                        {key==="invoices" && <><strong>{item.client}</strong> · <span style={{color:"var(--red)"}}>${Number(item.amount||0).toLocaleString()}</span> · {item.status}{item.due&&` · due ${item.due}`}</>}
-                        {key==="projects" && <><strong>{item.name}</strong>{item.client&&` · ${item.client}`} · {item.status}{item.progress>0&&` · ${item.progress}%`}{item.notes&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:3}}>{item.notes}</div>}</>}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Commit button */}
-          {!committed ? (
-            <button
-              className="btn btn-blue"
-              onClick={commit}
-              style={{ justifyContent:"center", height:44, fontSize:14, width:"100%" }}
-            >
-              <Save size={14}/>Commit to Second Brain — write all records
-            </button>
-          ) : (
-            <div className="card-el" style={{ padding:16, display:"flex", alignItems:"center", gap:10, borderLeft:"3px solid var(--green)" }}>
-              <CheckCircle size={18} color="var(--green)"/>
-              <div>
-                <div style={{ fontWeight:600, fontSize:13 }}>All records written.</div>
-                <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>Synced to Supabase automatically. Check CRM, Deals, Tasks, and Billing.</div>
-              </div>
-              <button className="btn btn-ghost" onClick={reset} style={{ marginLeft:"auto" }}>New dump</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Raw fallback */}
-      {result?._raw && (
-        <div className="card" style={{ padding:16 }}>
-          <div className="mono" style={{ fontSize:10, color:"var(--red)", marginBottom:8 }}>PARSE ERROR — raw output:</div>
-          <pre style={{ fontSize:11, lineHeight:1.5, whiteSpace:"pre-wrap", color:"var(--text-sec)" }}>{result._raw}</pre>
-        </div>
-      )}
     </div>
   );
 };
@@ -1829,16 +1823,15 @@ Respond ONLY with valid JSON in this exact shape (omit any array that is empty):
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const [session,   setSession]   = useState(undefined);
-  const [db,        setDB]        = useState(null);
-  const [view,      setView]      = useState("dump");
+  const [session, setSession] = useState(undefined);
+  const [db, setDB] = useState(null);
+  const [view, setView] = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
-  const [mobile,    setMobile]    = useState(window.innerWidth < 768);
-  const dbRef    = useRef(null);
+  const [mobile, setMobile] = useState(window.innerWidth < 768);
+  const dbRef = useRef(null);
   const syncLock = useRef(false);
   const pendingSync = useRef(false);
 
-  // ── Auth listener ──
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s ?? null));
@@ -1849,13 +1842,11 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Load data when authenticated ──
   useEffect(() => {
     if (!supabase || !session) return;
     loadAllFromDB().then(data => { setDB(data); dbRef.current = data; });
   }, [session?.user?.id]);
 
-  // ── Sync db changes to Supabase ──
   useEffect(() => {
     if (!db || !dbRef.current) return;
     if (syncLock.current) { pendingSync.current = true; return; }
@@ -1881,57 +1872,36 @@ export default function App() {
       });
   }, [db]);
 
-  // ── Resize handler ──
   useEffect(() => {
     const h = () => setMobile(window.innerWidth < 768);
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
   }, []);
 
-  // ── Auth / loading gates (ALL after hooks — React rules of hooks) ──
   if (!ENV_READY) return (
     <>
       <GlobalStyle/>
       <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
         <div className="card" style={{ width:"min(480px,92vw)", padding:36, display:"flex", flexDirection:"column", gap:16 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:44, height:44, borderRadius:12, background:"var(--red-dim)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              <AlertCircle size={22} color="var(--red)"/>
-            </div>
-            <div>
-              <div className="display" style={{ fontSize:16, fontWeight:700 }}>Missing Environment Variables</div>
-              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>App cannot start without Supabase credentials</div>
-            </div>
+            <div style={{ width:44, height:44, borderRadius:12, background:"var(--red-dim)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><AlertCircle size={22} color="var(--red)"/></div>
+            <div><div className="display" style={{ fontSize:16, fontWeight:700 }}>Missing Environment Variables</div></div>
           </div>
-          <div style={{ background:"var(--bg-el)", borderRadius:8, padding:"14px 16px", display:"flex", flexDirection:"column", gap:8 }}>
-            {[
-              { key:"VITE_SUPABASE_URL",      val:SUPA_URL,  ex:"https://xxxx.supabase.co" },
-              { key:"VITE_SUPABASE_ANON_KEY", val:SUPA_KEY,  ex:"eyJ..." },
-            ].map(({ key, val, ex }) => (
-              <div key={key} style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div style={{ width:8, height:8, borderRadius:"50%", background:val ? "var(--green)" : "var(--red)", flexShrink:0 }}/>
-                <span className="mono" style={{ fontSize:11 }}>{key}</span>
-                <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:"auto" }}>{val ? "✓ set" : `missing — e.g. ${ex}`}</span>
-              </div>
-            ))}
-          </div>
-          <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.7 }}>
-            Go to <strong>Vercel → Project → Settings → Environment Variables</strong> and add the missing keys, then redeploy. Get values from <strong>Supabase → Settings → API</strong>.
-          </p>
+          <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.7 }}>Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel → Settings → Environment Variables.</p>
         </div>
       </div>
     </>
   );
   if (session === undefined) return <><GlobalStyle/><LoadingScreen msg="Checking auth…"/></>;
-  if (!session)              return <LoginScreen/>;
-  if (!db)                   return <><GlobalStyle/><LoadingScreen msg="Loading your data…"/></>;
+  if (!session) return <LoginScreen/>;
+  if (!db) return <><GlobalStyle/><LoadingScreen msg="Loading your data…"/></>;
 
   const alerts = (db.agentLogs||[]).filter(l => l.priority === "critical").length;
   const VIEWS = {
-    dump:         <BrainDumpView db={db} setDB={setDB}/>,
-    dashboard:    <Dashboard db={db} setView={setView}/>,
+    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView}/>,
     orchestrator: <OrchestratorView db={db} setDB={setDB}/>,
-    crm:          <CRMView db={db} setDB={setDB}/>,
+    crm:          <CRMView db={db} setDB={setDB} setView={setView}/>,
+    companies:    <CompaniesView db={db} setDB={setDB}/>,
     deals:        <DealsView db={db} setDB={setDB}/>,
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     operations:   <OperationsView db={db} setDB={setDB}/>,
@@ -1944,7 +1914,6 @@ export default function App() {
     <>
       <GlobalStyle/>
       <div style={{ display:"flex", flexDirection:"column", height:"100vh", background:"var(--bg)", overflow:"hidden" }}>
-        {/* TOP BAR */}
         <div style={{ height:46, background:"var(--bg-card)", borderBottom:"1px solid var(--border)", display:"flex", alignItems:"center", padding:"0 16px", gap:10, flexShrink:0, zIndex:10 }}>
           {mobile && <div style={{ width:28, height:28, borderRadius:7, background:"var(--blue-dim)", display:"flex", alignItems:"center", justifyContent:"center" }}><Brain size={14} color="var(--blue)"/></div>}
           <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginLeft:mobile?0:"auto" }}>
@@ -1958,21 +1927,13 @@ export default function App() {
             <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", background:"var(--bg-el)", padding:"4px 10px", borderRadius:6 }}>
               {session.user.email?.split("@")[0]?.toUpperCase() || "ME"}
             </div>
-            <button className="btn btn-ghost" style={{ padding:"4px 10px", fontSize:11 }}
-              onClick={()=>supabase.auth.signOut()}>
-              Sign out
-            </button>
+            <button className="btn btn-ghost" style={{ padding:"4px 10px", fontSize:11 }} onClick={()=>supabase.auth.signOut()}>Sign out</button>
           </div>
         </div>
-
-        {/* BODY */}
         <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
           {!mobile && <Sidebar view={view} setView={setView} collapsed={collapsed} setCollapsed={setCollapsed} alerts={alerts}/>}
-          <main style={{ flex:1, overflowY:"auto" }}>
-            {VIEWS[view] || VIEWS.dashboard}
-          </main>
+          <main style={{ flex:1, overflowY:"auto" }}>{VIEWS[view] || VIEWS.dashboard}</main>
         </div>
-
         {mobile && <BottomNav view={view} setView={setView}/>}
       </div>
     </>
