@@ -1730,45 +1730,183 @@ const OrchestratorView = ({ db, setDB }) => {
 const VoiceView = ({ db, setDB }) => {
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [analysis, setAnalysis] = useState(null);
+  const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState([]);
   const recRef = useRef(null);
   const start = () => {
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){setTranscript("Speech recognition unavailable.");return;}
+    if(!SR){setTranscript("Speech recognition not available in this browser.");return;}
     const r=new SR();r.continuous=true;r.interimResults=true;r.lang="en-US";
     r.onresult=e=>{let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;setTranscript(t);};
     r.start();recRef.current=r;setRecording(true);
   };
   const stop = () => {recRef.current?.stop();setRecording(false);};
-  const analyze = async () => {
+
+  /* Build context string of existing records for the AI */
+  const buildContext = () => {
+    const contacts = (db.contacts||[]).map(c=>`[Contact id:${c.id}] ${c.name} — ${c.co||""} — ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
+    const companies = (db.companies||[]).map(c=>`[Company id:${c.id}] ${c.name} — ${c.industry||""} (status:${c.status||"prospect"})`).join("\n");
+    const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} — $${d.value} — stage:${d.stage} (prob:${d.probability}%)`).join("\n");
+    const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} — status:${p.status} (progress:${p.progress}%)`).join("\n");
+    const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} — due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
+    return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}`;
+  };
+
+  const commit = async () => {
     if(!transcript.trim())return;
-    setLoading(true);
+    setLoading(true);setResult(null);
     try {
-      const raw = await callClaude("You are Mendy's Orchestrator. Extract entities, actions, BD opportunities from voice notes. Return JSON: {\"summary\":\"\",\"entities\":[],\"actions\":[],\"opportunities\":[],\"module\":\"\"}",`Voice note: "${transcript}"`,600);
-      try{setAnalysis(JSON.parse(raw));}catch{setAnalysis({summary:raw,entities:[],actions:[],opportunities:[],module:"general"});}
-      setDB(d=>({...d,voiceNotes:[{id:nextId(d.voiceNotes||[{id:0}]),transcript,ts:new Date().toLocaleTimeString()},...(d.voiceNotes||[])]}));
-    } catch{setAnalysis({summary:"API error.",entities:[],actions:[],opportunities:[]});}
+      const ctx = buildContext();
+      const sysPrompt = `You are Mendy's Life OS Voice Agent. You receive a voice note and the current state of the database. Your job:
+1. Understand what Mendy said
+2. Determine ALL database operations needed (create tasks, update contacts, create deals, update deals, add notes, etc.)
+3. Match mentions to EXISTING records by id when possible
+4. Return ONLY valid JSON (no markdown, no backticks):
+{
+  "summary": "Brief summary of what the note was about",
+  "committed": [
+    {"action":"create_task","data":{"title":"...","due":"YYYY-MM-DD","priority":"high|medium|low","category":"follow_up|outreach|admin|research|meeting_prep|deliverable","contactId":null,"companyId":null,"dealId":null,"projectId":null,"status":"todo"}},
+    {"action":"update_contact","data":{"id":123,"fields":{"notes":"append: ...","score":85,"lastTouch":"YYYY-MM-DD","status":"client","category":"customer"}}},
+    {"action":"create_deal","data":{"name":"...","contactId":null,"companyId":null,"value":0,"stage":"discovery|outreach|proposal|negotiation|won|lost","probability":50,"closeDate":"YYYY-MM-DD","notes":"..."}},
+    {"action":"update_deal","data":{"id":123,"fields":{"stage":"negotiation","probability":70,"notes":"append: ..."}}},
+    {"action":"update_project","data":{"id":123,"fields":{"status":"active","progress":50,"notes":"append: ..."}}},
+    {"action":"create_contact","data":{"name":"...","co":"...","role":"...","email":"","phone":"","status":"prospect","score":50,"category":"customer_lead","notes":"..."}},
+    {"action":"log_event","data":{"entity_type":"contact|deal|project|task","entity_id":null,"event_type":"voice_note","description":"..."}}
+  ]
+}
+Rules:
+- Always set lastTouch to today when a contact is mentioned
+- When appending notes, prefix with date and "Voice note: "
+- Create tasks for any follow-ups, action items, or reminders mentioned
+- Link tasks to the right contact/company/deal/project by id
+- If a new person is mentioned who is NOT in the database, create_contact
+- Be thorough — capture EVERYTHING actionable from the note
+- For dates, today is ${today()}`;
+
+      const raw = await callClaude(sysPrompt, `DATABASE STATE:\n${ctx}\n\nVOICE NOTE:\n"${transcript}"`, 1500);
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch {
+        const m = raw.match(/\{[\s\S]*\}/);
+        try { parsed = JSON.parse(m?.[0]||"{}"); } catch { parsed = {summary:"Could not parse AI response.",committed:[]}; }
+      }
+
+      /* Execute each committed operation */
+      const committed = parsed.committed || [];
+      const logs = [];
+      setDB(prev => {
+        const d = {...prev};
+        for (const op of committed) {
+          try {
+            if (op.action === "create_task" && op.data) {
+              const t = { id: nextId(d.tasks||[]), ...op.data };
+              d.tasks = [...(d.tasks||[]), t];
+              logs.push({icon:"Zap",color:"var(--amber)",text:`Created task: ${t.title}`});
+            } else if (op.action === "update_contact" && op.data?.id) {
+              d.contacts = (d.contacts||[]).map(c => {
+                if (c.id !== op.data.id) return c;
+                const f = {...op.data.fields};
+                if (f.notes?.startsWith("append:")) f.notes = (c.notes||"") + "\n" + f.notes.replace("append:","").trim();
+                return {...c, ...f};
+              });
+              const cName = (d.contacts||[]).find(c=>c.id===op.data.id)?.name||"Contact";
+              logs.push({icon:"Users",color:"var(--blue)",text:`Updated ${cName}: ${Object.keys(op.data.fields||{}).join(", ")}`});
+            } else if (op.action === "create_deal" && op.data) {
+              const deal = { id: nextId(d.deals||[]), ...op.data };
+              d.deals = [...(d.deals||[]), deal];
+              logs.push({icon:"Briefcase",color:"var(--green)",text:`Created deal: ${deal.name}`});
+            } else if (op.action === "update_deal" && op.data?.id) {
+              d.deals = (d.deals||[]).map(dl => {
+                if (dl.id !== op.data.id) return dl;
+                const f = {...op.data.fields};
+                if (f.notes?.startsWith("append:")) f.notes = (dl.notes||"") + "\n" + f.notes.replace("append:","").trim();
+                return {...dl, ...f};
+              });
+              const dName = (d.deals||[]).find(dl=>dl.id===op.data.id)?.name||"Deal";
+              logs.push({icon:"Briefcase",color:"var(--purple)",text:`Updated deal: ${dName}`});
+            } else if (op.action === "update_project" && op.data?.id) {
+              d.projects = (d.projects||[]).map(p => {
+                if (p.id !== op.data.id) return p;
+                const f = {...op.data.fields};
+                if (f.notes?.startsWith("append:")) f.notes = (p.notes||"") + "\n" + f.notes.replace("append:","").trim();
+                return {...p, ...f};
+              });
+              const pName = (d.projects||[]).find(p=>p.id===op.data.id)?.name||"Project";
+              logs.push({icon:"Target",color:"var(--blue)",text:`Updated project: ${pName}`});
+            } else if (op.action === "create_contact" && op.data) {
+              const c = { id: nextId(d.contacts||[]), score:50, tags:[], lastTouch:today(), ...op.data };
+              d.contacts = [...(d.contacts||[]), c];
+              logs.push({icon:"Users",color:"var(--green)",text:`Created contact: ${c.name}`});
+            } else if (op.action === "log_event" && op.data) {
+              const ev = { id: nextId(d.events||[]), ts: new Date().toISOString(), source:"voice_agent", ...op.data };
+              d.events = [...(d.events||[]), ev];
+            }
+          } catch(err) { logs.push({icon:"AlertCircle",color:"var(--red)",text:`Error: ${err.message}`}); }
+        }
+        /* Save voice note */
+        d.voiceNotes = [{id:nextId(d.voiceNotes||[{id:0}]),transcript,ts:new Date().toLocaleTimeString(),summary:parsed.summary},...(d.voiceNotes||[])];
+        return d;
+      });
+
+      setResult({ summary: parsed.summary, logs });
+      setHistory(h => [{ transcript, summary: parsed.summary, count: committed.length, ts: new Date().toLocaleTimeString() }, ...h]);
+      setTranscript("");
+    } catch(err) { setResult({summary:`Error: ${err.message}`,logs:[]}); }
     setLoading(false);
   };
+
   return (
-    <div style={{ padding:24, maxWidth:640, display:"flex", flexDirection:"column", gap:20 }}>
-      <div className="display" style={{ fontSize:18, fontWeight:700 }}>Voice Lab</div>
+    <div style={{ padding:24, maxWidth:680, display:"flex", flexDirection:"column", gap:20 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Voice Agent</div>
+        <div style={{ fontSize:11, color:"var(--text-dim)", fontFamily:"var(--font-m)" }}>Record → AI commits across your database</div>
+      </div>
       <div className="card" style={{ padding:24, textAlign:"center" }}>
-        <div onClick={recording?stop:start} style={{ width:72, height:72, borderRadius:"50%", background:recording?"var(--red-dim)":"var(--blue-dim)", border:`2px solid ${recording?"var(--red)":"var(--blue)"}`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px", cursor:"pointer" }}>
-          {recording?<MicOff size={26} color="var(--red)"/>:<Mic size={26} color="var(--blue)"/>}
+        <div onClick={recording?stop:start} style={{ width:80, height:80, borderRadius:"50%", background:recording?"var(--red-dim)":"var(--blue-dim)", border:`3px solid ${recording?"var(--red)":"var(--blue)"}`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px", cursor:"pointer", transition:"all .2s" }}>
+          {recording?<MicOff size={28} color="var(--red)"/>:<Mic size={28} color="var(--blue)"/>}
         </div>
-        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{recording?"Recording… tap to stop":"Tap to record"}</p>
-        <textarea className="input" placeholder="Or paste transcript…" value={transcript} onChange={e=>setTranscript(e.target.value)} style={{ marginBottom:12 }}/>
-        <button className="btn btn-blue" onClick={analyze} disabled={!transcript.trim()||loading} style={{ width:"100%", justifyContent:"center", opacity:(!transcript.trim()||loading)?0.5:1 }}>
-          {loading?<><Loader size={13} className="spin"/>Analyzing…</>:<><Brain size={13}/>Analyze</>}
+        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{recording?<span className="blink" style={{color:"var(--red)"}}>Recording… tap to stop</span>:"Tap to record a note"}</p>
+        <textarea className="input" placeholder='Example: "Had a great call with Dave Scott. He wants to expand the project to 3 more communities. Set up a follow-up meeting next week. Also need to send the SOW to Michael Torres by Friday."' value={transcript} onChange={e=>setTranscript(e.target.value)} style={{ marginBottom:14, minHeight:100 }}/>
+        <button className="btn btn-blue" onClick={commit} disabled={!transcript.trim()||loading} style={{ width:"100%", justifyContent:"center", padding:"11px 20px", fontSize:14, opacity:(!transcript.trim()||loading)?0.5:1 }}>
+          {loading?<><Loader size={14} className="spin"/>Agent processing…</>:<><Sparkles size={14}/>Analyze & Commit</>}
         </button>
       </div>
-      {analysis&&<div className="card slide-in" style={{ padding:20 }}>
-        <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:12 }}><Brain size={14} color="var(--blue)"/><span style={{ fontSize:13, fontWeight:600, color:"var(--blue)" }}>Analysis</span></div>
-        <p style={{ fontSize:13, lineHeight:1.6, marginBottom:14 }}>{analysis.summary}</p>
-        {analysis.actions?.length>0&&<div style={{ marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:7 }}>ACTIONS</div>{analysis.actions.map((a,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13, display:"flex", gap:7 }}><Zap size={12} color="var(--amber)" style={{flexShrink:0,marginTop:1}}/>{a}</div>)}</div>}
-        {analysis.opportunities?.length>0&&<div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:7 }}>OPPORTUNITIES</div>{analysis.opportunities.map((o,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13, display:"flex", gap:7, borderLeft:"2px solid var(--green)" }}><Target size={12} color="var(--green)" style={{flexShrink:0,marginTop:1}}/>{o}</div>)}</div>}
+
+      {result&&<div className="card slide-in" style={{ padding:20 }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:14 }}>
+          <CheckCircle size={16} color="var(--green)"/>
+          <span style={{ fontSize:14, fontWeight:600 }}>Committed to Database</span>
+          <span className="tag" style={{ background:"var(--green-dim)", color:"var(--green)" }}>{result.logs?.length||0} operations</span>
+        </div>
+        <p style={{ fontSize:13, lineHeight:1.6, marginBottom:16, color:"var(--text-sec)" }}>{result.summary}</p>
+        {result.logs?.length>0&&<div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {result.logs.map((l,i)=>(
+            <div key={i} className="card-el" style={{ padding:"10px 13px", fontSize:13, display:"flex", gap:8, alignItems:"center" }}>
+              {l.icon==="Zap"&&<Zap size={13} color={l.color} style={{flexShrink:0}}/>}
+              {l.icon==="Users"&&<Users size={13} color={l.color} style={{flexShrink:0}}/>}
+              {l.icon==="Briefcase"&&<Briefcase size={13} color={l.color} style={{flexShrink:0}}/>}
+              {l.icon==="Target"&&<Target size={13} color={l.color} style={{flexShrink:0}}/>}
+              {l.icon==="AlertCircle"&&<AlertCircle size={13} color={l.color} style={{flexShrink:0}}/>}
+              {l.text}
+            </div>
+          ))}
+        </div>}
+      </div>}
+
+      {history.length>0&&<div>
+        <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>RECENT VOICE NOTES</div>
+        {history.map((h,i)=>(
+          <div key={i} className="card-el" style={{ padding:"10px 13px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:12, fontWeight:500, marginBottom:2 }}>{h.summary}</div>
+              <div style={{ fontSize:11, color:"var(--text-dim)" }}>{h.transcript.substring(0,80)}{h.transcript.length>80?"…":""}</div>
+            </div>
+            <div style={{ textAlign:"right", flexShrink:0, marginLeft:12 }}>
+              <div className="tag" style={{ background:"var(--blue-dim)", color:"var(--blue)" }}>{h.count} ops</div>
+              <div style={{ fontSize:10, color:"var(--text-dim)", marginTop:3 }}>{h.ts}</div>
+            </div>
+          </div>
+        ))}
       </div>}
     </div>
   );
