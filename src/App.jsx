@@ -5,7 +5,7 @@ import {
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
-  FileText, Trash2, Pencil, X, Save, MoreVertical, Check
+  FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -379,6 +379,7 @@ const LoginScreen = () => {
    SIDEBAR
 ──────────────────────────────────────────────────────── */
 const NAV = [
+  {id:"dump",icon:Sparkles,label:"Brain Dump"},
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
   {id:"orchestrator",icon:Brain,label:"Orchestrator"},
   {divider:true},
@@ -420,10 +421,10 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
 
 const BottomNav = ({ view, setView }) => (
   <div style={{ display:"flex", background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"6px 0 10px" }}>
-    {[{id:"dashboard",icon:BarChart2},{id:"crm",icon:Users},{id:"deals",icon:Target},{id:"operations",icon:Briefcase},{id:"billing",icon:DollarSign},{id:"voice",icon:Mic},{id:"email",icon:Mail}].map(n=>(
+    {[{id:"dump",icon:Sparkles},{id:"dashboard",icon:BarChart2},{id:"crm",icon:Users},{id:"deals",icon:Target},{id:"operations",icon:Briefcase},{id:"billing",icon:DollarSign},{id:"voice",icon:Mic}].map(n=>(
       <button key={n.id} onClick={()=>setView(n.id)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4, background:"transparent", border:"none", cursor:"pointer", padding:"4px 0" }}>
-        <n.icon size={17} color={view===n.id?"var(--blue)":"var(--text-sec)"}/>
-        <div style={{ width:4, height:4, borderRadius:"50%", background:view===n.id?"var(--blue)":"transparent" }}/>
+        <n.icon size={17} color={view===n.id?"var(--purple)":"var(--text-sec)"}/>
+        <div style={{ width:4, height:4, borderRadius:"50%", background:view===n.id?"var(--purple)":"transparent" }}/>
       </button>
     ))}
   </div>
@@ -1542,12 +1543,270 @@ const EmailView = ({ db, setDB }) => {
 };
 
 /* ────────────────────────────────────────────────────────
+   BRAIN DUMP — Universal entry point
+──────────────────────────────────────────────────────── */
+const BrainDumpView = ({ db, setDB }) => {
+  const [text, setText]           = useState("");
+  const [recording, setRecording] = useState(false);
+  const [loading, setLoading]     = useState(false);
+  const [result, setResult]       = useState(null);
+  const [committed, setCommitted] = useState(false);
+  const recRef = useRef(null);
+
+  const startRec = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("Speech recognition not available. Type below instead."); return; }
+    const r = new SR(); r.continuous = true; r.interimResults = true; r.lang = "en-US";
+    r.onresult = e => { let t=""; for(let i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript; setText(t); };
+    r.start(); recRef.current = r; setRecording(true);
+  };
+  const stopRec = () => { recRef.current?.stop(); setRecording(false); };
+
+  const analyze = async () => {
+    if (!text.trim()) return;
+    setLoading(true); setResult(null); setCommitted(false);
+
+    // Build compact db context so Claude can match to existing records
+    const ctx = {
+      contacts: db.contacts.map(c => ({ id:c.id, name:c.name, co:c.co, email:c.email })),
+      deals:    db.deals.map(d => ({ id:d.id, name:d.name, contactId:d.contactId, stage:d.stage })),
+      projects: db.projects.map(p => ({ id:p.id, name:p.name, client:p.client })),
+    };
+
+    const raw = await callClaude(
+      `You are Mendy Ezagui's Second Brain. He is an independent AI ops/Salesforce consultant in LA. 
+Your job: parse any raw note — spoken or typed — and extract structured records to write into his CRM.
+He may mention contacts, companies, meetings, follow-ups, deals, tasks, projects, invoices, or general notes.
+
+EXISTING RECORDS (match by name/id when possible):
+${JSON.stringify(ctx)}
+
+Respond ONLY with valid JSON in this exact shape (omit any array that is empty):
+{
+  "summary": "1-2 sentence plain-English summary of what you captured",
+  "contacts": [{ "id": null_or_existing_id, "name": "", "co": "", "role": "", "email": "", "phone": "", "status": "prospect|lead|client|at-risk", "notes": "" }],
+  "deals": [{ "id": null_or_existing_id, "name": "", "contactId": null_or_id, "value": 0, "stage": "discovery|proposal|negotiation|at-risk|won|lost", "probability": 50, "closeDate": "", "notes": "" }],
+  "tasks": [{ "title": "", "due": "YYYY-MM-DD or ''", "priority": "critical|high|medium|low", "assignedTo": "Mendy", "notes": "" }],
+  "activities": [{ "contactId": null_or_id, "message": "", "type": "call|email|meeting|note" }],
+  "invoices": [{ "client": "", "amount": 0, "status": "draft|pending|overdue", "due": "", "notes": "" }],
+  "projects": [{ "id": null_or_existing_id, "name": "", "client": "", "status": "active|stalled|completed", "progress": 0, "dueDate": "", "notes": "" }]
+}`,
+      `Raw input from Mendy:\n"${text}"\n\nToday is ${new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}.\nExtract everything actionable. Match to existing records where possible (by name or id). If something is ambiguous, make your best inference and note it in the summary.`,
+      900
+    );
+
+    try {
+      const cleaned = raw.replace(/```json|```/g,"").trim();
+      setResult(JSON.parse(cleaned));
+    } catch {
+      setResult({ summary: "Could not parse — raw output below.", _raw: raw });
+    }
+    setLoading(false);
+  };
+
+  const commit = () => {
+    if (!result) return;
+    setDB(prev => {
+      let d = { ...prev };
+
+      // Contacts — upsert by id or add new
+      (result.contacts || []).forEach(c => {
+        if (c.id && d.contacts.find(x => x.id === c.id)) {
+          d = { ...d, contacts: d.contacts.map(x => x.id===c.id ? { ...x, ...c } : x) };
+        } else {
+          const newC = { ...c, id: nextId(d.contacts), score: c.score||50, tags:[], lastTouch: new Date().toISOString().slice(0,10) };
+          d = { ...d, contacts: [...d.contacts, newC] };
+          // patch contactId for tasks/deals that referenced null
+          result.deals?.forEach(deal => { if (!deal.contactId) deal.contactId = newC.id; });
+          result.activities?.forEach(act => { if (!act.contactId) act.contactId = newC.id; });
+        }
+      });
+
+      // Deals
+      (result.deals || []).forEach(deal => {
+        if (deal.id && d.deals.find(x => x.id === deal.id)) {
+          d = { ...d, deals: d.deals.map(x => x.id===deal.id ? { ...x, ...deal } : x) };
+        } else {
+          d = { ...d, deals: [...d.deals, { ...deal, id: nextId(d.deals) }] };
+        }
+      });
+
+      // Tasks
+      (result.tasks || []).forEach(t => {
+        d = { ...d, tasks: [...d.tasks, { ...t, id: nextId(d.tasks), done: false }] };
+      });
+
+      // Projects
+      (result.projects || []).forEach(p => {
+        if (p.id && d.projects.find(x => x.id === p.id)) {
+          d = { ...d, projects: d.projects.map(x => x.id===p.id ? { ...x, ...p } : x) };
+        } else {
+          d = { ...d, projects: [...d.projects, { ...p, id: nextId(d.projects) }] };
+        }
+      });
+
+      // Invoices
+      (result.invoices || []).forEach(inv => {
+        const num = `INV-${String(nextId(d.invoices)).padStart(3,"0")}`;
+        d = { ...d, invoices: [...d.invoices, { ...inv, id: nextId(d.invoices), number: num, issued: new Date().toISOString().slice(0,10) }] };
+      });
+
+      // Activity logs
+      (result.activities || []).forEach(act => {
+        const ts = new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+        d = { ...d, agentLogs: [{ id: nextId(d.agentLogs), agent:"Brain Dump", type:act.type||"note", message:act.message, ts, priority:"medium" }, ...d.agentLogs] };
+      });
+
+      return d;
+    });
+    setCommitted(true);
+  };
+
+  const reset = () => { setText(""); setResult(null); setCommitted(false); };
+
+  const ICONS = { contacts: Users, deals: Target, tasks: CheckCircle, activities: Hash, invoices: DollarSign, projects: Briefcase };
+  const COLORS = { contacts:"var(--blue)", deals:"var(--amber)", tasks:"var(--green)", activities:"var(--purple)", invoices:"var(--red)", projects:"var(--green)" };
+  const resultKeys = result ? ["contacts","deals","tasks","activities","invoices","projects"].filter(k => result[k]?.length > 0) : [];
+
+  return (
+    <div style={{ padding:24, maxWidth:780, margin:"0 auto", display:"flex", flexDirection:"column", gap:22 }}>
+
+      {/* Header */}
+      <div>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:"var(--purple-dim)", border:"1px solid rgba(124,58,237,0.2)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <Sparkles size={18} color="var(--purple)"/>
+          </div>
+          <div>
+            <div className="display" style={{ fontSize:18, fontWeight:700 }}>Brain Dump</div>
+            <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>Say or type anything — contact, deal, meeting, task, follow-up — Second Brain routes it</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Input area */}
+      <div className="card" style={{ padding:20, display:"flex", flexDirection:"column", gap:14 }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <button
+            className={`btn ${recording ? "btn-danger" : "btn-ghost"}`}
+            onClick={recording ? stopRec : startRec}
+            style={{ flexShrink:0 }}
+          >
+            {recording ? <><MicOff size={13}/>Stop</> : <><Mic size={13}/>Record</>}
+          </button>
+          {recording && <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--red)" }}><div style={{ width:7, height:7, borderRadius:"50%", background:"var(--red)" }} className="blink"/>Listening…</div>}
+          <span style={{ marginLeft:"auto", fontSize:11, color:"var(--text-sec)" }}>or just type below</span>
+        </div>
+
+        <textarea
+          className="input"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder={`Examples:\n• "Had a call with Michael Torres at Horizon HOA — he wants to move forward. Follow up with SOW by Friday. Deal is now 75%."\n• "Rapid Medical — Rachel still hasn't responded. Mark as at-risk. Task: call Jacob by Tuesday."\n• "New lead: Sarah Chen, VP Ops at Pacific HOA Group, sarah@pacifichoa.com. Met at NAA conf. 6 communities, interested in Salesforce."\n• "Scott Management Phase 2 — move to negotiation, close date end of April, $120K."`}
+          style={{ minHeight:140, fontSize:13, lineHeight:1.6, resize:"vertical" }}
+          onKeyDown={e => { if (e.key==="Enter" && (e.metaKey||e.ctrlKey)) analyze(); }}
+        />
+
+        <div style={{ display:"flex", gap:8 }}>
+          <button
+            className="btn btn-blue"
+            onClick={analyze}
+            disabled={loading || !text.trim()}
+            style={{ flex:1, justifyContent:"center", opacity:(loading||!text.trim())?0.6:1, height:40 }}
+          >
+            {loading
+              ? <><Loader size={13} className="spin"/>Parsing…</>
+              : <><Sparkles size={13}/>Parse &amp; Route  <span className="mono" style={{fontSize:10,opacity:0.7}}>⌘↵</span></>
+            }
+          </button>
+          {(result||text) && <button className="btn btn-ghost" onClick={reset}><X size={13}/>Clear</button>}
+        </div>
+      </div>
+
+      {/* Result */}
+      {result && !result._raw && (
+        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+
+          {/* Summary */}
+          <div className="card" style={{ padding:18, borderLeft:"3px solid var(--purple)" }}>
+            <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+              <Brain size={15} color="var(--purple)" style={{ flexShrink:0, marginTop:2 }}/>
+              <div>
+                <div className="mono" style={{ fontSize:10, color:"var(--purple)", marginBottom:5 }}>SECOND BRAIN PARSED</div>
+                <p style={{ fontSize:13, lineHeight:1.6 }}>{result.summary}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Extracted records */}
+          {resultKeys.length > 0 && (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:12 }}>
+              {resultKeys.map(key => {
+                const Icon = ICONS[key] || Hash;
+                const color = COLORS[key] || "var(--text-sec)";
+                return (
+                  <div key={key} className="card" style={{ padding:16, borderTop:`3px solid ${color}` }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:12 }}>
+                      <Icon size={13} color={color}/>
+                      <span className="mono" style={{ fontSize:10, color, fontWeight:600 }}>{key.toUpperCase()} — {result[key].length} record{result[key].length>1?"s":""}</span>
+                      {result[key].some(r=>r.id) && <span className="mono" style={{ fontSize:9, color:"var(--green)", marginLeft:"auto" }}>● MATCH</span>}
+                    </div>
+                    {result[key].map((item, i) => (
+                      <div key={i} className="card-el" style={{ padding:"10px 12px", marginBottom:6, fontSize:12, lineHeight:1.5 }}>
+                        {key==="contacts" && <><strong>{item.name}</strong>{item.co&&` · ${item.co}`}{item.role&&` · ${item.role}`}{item.email&&<div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginTop:2}}>{item.email}</div>}{item.notes&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:3}}>{item.notes}</div>}</>}
+                        {key==="deals" && <><strong>{item.name}</strong> · <span style={{color:"var(--amber)"}}>${Number(item.value||0).toLocaleString()}</span> · {item.stage} · {item.probability}%{item.closeDate&&` · ${item.closeDate}`}{item.notes&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:3}}>{item.notes}</div>}</>}
+                        {key==="tasks" && <><Tag label={item.priority}/> <strong>{item.title}</strong>{item.due&&<span style={{fontSize:11,color:"var(--text-sec)"}}> · due {item.due}</span>}{item.notes&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:3}}>{item.notes}</div>}</>}
+                        {key==="activities" && <><Tag label={item.type||"note"}/> <span style={{marginLeft:4}}>{item.message}</span></>}
+                        {key==="invoices" && <><strong>{item.client}</strong> · <span style={{color:"var(--red)"}}>${Number(item.amount||0).toLocaleString()}</span> · {item.status}{item.due&&` · due ${item.due}`}</>}
+                        {key==="projects" && <><strong>{item.name}</strong>{item.client&&` · ${item.client}`} · {item.status}{item.progress>0&&` · ${item.progress}%`}{item.notes&&<div style={{fontSize:11,color:"var(--text-sec)",marginTop:3}}>{item.notes}</div>}</>}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Commit button */}
+          {!committed ? (
+            <button
+              className="btn btn-blue"
+              onClick={commit}
+              style={{ justifyContent:"center", height:44, fontSize:14, width:"100%" }}
+            >
+              <Save size={14}/>Commit to Second Brain — write all records
+            </button>
+          ) : (
+            <div className="card-el" style={{ padding:16, display:"flex", alignItems:"center", gap:10, borderLeft:"3px solid var(--green)" }}>
+              <CheckCircle size={18} color="var(--green)"/>
+              <div>
+                <div style={{ fontWeight:600, fontSize:13 }}>All records written.</div>
+                <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>Synced to Supabase automatically. Check CRM, Deals, Tasks, and Billing.</div>
+              </div>
+              <button className="btn btn-ghost" onClick={reset} style={{ marginLeft:"auto" }}>New dump</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Raw fallback */}
+      {result?._raw && (
+        <div className="card" style={{ padding:16 }}>
+          <div className="mono" style={{ fontSize:10, color:"var(--red)", marginBottom:8 }}>PARSE ERROR — raw output:</div>
+          <pre style={{ fontSize:11, lineHeight:1.5, whiteSpace:"pre-wrap", color:"var(--text-sec)" }}>{result._raw}</pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
   const [session,   setSession]   = useState(undefined);
   const [db,        setDB]        = useState(null);
-  const [view,      setView]      = useState("dashboard");
+  const [view,      setView]      = useState("dump");
   const [collapsed, setCollapsed] = useState(false);
   const [mobile,    setMobile]    = useState(window.innerWidth < 768);
   const dbRef    = useRef(null);
@@ -1630,6 +1889,7 @@ export default function App() {
 
   const alerts = (db.agentLogs||[]).filter(l => l.priority === "critical").length;
   const VIEWS = {
+    dump:         <BrainDumpView db={db} setDB={setDB}/>,
     dashboard:    <Dashboard db={db} setView={setView}/>,
     orchestrator: <OrchestratorView db={db} setDB={setDB}/>,
     crm:          <CRMView db={db} setDB={setDB}/>,
