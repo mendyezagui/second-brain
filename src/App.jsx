@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
 import {
   Brain, Users, Megaphone, Briefcase, DollarSign, Mic, Mail,
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
@@ -117,6 +118,76 @@ const initDB = () => ({
   voiceNotes: [],
 });
 
+/* ── SUPABASE CLIENT ── */
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
+const DB_TABLES = [
+  ["contacts",   "contacts"],
+  ["deals",      "deals"],
+  ["tasks",      "tasks"],
+  ["projects",   "projects"],
+  ["campaigns",  "campaigns"],
+  ["invoices",   "invoices"],
+  ["agentLogs",  "agentlogs"],
+  ["voiceNotes", "voicenotes"],
+];
+
+const loadAllFromDB = async () => {
+  const seed = initDB();
+  const result = {};
+  const fetches = await Promise.all(DB_TABLES.map(([, tbl]) => supabase.from(tbl).select("*").order("id")));
+
+  const toSeed = []; // tables that need seeding
+
+  DB_TABLES.forEach(([key], i) => {
+    const { data, error } = fetches[i];
+    if (!error && data && data.length > 0) {
+      result[key] = data;
+    } else {
+      result[key] = seed[key];
+      toSeed.push({ key, i });
+    }
+  });
+
+  // Write seed data to any empty tables so deletes/edits persist
+  if (toSeed.length > 0) {
+    await Promise.all(
+      toSeed.map(({ key, i }) => {
+        const [, tbl] = DB_TABLES[i];
+        return seed[key].length > 0
+          ? supabase.from(tbl).upsert(seed[key])
+          : Promise.resolve();
+      })
+    );
+  }
+
+  return result;
+};
+
+const syncToDB = async (prev, next) => {
+  for (const [key, tbl] of DB_TABLES) {
+    const prevRows = prev[key] || [];
+    const nextRows = next[key] || [];
+    if (JSON.stringify(prevRows) === JSON.stringify(nextRows)) continue;
+
+    const prevIds = new Set(prevRows.map(r => r.id));
+    const nextIds = new Set(nextRows.map(r => r.id));
+
+    const toUpsert = nextRows.filter(r => {
+      if (!prevIds.has(r.id)) return true;
+      const old = prevRows.find(p => p.id === r.id);
+      return JSON.stringify(r) !== JSON.stringify(old);
+    });
+    if (toUpsert.length > 0) await supabase.from(tbl).upsert(toUpsert);
+
+    const deleted = [...prevIds].filter(id => !nextIds.has(id));
+    if (deleted.length > 0) await supabase.from(tbl).delete().in("id", deleted);
+  }
+};
+
 /* ── HELPERS ── */
 const nextId = (arr) => arr.length ? Math.max(...arr.map(r => r.id)) + 1 : 1;
 const fmt = (n) => n >= 1000 ? `$${(n/1000).toFixed(0)}K` : `$${n}`;
@@ -228,6 +299,78 @@ const RowActions = ({ onEdit, onDelete }) => (
     <button className="btn-icon delete" title="Delete" onClick={e=>{e.stopPropagation();onDelete();}}><Trash2 size={13} color="var(--text-sec)"/></button>
   </div>
 );
+
+/* ────────────────────────────────────────────────────────
+   AUTH — LOGIN + LOADING SCREENS
+──────────────────────────────────────────────────────── */
+const LoadingScreen = ({ msg="Loading…" }) => (
+  <div style={{ height:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"var(--bg)", gap:14 }}>
+    <div style={{ width:44, height:44, borderRadius:12, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <Brain size={22} color="var(--blue)"/>
+    </div>
+    <div style={{ display:"flex", alignItems:"center", gap:8, color:"var(--text-sec)", fontSize:13 }}>
+      <Loader size={14} className="spin" color="var(--blue)"/>
+      <span className="mono">{msg}</span>
+    </div>
+  </div>
+);
+
+const LoginScreen = () => {
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+
+  const signIn = async () => {
+    if (!email || !password) { setError("Email and password required."); return; }
+    setLoading(true); setError("");
+    const { error: e } = await supabase.auth.signInWithPassword({ email, password });
+    if (e) setError(e.message);
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
+      <GlobalStyle/>
+      <div className="card" style={{ width:"min(400px,92vw)", padding:36, display:"flex", flexDirection:"column", gap:20 }}>
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, marginBottom:4 }}>
+          <div style={{ width:52, height:52, borderRadius:14, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <Brain size={26} color="var(--blue)"/>
+          </div>
+          <div className="display" style={{ fontSize:20, fontWeight:800 }}>Second Brain</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>AI Ops Console · Private Access</div>
+        </div>
+
+        {error && (
+          <div style={{ background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.25)", borderRadius:8, padding:"10px 14px", fontSize:12, color:"var(--red)", display:"flex", gap:7 }}>
+            <AlertCircle size={14} style={{ flexShrink:0, marginTop:1 }}/>{error}
+          </div>
+        )}
+
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          <Field label="Email">
+            <input className="input" type="email" value={email} placeholder="you@example.com"
+              onChange={e=>setEmail(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&signIn()}/>
+          </Field>
+          <Field label="Password">
+            <input className="input" type="password" value={password} placeholder="••••••••"
+              onChange={e=>setPassword(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&signIn()}/>
+          </Field>
+        </div>
+
+        <button className="btn btn-blue" onClick={signIn} disabled={loading} style={{ justifyContent:"center", opacity:loading?0.6:1, height:42, fontSize:14 }}>
+          {loading ? <><Loader size={14} className="spin"/>Signing in…</> : <><Shield size={14}/>Sign In</>}
+        </button>
+
+        <p style={{ fontSize:11, color:"var(--text-dim)", textAlign:"center", lineHeight:1.6 }}>
+          Private access. Create your account once in<br/>Supabase Auth → Users → Add User.
+        </p>
+      </div>
+    </div>
+  );
+};
 
 /* ────────────────────────────────────────────────────────
    SIDEBAR
@@ -1398,63 +1541,57 @@ const EmailView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    APP ROOT
 ──────────────────────────────────────────────────────── */
-const PASS = import.meta.env.VITE_APP_PASSWORD || "secondbrain";
-
-const LoginScreen = () => {
-  const [input, setInput] = useState("");
-  const [err, setErr]     = useState(false);
-  const check = () => {
-    if (input === PASS) {
-      sessionStorage.setItem("sb_auth", "1");
-      window.location.reload();
-    } else {
-      setErr(true);
-      setTimeout(() => setErr(false), 1800);
-    }
-  };
-  return (
-    <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
-      <GlobalStyle/>
-      <div className="card" style={{ width:"min(380px,92vw)", padding:36, display:"flex", flexDirection:"column", gap:20 }}>
-        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, marginBottom:4 }}>
-          <div style={{ width:52, height:52, borderRadius:14, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <Brain size={26} color="var(--blue)"/>
-          </div>
-          <div className="display" style={{ fontSize:20, fontWeight:800 }}>Second Brain</div>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>AI Ops Console · Private Access</div>
-        </div>
-        <Field label="Password">
-          <input className="input" type="password" value={input} placeholder="Enter password"
-            onChange={e=>{setInput(e.target.value);setErr(false);}}
-            onKeyDown={e=>e.key==="Enter"&&check()}
-            style={{ borderColor: err ? "var(--red)" : undefined }}
-          />
-        </Field>
-        {err && <div style={{ fontSize:12, color:"var(--red)", textAlign:"center", marginTop:-10 }}>Incorrect password</div>}
-        <button className="btn btn-blue" onClick={check} style={{ justifyContent:"center", height:42, fontSize:14 }}>
-          <Shield size={14}/>Sign In
-        </button>
-      </div>
-    </div>
-  );
-};
-
 export default function App() {
-  const [auth, setAuth]       = useState(!!sessionStorage.getItem("sb_auth"));
-  const [db, setDB]           = useState(initDB);
-  const [view, setView]       = useState("dashboard");
+  const [session,   setSession]   = useState(undefined); // undefined = checking
+  const [db,        setDB]        = useState(null);       // null = not yet loaded
+  const [view,      setView]      = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
-  const [mobile, setMobile]   = useState(window.innerWidth < 768);
+  const [mobile,    setMobile]    = useState(window.innerWidth < 768);
+  const dbRef    = useRef(null);
+  const syncLock = useRef(false);
 
+  // ── Auth listener ──
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s ?? null));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s ?? null);
+      if (!s) setDB(null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Load data when authenticated ──
+  useEffect(() => {
+    if (!session) return;
+    loadAllFromDB().then(data => { setDB(data); dbRef.current = data; });
+  }, [session?.user?.id]);
+
+  // ── Sync db changes to Supabase ──
+  useEffect(() => {
+    if (!db || !dbRef.current || syncLock.current) return;
+    const prev = dbRef.current;
+    if (prev === db) return;
+    // Capture prev BEFORE updating ref, so concurrent renders don't clobber it
+    dbRef.current = db;
+    syncLock.current = true;
+    syncToDB(prev, db)
+      .catch(err => console.error("Supabase sync error:", err))
+      .finally(() => { syncLock.current = false; });
+  }, [db]);
+
+  // ── Resize handler ──
   useEffect(() => {
     const h = () => setMobile(window.innerWidth < 768);
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
   }, []);
 
-  if (!auth) return <LoginScreen/>;
+  // ── Auth / loading gates ──
+  if (session === undefined) return <><GlobalStyle/><LoadingScreen msg="Checking auth…"/></>;
+  if (!session)              return <LoginScreen/>;
+  if (!db)                   return <><GlobalStyle/><LoadingScreen msg="Loading your data…"/></>;
 
-  const alerts = (db.agentLogs || []).filter(l => l.priority === "critical").length;
+  const alerts = (db.agentLogs||[]).filter(l => l.priority === "critical").length;
   const VIEWS = {
     dashboard:    <Dashboard db={db} setView={setView}/>,
     orchestrator: <OrchestratorView db={db} setDB={setDB}/>,
@@ -1471,6 +1608,7 @@ export default function App() {
     <>
       <GlobalStyle/>
       <div style={{ display:"flex", flexDirection:"column", height:"100vh", background:"var(--bg)", overflow:"hidden" }}>
+        {/* TOP BAR */}
         <div style={{ height:46, background:"var(--bg-card)", borderBottom:"1px solid var(--border)", display:"flex", alignItems:"center", padding:"0 16px", gap:10, flexShrink:0, zIndex:10 }}>
           {mobile && <div style={{ width:28, height:28, borderRadius:7, background:"var(--blue-dim)", display:"flex", alignItems:"center", justifyContent:"center" }}><Brain size={14} color="var(--blue)"/></div>}
           <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginLeft:mobile?0:"auto" }}>
@@ -1481,19 +1619,24 @@ export default function App() {
               <div style={{ background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.25)", borderRadius:6, padding:"3px 8px", fontSize:11, color:"var(--red)", fontFamily:"var(--font-m)", cursor:"pointer" }}
                 onClick={()=>setView("orchestrator")}>{alerts} CRITICAL</div>
             )}
-            <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", background:"var(--bg-el)", padding:"4px 10px", borderRadius:6 }}>MENDY</div>
+            <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", background:"var(--bg-el)", padding:"4px 10px", borderRadius:6 }}>
+              {session.user.email?.split("@")[0]?.toUpperCase() || "ME"}
+            </div>
             <button className="btn btn-ghost" style={{ padding:"4px 10px", fontSize:11 }}
-              onClick={()=>{sessionStorage.removeItem("sb_auth");window.location.reload();}}>
+              onClick={()=>supabase.auth.signOut()}>
               Sign out
             </button>
           </div>
         </div>
+
+        {/* BODY */}
         <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
           {!mobile && <Sidebar view={view} setView={setView} collapsed={collapsed} setCollapsed={setCollapsed} alerts={alerts}/>}
           <main style={{ flex:1, overflowY:"auto" }}>
             {VIEWS[view] || VIEWS.dashboard}
           </main>
         </div>
+
         {mobile && <BottomNav view={view} setView={setView}/>}
       </div>
     </>
