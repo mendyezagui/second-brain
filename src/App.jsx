@@ -1553,41 +1553,6 @@ export default function App() {
   const dbRef    = useRef(null);
   const syncLock = useRef(false);
 
-  // ── Env guard — show helpful screen if vars missing ──
-  if (!ENV_READY) return (
-    <>
-      <GlobalStyle/>
-      <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
-        <div className="card" style={{ width:"min(480px,92vw)", padding:36, display:"flex", flexDirection:"column", gap:16 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:44, height:44, borderRadius:12, background:"var(--red-dim)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              <AlertCircle size={22} color="var(--red)"/>
-            </div>
-            <div>
-              <div className="display" style={{ fontSize:16, fontWeight:700 }}>Missing Environment Variables</div>
-              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>App cannot start without Supabase credentials</div>
-            </div>
-          </div>
-          <div style={{ background:"var(--bg-el)", borderRadius:8, padding:"14px 16px", display:"flex", flexDirection:"column", gap:8 }}>
-            {[
-              { key:"VITE_SUPABASE_URL",      val:SUPA_URL,  ex:"https://xxxx.supabase.co" },
-              { key:"VITE_SUPABASE_ANON_KEY", val:SUPA_KEY,  ex:"eyJ..." },
-            ].map(({ key, val, ex }) => (
-              <div key={key} style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div style={{ width:8, height:8, borderRadius:"50%", background:val ? "var(--green)" : "var(--red)", flexShrink:0 }}/>
-                <span className="mono" style={{ fontSize:11 }}>{key}</span>
-                <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:"auto" }}>{val ? "✓ set" : `missing — e.g. ${ex}`}</span>
-              </div>
-            ))}
-          </div>
-          <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.7 }}>
-            Go to <strong>Vercel → Project → Settings → Environment Variables</strong> and add the missing keys, then redeploy. Get the values from <strong>Supabase → Settings → API</strong>.
-          </p>
-        </div>
-      </div>
-    </>
-  );
-
   // ── Auth listener ──
   useEffect(() => {
     if (!supabase) return;
@@ -1625,7 +1590,40 @@ export default function App() {
     return () => window.removeEventListener("resize", h);
   }, []);
 
-  // ── Auth / loading gates ──
+  // ── Auth / loading gates (ALL after hooks — React rules of hooks) ──
+  if (!ENV_READY) return (
+    <>
+      <GlobalStyle/>
+      <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
+        <div className="card" style={{ width:"min(480px,92vw)", padding:36, display:"flex", flexDirection:"column", gap:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:44, height:44, borderRadius:12, background:"var(--red-dim)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <AlertCircle size={22} color="var(--red)"/>
+            </div>
+            <div>
+              <div className="display" style={{ fontSize:16, fontWeight:700 }}>Missing Environment Variables</div>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>App cannot start without Supabase credentials</div>
+            </div>
+          </div>
+          <div style={{ background:"var(--bg-el)", borderRadius:8, padding:"14px 16px", display:"flex", flexDirection:"column", gap:8 }}>
+            {[
+              { key:"VITE_SUPABASE_URL",      val:SUPA_URL,  ex:"https://xxxx.supabase.co" },
+              { key:"VITE_SUPABASE_ANON_KEY", val:SUPA_KEY,  ex:"eyJ..." },
+            ].map(({ key, val, ex }) => (
+              <div key={key} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <div style={{ width:8, height:8, borderRadius:"50%", background:val ? "var(--green)" : "var(--red)", flexShrink:0 }}/>
+                <span className="mono" style={{ fontSize:11 }}>{key}</span>
+                <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:"auto" }}>{val ? "✓ set" : `missing — e.g. ${ex}`}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.7 }}>
+            Go to <strong>Vercel → Project → Settings → Environment Variables</strong> and add the missing keys, then redeploy. Get values from <strong>Supabase → Settings → API</strong>.
+          </p>
+        </div>
+      </div>
+    </>
+  );
   if (session === undefined) return <><GlobalStyle/><LoadingScreen msg="Checking auth…"/></>;
   if (!session)              return <LoginScreen/>;
   if (!db)                   return <><GlobalStyle/><LoadingScreen msg="Loading your data…"/></>;
