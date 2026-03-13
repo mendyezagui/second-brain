@@ -5,7 +5,7 @@ import {
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
-  FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash
+  FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Linkedin, ExternalLink
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -187,7 +187,10 @@ const syncToDB = async (prev, next) => {
     if (toUpsert.length > 0) await supabase.from(tbl).upsert(toUpsert);
 
     const deleted = [...prevIds].filter(id => !nextIds.has(id));
-    if (deleted.length > 0) await supabase.from(tbl).delete().in("id", deleted);
+    if (deleted.length > 0) {
+        const { error } = await supabase.from(tbl).delete().in("id", deleted);
+        if (error) console.error(`Delete failed for ${tbl}:`, error);
+      }
   }
 };
 
@@ -487,23 +490,29 @@ const Dashboard = ({ db, setView }) => {
 /* ────────────────────────────────────────────────────────
    CRM — CONTACTS
 ──────────────────────────────────────────────────────── */
-const blankContact = () => ({ name:"", co:"", role:"", email:"", phone:"", status:"prospect", score:50, notes:"", lastTouch:new Date().toISOString().split("T")[0], tags:[] });
+const blankContact = () => ({ name:"", co:"", role:"", email:"", phone:"", status:"prospect", score:50, notes:"", lastTouch:new Date().toISOString().split("T")[0], tags:[], linkedin_url:"", headline:"", connected_date:"", messaging_activity:"", priority:"Medium", follow_up:"" });
 
 const ContactForm = ({ data, onChange }) => (
-  <>
-    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-      <Field label="Name"><Inp value={data.name} onChange={v=>onChange({...data,name:v})} placeholder="Full name"/></Field>
-      <Field label="Company"><Inp value={data.co} onChange={v=>onChange({...data,co:v})} placeholder="Company"/></Field>
-      <Field label="Role"><Inp value={data.role} onChange={v=>onChange({...data,role:v})} placeholder="Title"/></Field>
-      <Field label="Status"><Sel value={data.status} onChange={v=>onChange({...data,status:v})} options={["prospect","client","at-risk","inactive"]}/></Field>
-      <Field label="Email"><Inp value={data.email} onChange={v=>onChange({...data,email:v})} placeholder="email@co.com"/></Field>
-      <Field label="Phone"><Inp value={data.phone} onChange={v=>onChange({...data,phone:v})} placeholder="(xxx) xxx-xxxx"/></Field>
-      <Field label="Score (0-100)"><Inp type="number" value={data.score} onChange={v=>onChange({...data,score:parseInt(v)||50})}/></Field>
-      <Field label="Last Touch"><Inp type="date" value={data.lastTouch} onChange={v=>onChange({...data,lastTouch:v})}/></Field>
-    </div>
-    <Field label="Notes"><Tex value={data.notes} onChange={v=>onChange({...data,notes:v})} placeholder="Context, next steps…"/></Field>
-  </>
-);
+    <>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+        <Field label="Name"><Inp value={data.name} onChange={v=>onChange({...data,name:v})} placeholder="Full name"/></Field>
+        <Field label="Company"><Inp value={data.co} onChange={v=>onChange({...data,co:v})} placeholder="Company"/></Field>
+        <Field label="Role"><Inp value={data.role} onChange={v=>onChange({...data,role:v})} placeholder="Title"/></Field>
+        <Field label="Status"><Sel value={data.status} onChange={v=>onChange({...data,status:v})} options={["prospect","active","outreach","client","at-risk","inactive"]}/></Field>
+        <Field label="Email"><Inp value={data.email} onChange={v=>onChange({...data,email:v})} placeholder="email@co.com"/></Field>
+        <Field label="Phone"><Inp value={data.phone} onChange={v=>onChange({...data,phone:v})} placeholder="(xxx) xxx-xxxx"/></Field>
+        <Field label="Score (0-100)"><Inp type="number" value={data.score} onChange={v=>onChange({...data,score:parseInt(v)||50})}/></Field>
+        <Field label="Last Touch"><Inp type="date" value={data.lastTouch} onChange={v=>onChange({...data,lastTouch:v})}/></Field>
+        <Field label="LinkedIn URL"><Inp value={data.linkedin_url||""} onChange={v=>onChange({...data,linkedin_url:v})} placeholder="https://linkedin.com/in/..."/></Field>
+        <Field label="Headline"><Inp value={data.headline||""} onChange={v=>onChange({...data,headline:v})} placeholder="LinkedIn headline"/></Field>
+        <Field label="Connected Date"><Inp value={data.connected_date||""} onChange={v=>onChange({...data,connected_date:v})} placeholder="e.g. Mar 12"/></Field>
+        <Field label="Priority"><Sel value={data.priority||"Medium"} onChange={v=>onChange({...data,priority:v})} options={["High","Medium","Low"]}/></Field>
+      </div>
+      <Field label="Messaging Activity"><Tex value={data.messaging_activity||""} onChange={v=>onChange({...data,messaging_activity:v})} placeholder="Messaging history summary…"/></Field>
+      <Field label="Follow-Up Recommendation"><Tex value={data.follow_up||""} onChange={v=>onChange({...data,follow_up:v})} placeholder="Recommended next action…"/></Field>
+      <Field label="Notes"><Tex value={data.notes} onChange={v=>onChange({...data,notes:v})} placeholder="Context, next steps…"/></Field>
+    </>
+  );
 
 const CRMView = ({ db, setDB }) => {
   const [sel, setSel] = useState(null);
@@ -705,7 +714,7 @@ Return ONLY a valid JSON array (no markdown, no preamble):
               style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id&&!showGmail?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center", transition:"background .1s" }}>
               <div style={{ minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:600, color:"var(--text)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.name}</div>
-                <div style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>{c.co}</div>
+                <div style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>{c.co||c.headline||""}</div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
                 <ScoreBadge score={c.score}/>
@@ -880,11 +889,27 @@ Return ONLY a valid JSON array (no markdown, no preamble):
               </div>
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:18 }}>
-              {[{icon:Mail,val:contact.email},{icon:Phone,val:contact.phone},{icon:Calendar,val:`Last touch: ${contact.lastTouch}`},{icon:Building,val:contact.co}].map(({icon:I,val},i)=>(
-                <div key={i} className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><I size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>{val}</span></div>
-              ))}
-            </div>
-            {contact.notes&&<div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.notes}</p></div>}
+                {[{icon:Mail,val:contact.email},{icon:Phone,val:contact.phone},{icon:Calendar,val:`Last touch: ${contact.lastTouch}`},{icon:Building,val:contact.co}].map(({icon:I,val},i)=>(
+                  <div key={i} className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><I size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>{val}</span></div>
+                ))}
+                {contact.linkedin_url&&(
+                  <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9, textDecoration:"none", color:"var(--text)", cursor:"pointer" }}>
+                    <Linkedin size={13} color="#0A66C2"/><span style={{ fontSize:13, color:"#0A66C2" }}>LinkedIn Profile</span><ExternalLink size={10} color="var(--text-sec)" style={{marginLeft:"auto"}}/>
+                  </a>
+                )}
+                {contact.connected_date&&(
+                  <div className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><Calendar size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>Connected: {contact.connected_date}</span></div>
+                )}
+              </div>
+              {contact.headline&&<div className="card-el" style={{ padding:14, marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>HEADLINE</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.headline}</p></div>}
+              {contact.priority&&<div style={{ marginBottom:12 }}><span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:8 }}>PRIORITY</span><Tag label={contact.priority}/></div>}
+              {contact.messaging_activity&&contact.messaging_activity!=="No messaging activity."&&(
+                <div className="card-el" style={{ padding:14, marginBottom:12, borderLeft:"3px solid var(--blue)" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>MESSAGING ACTIVITY</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.messaging_activity}</p></div>
+              )}
+              {contact.follow_up&&(
+                <div className="card-el" style={{ padding:14, marginBottom:12, borderLeft:"3px solid var(--green)" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>FOLLOW-UP RECOMMENDATION</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.follow_up}</p></div>
+              )}
+              {contact.notes&&<div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.notes}</p></div>}
             {contactDeals.length>0&&<div>
               <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>DEALS</div>
               {contactDeals.map(d=>(
@@ -1811,6 +1836,7 @@ export default function App() {
   const [mobile,    setMobile]    = useState(window.innerWidth < 768);
   const dbRef    = useRef(null);
   const syncLock = useRef(false);
+  const pendingSync = useRef(false);
 
   // ── Auth listener ──
   useEffect(() => {
@@ -1831,15 +1857,28 @@ export default function App() {
 
   // ── Sync db changes to Supabase ──
   useEffect(() => {
-    if (!db || !dbRef.current || syncLock.current) return;
+    if (!db || !dbRef.current) return;
+    if (syncLock.current) { pendingSync.current = true; return; }
     const prev = dbRef.current;
     if (prev === db) return;
-    // Capture prev BEFORE updating ref, so concurrent renders don't clobber it
     dbRef.current = db;
     syncLock.current = true;
     syncToDB(prev, db)
       .catch(err => console.error("Supabase sync error:", err))
-      .finally(() => { syncLock.current = false; });
+      .finally(() => {
+        syncLock.current = false;
+        if (pendingSync.current) {
+          pendingSync.current = false;
+          const latestPrev = dbRef.current;
+          if (latestPrev !== db) {
+            dbRef.current = db;
+            syncLock.current = true;
+            syncToDB(latestPrev, db)
+              .catch(err => console.error("Supabase sync error:", err))
+              .finally(() => { syncLock.current = false; });
+          }
+        }
+      });
   }, [db]);
 
   // ── Resize handler ──
