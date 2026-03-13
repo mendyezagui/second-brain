@@ -5,7 +5,7 @@ import {
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
-  FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Linkedin, ExternalLink
+  FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash, Linkedin, ExternalLink
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
