@@ -170,6 +170,9 @@ const loadAllFromDB = async () => {
 };
 
 const syncToDB = async (prev, next) => {
+  const currentUser = (await supabase.auth.getSession())?.data?.session?.user;
+  const modifiedBy = currentUser?.user_metadata?.full_name || currentUser?.email || "unknown";
+  const modifiedAt = new Date().toISOString();
   for (const [key, tbl] of DB_TABLES) {
     const prevRows = prev[key] || [];
     const nextRows = next[key] || [];
@@ -180,7 +183,7 @@ const syncToDB = async (prev, next) => {
       if (!prevIds.has(r.id)) return true;
       const old = prevRows.find(p => p.id === r.id);
       return JSON.stringify(r) !== JSON.stringify(old);
-    });
+    }).map(r => ({ ...r, modified_by: modifiedBy, modified_at: modifiedAt }));
     if (toUpsert.length > 0) await supabase.from(tbl).upsert(toUpsert);
     const deleted = [...prevIds].filter(id => !nextIds.has(id));
     if (deleted.length > 0) {
@@ -432,7 +435,10 @@ const BottomNav = ({ view, setView }) => (
 /* ────────────────────────────────────────────────────────
    DASHBOARD — Morning Brief + Goal Tracking
 ──────────────────────────────────────────────────────── */
-const Dashboard = ({ db, setDB, setView, navigate }) => {
+const Dashboard = ({ db, setDB, setView, navigate, session }) => {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const userName = session?.user?.user_metadata?.full_name?.split(" ")[0] || session?.user?.email?.split("@")[0] || "there";
   const paid = db.invoices.filter(i=>i.status==="paid").reduce((a,i)=>a+i.amount,0);
   const pipeline = db.deals.reduce((a,d)=>a+d.value*d.probability/100,0);
   const overdue = db.invoices.filter(i=>i.status==="overdue").reduce((a,i)=>a+i.amount,0);
@@ -449,7 +455,7 @@ const Dashboard = ({ db, setDB, setView, navigate }) => {
       <div className="card" style={{ padding:20, borderLeft:"4px solid var(--purple)", background:"linear-gradient(135deg, rgba(124,58,237,0.03), transparent)" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
           <div>
-            <div className="display" style={{ fontSize:22, fontWeight:800, marginBottom:4 }}>Good morning, Mendy.</div>
+            <div className="display" style={{ fontSize:22, fontWeight:800, marginBottom:4 }}>{greeting}, {userName}.</div>
             <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>
               {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} · 6 agents running
             </div>
@@ -2422,9 +2428,15 @@ export default function App() {
   if (!session) return <LoginScreen/>;
   if (!db) return <><GlobalStyle/><LoadingScreen msg="Loading your data…"/></>;
 
-  const alerts = (db.agentLogs||[]).filter(l => l.priority === "critical").length;
+  const alerts = (() => {
+    const openTasks = db.tasks.filter(t=>!t.done && t.status!=="done" && t.status!=="cancelled");
+    const critTasks = openTasks.filter(t=>t.priority==="critical" || (t.due && t.due < today()));
+    const overdueInv = db.invoices.filter(i=>i.status==="overdue");
+    const atRisk = db.contacts.filter(c=>c.score && c.score < 40 && c.category && c.category.includes("customer"));
+    return critTasks.length + overdueInv.length + atRisk.length;
+  })();
   const VIEWS = {
-    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate}/>,
+    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session}/>,
     orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
     crm:          <CRMView db={db} setDB={setDB} setView={setView} focus={focus} setFocus={setFocus}/>,
     companies:    <CompaniesView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
@@ -2452,7 +2464,7 @@ export default function App() {
                 onClick={()=>setView("orchestrator")}>{alerts} CRITICAL</div>
             )}
             <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", background:"var(--bg-el)", padding:"4px 10px", borderRadius:6 }}>
-              {session.user.email?.split("@")[0]?.toUpperCase() || "ME"}
+              {(session.user.user_metadata?.full_name || session.user.email?.split("@")[0])?.toUpperCase() || "ME"}
             </div>
             <button className="btn btn-ghost" style={{ padding:"4px 10px", fontSize:11 }} onClick={()=>supabase.auth.signOut()}>Sign out</button>
           </div>
