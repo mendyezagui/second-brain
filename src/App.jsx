@@ -430,7 +430,7 @@ const BottomNav = ({ view, setView }) => (
 /* ────────────────────────────────────────────────────────
    DASHBOARD — Morning Brief + Goal Tracking
 ──────────────────────────────────────────────────────── */
-const Dashboard = ({ db, setDB, setView }) => {
+const Dashboard = ({ db, setDB, setView, navigate }) => {
   const paid = db.invoices.filter(i=>i.status==="paid").reduce((a,i)=>a+i.amount,0);
   const pipeline = db.deals.reduce((a,d)=>a+d.value*d.probability/100,0);
   const overdue = db.invoices.filter(i=>i.status==="overdue").reduce((a,i)=>a+i.amount,0);
@@ -460,25 +460,28 @@ const Dashboard = ({ db, setDB, setView }) => {
           <div style={{ marginTop:14, display:"flex", flexDirection:"column", gap:6 }}>
             <div className="mono" style={{ fontSize:10, color:"var(--purple)" }}>TODAY'S PRIORITIES</div>
             {criticalItems.slice(0,3).map(t => (
-              <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--red-dim)", borderRadius:6 }}>
+              <div key={t.id} onClick={()=>navigate("operations",{type:"task",id:t.id})} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--red-dim)", borderRadius:6, cursor:"pointer", transition:"filter .15s" }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.95)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
                 <AlertCircle size={12} color="var(--red)"/>
                 <span style={{ fontWeight:600, color:"var(--red)" }}>CRITICAL:</span>
                 <span>{t.title}</span>
                 {t.due && <span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>Due {t.due}</span>}
+                <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0}}/>
               </div>
             ))}
             {dueTodayOrOverdue.filter(t=>t.priority!=="critical").slice(0,4).map(t => (
-              <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--amber-dim)", borderRadius:6 }}>
+              <div key={t.id} onClick={()=>navigate("operations",{type:"task",id:t.id})} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--amber-dim)", borderRadius:6, cursor:"pointer", transition:"filter .15s" }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.95)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
                 <Clock size={12} color="var(--amber)"/>
                 <span>{t.title}</span>
                 <Tag label={t.priority}/>
                 {t.due && <span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>{t.due}</span>}
+                <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0}}/>
               </div>
             ))}
             {decayedContacts.slice(0,2).map(c => (
-              <div key={c.id} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--blue-dim)", borderRadius:6 }}>
+              <div key={c.id} onClick={()=>navigate("crm",{type:"contact",id:c.id})} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--blue-dim)", borderRadius:6, cursor:"pointer", transition:"filter .15s" }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.95)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
                 <Users size={12} color="var(--blue)"/>
                 <span>Reconnect with <strong>{c.name}</strong> ({c.co}) — {daysBetween(c.lastTouch, today())} days since last touch</span>
+                <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0}}/>
               </div>
             ))}
           </div>
@@ -576,7 +579,7 @@ const ContactForm = ({ data, onChange, companies }) => (
   </>
 );
 
-const CRMView = ({ db, setDB, setView }) => {
+const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -586,6 +589,10 @@ const CRMView = ({ db, setDB, setView }) => {
   const [showGmail, setShowGmail] = useState(false);
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
+
+  useEffect(() => {
+    if(focus?.type==="contact" && focus.id) { setCatFilter("all"); setSel(focus.id); setFocus(null); }
+  }, [focus]);
 
   const filtered = db.contacts.filter(c => {
     if (query && !c.name.toLowerCase().includes(query.toLowerCase()) && !(c.co||"").toLowerCase().includes(query.toLowerCase())) return false;
@@ -880,12 +887,16 @@ const CRMView = ({ db, setDB, setView }) => {
 ──────────────────────────────────────────────────────── */
 const blankCompany = () => ({ name:"", industry:"", website:"", linkedin_url:"", news_keywords:"", status:"prospect", notes:"", created_at:today() });
 
-const CompaniesView = ({ db, setDB }) => {
+const CompaniesView = ({ db, setDB, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  useEffect(() => {
+    if(focus?.type==="company" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+  }, [focus]);
 
   const filtered = db.companies.filter(c => {
     if (query && !c.name.toLowerCase().includes(query.toLowerCase())) return false;
@@ -1013,10 +1024,14 @@ const CompaniesView = ({ db, setDB }) => {
 ──────────────────────────────────────────────────────── */
 const blankDeal = () => ({ name:"", contactId:"", companyId:"", value:0, stage:"discovery", probability:50, closeDate:"", notes:"" });
 
-const DealsView = ({ db, setDB }) => {
+const DealsView = ({ db, setDB, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankDeal());
+
+  useEffect(() => {
+    if(focus?.type==="deal" && focus.id) { const dl=db.deals.find(x=>x.id===focus.id); if(dl) { setD({...dl}); setDrawer("edit"); } setFocus(null); }
+  }, [focus]);
   const STAGES = ["outreach","discovery","proposal","negotiation","at-risk","won","lost"];
   const stageColor = { outreach:"var(--text-sec)", discovery:"var(--purple)", proposal:"var(--blue)", negotiation:"var(--amber)", "at-risk":"var(--red)", won:"var(--green)", lost:"var(--text-sec)" };
 
@@ -1192,7 +1207,7 @@ const MarketingView = ({ db, setDB }) => {
 const blankProject = () => ({ name:"", client:"", companyId:"", status:"active", progress:0, dueDate:"", priority:"medium", notes:"" });
 const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" });
 
-const OperationsView = ({ db, setDB }) => {
+const OperationsView = ({ db, setDB, focus, setFocus }) => {
   const [tab, setTab] = useState("tasks");
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -1208,6 +1223,11 @@ const OperationsView = ({ db, setDB }) => {
   const [fProject, setFProject] = useState("all");
   const [sortBy, setSortBy] = useState("due"); // due, priority, company, person
   const [groupBy, setGroupBy] = useState("none"); // none, project, company, person, status
+
+  useEffect(() => {
+    if(focus?.type==="task" && focus.id) { setTab("tasks"); setFStatus("all"); const t=db.tasks.find(t=>t.id===focus.id); if(t) { setTD({...t}); setDrawer({mode:"edit",type:"task"}); } setFocus(null); }
+    if(focus?.type==="project" && focus.id) { setTab("projects"); const p=db.projects.find(p=>p.id===focus.id); if(p) { setPD({...p}); setDrawer({mode:"edit",type:"project"}); } setFocus(null); }
+  }, [focus]);
 
   const filteredTasks = useMemo(() => {
     let tasks = db.tasks;
@@ -1408,10 +1428,14 @@ const OperationsView = ({ db, setDB }) => {
 ──────────────────────────────────────────────────────── */
 const blankInvoice = () => ({ number:"", client:"", amount:0, status:"draft", issued:"", due:"", notes:"" });
 
-const BillingView = ({ db, setDB }) => {
+const BillingView = ({ db, setDB, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankInvoice());
+
+  useEffect(() => {
+    if(focus?.type==="invoice" && focus.id) { const inv=db.invoices.find(x=>x.id===focus.id); if(inv) { setD({...inv}); setDrawer("edit"); } setFocus(null); }
+  }, [focus]);
   const save = () => {
     const rec = {...d,amount:parseFloat(d.amount)||0};
     if(drawer==="add") setDB(db=>({...db,invoices:[...db.invoices,{...rec,id:nextId(db.invoices)}]}));
@@ -1469,7 +1493,7 @@ const BillingView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    ORCHESTRATOR — Daily Priorities + News Engine + AI Sweep
 ──────────────────────────────────────────────────────── */
-const OrchestratorView = ({ db, setDB }) => {
+const OrchestratorView = ({ db, setDB, navigate }) => {
   const [loading, setLoading] = useState(false);
   const [newsLoading, setNewsLoading] = useState(false);
 
@@ -1503,24 +1527,24 @@ const OrchestratorView = ({ db, setDB }) => {
     engagementRecs.push({ type:"deal_action", source:"Deals", message:`${d.name} (${d.probability}%): ${d.notes}`, priority:d.probability>=70?"high":"medium", contactId:d.contactId });
   });
 
-  // Build daily priorities
+  // Build daily priorities (with navigation targets)
   const dailyPriorities = [
-    ...criticalTasks.map(t => ({ icon:"🔴", label:t.title, detail:`Due ${t.due} · Critical`, priority:"critical" })),
-    ...overdueInv.map(i => ({ icon:"💰", label:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE`, detail:`Due ${i.due}`, priority:"critical" })),
-    ...atRiskC.map(c => ({ icon:"⚠️", label:`${c.name} (${c.co}) is at-risk`, detail:`Score: ${c.score}. Last touch: ${c.lastTouch}`, priority:"critical" })),
-    ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high" })),
-    ...decayedContacts.slice(0,3).map(c => ({ icon:"📞", label:`Reconnect: ${c.name} (${c.co})`, detail:`${daysBetween(c.lastTouch, today())} days since last touch. Score: ${c.score}`, priority:"medium" })),
-    ...engagementRecs.slice(0,3).map(r => ({ icon:"💡", label:r.message, detail:`Source: ${r.source}`, priority:r.priority })),
+    ...criticalTasks.map(t => ({ icon:"🔴", label:t.title, detail:`Due ${t.due} · Critical`, priority:"critical", nav:{view:"operations",focus:{type:"task",id:t.id}} })),
+    ...overdueInv.map(i => ({ icon:"💰", label:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE`, detail:`Due ${i.due}`, priority:"critical", nav:{view:"billing",focus:{type:"invoice",id:i.id}} })),
+    ...atRiskC.map(c => ({ icon:"⚠️", label:`${c.name} (${c.co}) is at-risk`, detail:`Score: ${c.score}. Last touch: ${c.lastTouch}`, priority:"critical", nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
+    ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high", nav:{view:"operations",focus:{type:"task",id:t.id}} })),
+    ...decayedContacts.slice(0,3).map(c => ({ icon:"📞", label:`Reconnect: ${c.name} (${c.co})`, detail:`${daysBetween(c.lastTouch, today())} days since last touch. Score: ${c.score}`, priority:"medium", nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
+    ...engagementRecs.slice(0,3).map(r => ({ icon:"💡", label:r.message, detail:`Source: ${r.source}`, priority:r.priority, nav:r.contactId?{view:"crm",focus:{type:"contact",id:r.contactId}}:null })),
   ];
 
   const liveAlerts = [
-    ...overdueInv.map(i => ({ id:`ov-${i.id}`, agent:"Billing Agent", type:"alert", priority:"critical", message:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE (due ${i.due}).` })),
-    ...atRiskC.map(c => ({ id:`ar-${c.id}`, agent:"CRM Agent", type:"risk", priority:"critical", message:`${c.name} (${c.co}) at-risk. Score: ${c.score}/100. Last touch: ${c.lastTouch}.` })),
-    ...criticalTasks.map(t => ({ id:`ct-${t.id}`, agent:"Ops Agent", type:"task", priority:"critical", message:`CRITICAL: "${t.title}" — due ${t.due}.` })),
-    ...stalledProj.map(p => ({ id:`sp-${p.id}`, agent:"Ops Agent", type:"risk", priority:"high", message:`Project stalled: "${p.name}" (${p.client}) — ${p.progress}%.` })),
-    ...decayedContacts.map(c => ({ id:`decay-${c.id}`, agent:"CRM Agent", type:"alert", priority:"medium", message:`Relationship decay: ${c.name} (${c.co}) — ${daysBetween(c.lastTouch, today())} days since last contact.` })),
-    ...activeDeals.filter(d=>d.probability>=60).map(d => ({ id:`deal-${d.id}`, agent:"CRM Agent", type:"opportunity", priority:"high", message:`${d.name} — ${fmt(d.value)} at ${d.probability}%.` })),
-    { id:"pipe-summary", agent:"Orchestrator", type:"synthesis", priority:"high", message:`Pipeline: ${fmt(totalPipe)} total, ${fmt(weightedPipe)} weighted. Gap to ${fmt(goal.target_value)}: ${fmt(revenueGap)}. Coverage: ${pipelineCoverage}%.` },
+    ...overdueInv.map(i => ({ id:`ov-${i.id}`, agent:"Billing Agent", type:"alert", priority:"critical", message:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE (due ${i.due}).`, nav:{view:"billing",focus:{type:"invoice",id:i.id}} })),
+    ...atRiskC.map(c => ({ id:`ar-${c.id}`, agent:"CRM Agent", type:"risk", priority:"critical", message:`${c.name} (${c.co}) at-risk. Score: ${c.score}/100. Last touch: ${c.lastTouch}.`, nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
+    ...criticalTasks.map(t => ({ id:`ct-${t.id}`, agent:"Ops Agent", type:"task", priority:"critical", message:`CRITICAL: "${t.title}" — due ${t.due}.`, nav:{view:"operations",focus:{type:"task",id:t.id}} })),
+    ...stalledProj.map(p => ({ id:`sp-${p.id}`, agent:"Ops Agent", type:"risk", priority:"high", message:`Project stalled: "${p.name}" (${p.client}) — ${p.progress}%.`, nav:{view:"operations",focus:{type:"project",id:p.id}} })),
+    ...decayedContacts.map(c => ({ id:`decay-${c.id}`, agent:"CRM Agent", type:"alert", priority:"medium", message:`Relationship decay: ${c.name} (${c.co}) — ${daysBetween(c.lastTouch, today())} days since last contact.`, nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
+    ...activeDeals.filter(d=>d.probability>=60).map(d => ({ id:`deal-${d.id}`, agent:"CRM Agent", type:"opportunity", priority:"high", message:`${d.name} — ${fmt(d.value)} at ${d.probability}%.`, nav:{view:"deals",focus:{type:"deal",id:d.id}} })),
+    { id:"pipe-summary", agent:"Orchestrator", type:"synthesis", priority:"high", message:`Pipeline: ${fmt(totalPipe)} total, ${fmt(weightedPipe)} weighted. Gap to ${fmt(goal.target_value)}: ${fmt(revenueGap)}. Coverage: ${pipelineCoverage}%.`, nav:null },
   ];
 
   const agents = [
@@ -1635,13 +1659,14 @@ const OrchestratorView = ({ db, setDB }) => {
             <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{dailyPriorities.length} items · auto-generated</span>
           </div>
           {dailyPriorities.slice(0,8).map((p,i) => (
-            <div key={i} style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"6px 0", borderBottom:i<dailyPriorities.length-1?"1px solid var(--border)":"none" }}>
+            <div key={i} onClick={()=>p.nav&&navigate(p.nav.view,p.nav.focus)} style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"6px 0", borderBottom:i<dailyPriorities.length-1?"1px solid var(--border)":"none", cursor:p.nav?"pointer":"default", borderRadius:4, transition:"background .15s" }} onMouseEnter={e=>{if(p.nav)e.currentTarget.style.background="var(--bg-hover)"}} onMouseLeave={e=>e.currentTarget.style.background=""}>
               <span style={{ fontSize:13, flexShrink:0 }}>{p.icon}</span>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:12, fontWeight:500 }}>{p.label}</div>
                 <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{p.detail}</div>
               </div>
               <Tag label={p.priority}/>
+              {p.nav&&<ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0,marginTop:2}}/>}
             </div>
           ))}
         </div>
@@ -1682,8 +1707,8 @@ const OrchestratorView = ({ db, setDB }) => {
       <div>
         <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:10 }}>LIVE STATUS — {liveAlerts.length} alerts</div>
         {liveAlerts.map(l=>(
-          <div key={l.id} className="card-el" style={{ padding:"12px 14px", marginBottom:8, borderLeft:`2px solid ${sc(l.priority)}` }}>
-            <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}><AgentBadge agent={l.agent}/><Tag label={l.type} color={sc(l.priority)}/><Tag label={l.priority}/></div>
+          <div key={l.id} onClick={()=>l.nav&&navigate(l.nav.view,l.nav.focus)} className="card-el" style={{ padding:"12px 14px", marginBottom:8, borderLeft:`2px solid ${sc(l.priority)}`, cursor:l.nav?"pointer":"default", transition:"background .15s" }} onMouseEnter={e=>{if(l.nav)e.currentTarget.style.background="var(--bg-hover)"}} onMouseLeave={e=>e.currentTarget.style.background=""}>
+            <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}><AgentBadge agent={l.agent}/><Tag label={l.type} color={sc(l.priority)}/><Tag label={l.priority}/>{l.nav&&<ChevronRight size={12} color="var(--text-dim)" style={{marginLeft:"auto",flexShrink:0}}/>}</div>
             <p style={{ fontSize:13, lineHeight:1.5 }}>{l.message}</p>
           </div>
         ))}
@@ -1696,10 +1721,10 @@ const OrchestratorView = ({ db, setDB }) => {
           {db.companyNews.slice(0,6).map(n=>{
             const company = db.companies.find(c=>c.id===n.companyId);
             return (
-              <div key={n.id} className="card-el" style={{ padding:"12px 14px", marginBottom:8, borderLeft:"2px solid var(--blue)" }}>
+              <div key={n.id} onClick={()=>company&&navigate("companies",{type:"company",id:company.id})} className="card-el" style={{ padding:"12px 14px", marginBottom:8, borderLeft:"2px solid var(--blue)", cursor:company?"pointer":"default", transition:"background .15s" }} onMouseEnter={e=>{if(company)e.currentTarget.style.background="var(--bg-hover)"}} onMouseLeave={e=>e.currentTarget.style.background=""}>
                 <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}>
                   <span style={{ fontSize:12, fontWeight:600 }}>{n.headline}</span>
-                  {company&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:"auto" }}>{company.name}</span>}
+                  {company&&<><span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:"auto" }}>{company.name}</span><ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0}}/></>}
                 </div>
                 <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.5 }}>{n.summary}</p>
                 <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:4 }}>Relevance: {n.relevance_score}/10 · {n.published_date}</div>
@@ -2053,6 +2078,8 @@ export default function App() {
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
   const [view, setView] = useState("dashboard");
+  const [focus, setFocus] = useState(null); // {type:"task"|"contact"|"deal"|"invoice"|"project"|"company", id:number}
+  const navigate = (targetView, focusTarget) => { setView(targetView); if(focusTarget) setFocus(focusTarget); };
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(window.innerWidth < 768);
   const dbRef = useRef(null);
@@ -2125,14 +2152,14 @@ export default function App() {
 
   const alerts = (db.agentLogs||[]).filter(l => l.priority === "critical").length;
   const VIEWS = {
-    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView}/>,
-    orchestrator: <OrchestratorView db={db} setDB={setDB}/>,
-    crm:          <CRMView db={db} setDB={setDB} setView={setView}/>,
-    companies:    <CompaniesView db={db} setDB={setDB}/>,
-    deals:        <DealsView db={db} setDB={setDB}/>,
+    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate}/>,
+    orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
+    crm:          <CRMView db={db} setDB={setDB} setView={setView} focus={focus} setFocus={setFocus}/>,
+    companies:    <CompaniesView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    deals:        <DealsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     marketing:    <MarketingView db={db} setDB={setDB}/>,
-    operations:   <OperationsView db={db} setDB={setDB}/>,
-    billing:      <BillingView db={db} setDB={setDB}/>,
+    operations:   <OperationsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    billing:      <BillingView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB}/>,
     email:        <EmailView db={db} setDB={setDB}/>,
   };
