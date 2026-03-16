@@ -1496,6 +1496,8 @@ const BillingView = ({ db, setDB, focus, setFocus }) => {
 const OrchestratorView = ({ db, setDB, navigate }) => {
   const [loading, setLoading] = useState(false);
   const [newsLoading, setNewsLoading] = useState(false);
+  const [dismissed, setDismissed] = useState({});
+  const [snoozing, setSnoozing] = useState(null); // key of item being snoozed
 
   const openTasks = db.tasks.filter(t => !t.done && t.status !== "done" && t.status !== "cancelled");
   const criticalTasks = openTasks.filter(t => t.priority === "critical");
@@ -1528,14 +1530,28 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
   });
 
   // Build daily priorities (with navigation targets)
-  const dailyPriorities = [
-    ...criticalTasks.map(t => ({ icon:"🔴", label:t.title, detail:`Due ${t.due} · Critical`, priority:"critical", nav:{view:"operations",focus:{type:"task",id:t.id}} })),
-    ...overdueInv.map(i => ({ icon:"💰", label:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE`, detail:`Due ${i.due}`, priority:"critical", nav:{view:"billing",focus:{type:"invoice",id:i.id}} })),
-    ...atRiskC.map(c => ({ icon:"⚠️", label:`${c.name} (${c.co}) is at-risk`, detail:`Score: ${c.score}. Last touch: ${c.lastTouch}`, priority:"critical", nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
-    ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high", nav:{view:"operations",focus:{type:"task",id:t.id}} })),
-    ...decayedContacts.slice(0,3).map(c => ({ icon:"📞", label:`Reconnect: ${c.name} (${c.co})`, detail:`${daysBetween(c.lastTouch, today())} days since last touch. Score: ${c.score}`, priority:"medium", nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
-    ...engagementRecs.slice(0,3).map(r => ({ icon:"💡", label:r.message, detail:`Source: ${r.source}`, priority:r.priority, nav:r.contactId?{view:"crm",focus:{type:"contact",id:r.contactId}}:null })),
+  const allPriorities = [
+    ...criticalTasks.map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🔴", label:t.title, detail:`Due ${t.due} · Critical`, priority:"critical", nav:{view:"operations",focus:{type:"task",id:t.id}} })),
+    ...overdueInv.map(i => ({ key:`inv-${i.id}`, isTask:false, icon:"💰", label:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE`, detail:`Due ${i.due}`, priority:"critical", nav:{view:"billing",focus:{type:"invoice",id:i.id}}, taskTitle:`Follow up on overdue invoice ${i.number} — ${i.client} (${fmt(i.amount)})`, taskPriority:"critical", contactId:null, companyId:null })),
+    ...atRiskC.map(c => ({ key:`risk-${c.id}`, isTask:false, icon:"⚠️", label:`${c.name} (${c.co}) is at-risk`, detail:`Score: ${c.score}. Last touch: ${c.lastTouch}`, priority:"critical", nav:{view:"crm",focus:{type:"contact",id:c.id}}, taskTitle:`Re-engage at-risk contact: ${c.name} (${c.co})`, taskPriority:"high", contactId:c.id, companyId:c.companyId||null })),
+    ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high", nav:{view:"operations",focus:{type:"task",id:t.id}} })),
+    ...decayedContacts.slice(0,3).map(c => ({ key:`decay-${c.id}`, isTask:false, icon:"📞", label:`Reconnect: ${c.name} (${c.co})`, detail:`${daysBetween(c.lastTouch, today())} days since last touch. Score: ${c.score}`, priority:"medium", nav:{view:"crm",focus:{type:"contact",id:c.id}}, taskTitle:`Reconnect with ${c.name} (${c.co})`, taskPriority:"medium", contactId:c.id, companyId:c.companyId||null })),
+    ...engagementRecs.slice(0,3).map((r,i) => ({ key:`eng-${i}`, isTask:false, icon:"💡", label:r.message, detail:`Source: ${r.source}`, priority:r.priority, nav:r.contactId?{view:"crm",focus:{type:"contact",id:r.contactId}}:null, taskTitle:r.message.substring(0,120), taskPriority:r.priority==="high"?"high":"medium", contactId:r.contactId||null, companyId:null })),
   ];
+  const dailyPriorities = allPriorities.filter(p => !dismissed[p.key]);
+
+  const convertToTask = (p) => {
+    const newTask = { id:nextId(db.tasks), title:p.taskTitle, due:today(), done:false, priority:p.taskPriority||"medium", status:"done", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Completed from Orchestrator priority on ${today()}.`, source:"orchestrator", recurrence:"none" };
+    setDB(d=>({...d, tasks:[...d.tasks, newTask]}));
+    setDismissed(d=>({...d,[p.key]:true}));
+  };
+  const snoozeItem = (p, newDate) => {
+    const newTask = { id:nextId(db.tasks), title:p.taskTitle||p.label, due:newDate, done:false, priority:p.taskPriority||"medium", status:"todo", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Snoozed from Orchestrator priority. Original: ${p.label}`, source:"orchestrator", recurrence:"none" };
+    setDB(d=>({...d, tasks:[...d.tasks, newTask]}));
+    setDismissed(d=>({...d,[p.key]:true}));
+    setSnoozing(null);
+  };
+  const dismissItem = (p) => setDismissed(d=>({...d,[p.key]:true}));
 
   const liveAlerts = [
     ...overdueInv.map(i => ({ id:`ov-${i.id}`, agent:"Billing Agent", type:"alert", priority:"critical", message:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE (due ${i.due}).`, nav:{view:"billing",focus:{type:"invoice",id:i.id}} })),
@@ -1659,14 +1675,36 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
             <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{dailyPriorities.length} items · auto-generated</span>
           </div>
           {dailyPriorities.slice(0,8).map((p,i) => (
-            <div key={i} onClick={()=>p.nav&&navigate(p.nav.view,p.nav.focus)} style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"6px 0", borderBottom:i<dailyPriorities.length-1?"1px solid var(--border)":"none", cursor:p.nav?"pointer":"default", borderRadius:4, transition:"background .15s" }} onMouseEnter={e=>{if(p.nav)e.currentTarget.style.background="var(--bg-hover)"}} onMouseLeave={e=>e.currentTarget.style.background=""}>
-              <span style={{ fontSize:13, flexShrink:0 }}>{p.icon}</span>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:12, fontWeight:500 }}>{p.label}</div>
+            <div key={p.key} className="row-hover" style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"6px 4px", borderBottom:i<Math.min(dailyPriorities.length,8)-1?"1px solid var(--border)":"none", borderRadius:4, transition:"background .15s", position:"relative" }}>
+              <span style={{ fontSize:13, flexShrink:0, cursor:p.nav?"pointer":"default" }} onClick={()=>p.nav&&navigate(p.nav.view,p.nav.focus)}>{p.icon}</span>
+              <div style={{ flex:1, cursor:p.nav?"pointer":"default", minWidth:0 }} onClick={()=>p.nav&&navigate(p.nav.view,p.nav.focus)}>
+                <div style={{ fontSize:12, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.label}</div>
                 <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{p.detail}</div>
               </div>
               <Tag label={p.priority}/>
-              {p.nav&&<ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0,marginTop:2}}/>}
+              {/* Action buttons for non-task items */}
+              {p.isTask ? (
+                <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0,marginTop:2,cursor:"pointer"}} onClick={()=>p.nav&&navigate(p.nav.view,p.nav.focus)}/>
+              ) : (
+                <div className="row-actions" style={{ display:"flex", gap:2, opacity:0, transition:"opacity .15s", flexShrink:0 }}>
+                  {snoozing===p.key ? (
+                    <div style={{ display:"flex", gap:4, alignItems:"center" }} onClick={e=>e.stopPropagation()}>
+                      {[{label:"Tomorrow",d:1},{label:"+3d",d:3},{label:"+7d",d:7}].map(opt=>(
+                        <button key={opt.d} className="btn btn-ghost" style={{ padding:"2px 6px", fontSize:10, lineHeight:1 }} onClick={(e)=>{e.stopPropagation();const nd=new Date();nd.setDate(nd.getDate()+opt.d);snoozeItem(p,nd.toISOString().split("T")[0]);}}>
+                          {opt.label}
+                        </button>
+                      ))}
+                      <button className="btn-icon" style={{ width:20, height:20 }} onClick={(e)=>{e.stopPropagation();setSnoozing(null);}}><X size={10}/></button>
+                    </div>
+                  ) : (
+                    <>
+                      <button title="Mark complete" className="btn-icon" style={{ width:24, height:24 }} onClick={(e)=>{e.stopPropagation();convertToTask(p);}}><CheckCircle size={12} color="var(--green)"/></button>
+                      <button title="Snooze" className="btn-icon" style={{ width:24, height:24 }} onClick={(e)=>{e.stopPropagation();setSnoozing(p.key);}}><Calendar size={12} color="var(--blue)"/></button>
+                      <button title="Dismiss" className="btn-icon delete" style={{ width:24, height:24 }} onClick={(e)=>{e.stopPropagation();dismissItem(p);}}><X size={12}/></button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
