@@ -37,6 +37,7 @@ const GlobalStyle = () => (
     @keyframes fade-in{from{opacity:0}to{opacity:1}}
     @keyframes spin{to{transform:rotate(360deg)}}
     @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+    @keyframes pulse-voice{0%,100%{box-shadow:0 4px 16px rgba(0,119,204,0.4)}50%{box-shadow:0 4px 24px rgba(0,119,204,0.6),0 0 0 8px rgba(0,119,204,0.1)}}
     .slide-in{animation:slide-in .25s ease}
     .spin{animation:spin 1s linear infinite}
     .blink{animation:blink 1.2s ease-in-out infinite}
@@ -421,16 +422,39 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
   </div>
 );
 
-const BottomNav = ({ view, setView }) => (
-  <div style={{ display:"flex", background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"6px 0 10px" }}>
-    {[{id:"dashboard",icon:BarChart2},{id:"orchestrator",icon:Brain},{id:"crm",icon:Users},{id:"companies",icon:Building2},{id:"deals",icon:Target},{id:"operations",icon:Briefcase},{id:"billing",icon:DollarSign}].map(n=>(
-      <button key={n.id} onClick={()=>setView(n.id)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4, background:"transparent", border:"none", cursor:"pointer", padding:"4px 0" }}>
-        <n.icon size={17} color={view===n.id?"var(--blue)":"var(--text-sec)"}/>
-        <div style={{ width:4, height:4, borderRadius:"50%", background:view===n.id?"var(--blue)":"transparent" }}/>
-      </button>
-    ))}
-  </div>
-);
+const BottomNav = ({ view, setView }) => {
+  const [showMore, setShowMore] = useState(false);
+  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"CRM"},{id:"deals",icon:Target,label:"Deals"},{id:"operations",icon:Briefcase,label:"Ops"}];
+  const secondary = [{id:"companies",icon:Building2,label:"Companies"},{id:"billing",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
+  const isSecondaryActive = secondary.some(n=>n.id===view);
+  return (
+    <>
+      {showMore && <div style={{ position:"fixed", inset:0, zIndex:998 }} onClick={()=>setShowMore(false)}/>}
+      {showMore && (
+        <div style={{ position:"fixed", bottom:56, left:0, right:0, background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"8px 6px", display:"flex", flexWrap:"wrap", gap:4, zIndex:999, boxShadow:"0 -4px 20px rgba(0,0,0,0.15)" }}>
+          {secondary.map(n=>(
+            <button key={n.id} onClick={()=>{setView(n.id);setShowMore(false);}} style={{ flex:"1 1 30%", display:"flex", alignItems:"center", gap:6, background:view===n.id?"var(--blue-dim)":"transparent", border:view===n.id?"1px solid rgba(0,119,204,0.2)":"1px solid transparent", borderRadius:8, cursor:"pointer", padding:"8px 10px" }}>
+              <n.icon size={15} color={view===n.id?"var(--blue)":"var(--text-sec)"}/>
+              <span style={{ fontSize:12, color:view===n.id?"var(--blue)":"var(--text-sec)" }}>{n.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display:"flex", background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"6px 0 10px", flexShrink:0 }}>
+        {primary.map(n=>(
+          <button key={n.id} onClick={()=>{setView(n.id);setShowMore(false);}} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2, background:"transparent", border:"none", cursor:"pointer", padding:"4px 0" }}>
+            <n.icon size={17} color={view===n.id?"var(--blue)":"var(--text-sec)"}/>
+            <span style={{ fontSize:9, color:view===n.id?"var(--blue)":"var(--text-sec)" }}>{n.label}</span>
+          </button>
+        ))}
+        <button onClick={()=>setShowMore(!showMore)} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2, background:"transparent", border:"none", cursor:"pointer", padding:"4px 0" }}>
+          <MoreVertical size={17} color={showMore||isSecondaryActive?"var(--blue)":"var(--text-sec)"}/>
+          <span style={{ fontSize:9, color:showMore||isSecondaryActive?"var(--blue)":"var(--text-sec)" }}>More</span>
+        </button>
+      </div>
+    </>
+  );
+};
 
 /* ────────────────────────────────────────────────────────
    DASHBOARD — Morning Brief + Goal Tracking
@@ -1799,7 +1823,7 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
 /* ────────────────────────────────────────────────────────
    VOICE LAB
 ──────────────────────────────────────────────────────── */
-const VoiceView = ({ db, setDB }) => {
+const VoiceView = ({ db, setDB, autoRecord }) => {
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [proposals, setProposals] = useState(null); // AI-proposed operations
@@ -1809,6 +1833,7 @@ const VoiceView = ({ db, setDB }) => {
   const [committing, setCommitting] = useState(false);
   const [history, setHistory] = useState([]);
   const recRef = useRef(null);
+  const autoStarted = useRef(false);
   const start = () => {
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR){setTranscript("Speech recognition not available in this browser.");return;}
@@ -1817,6 +1842,14 @@ const VoiceView = ({ db, setDB }) => {
     r.start();recRef.current=r;setRecording(true);
   };
   const stop = () => {recRef.current?.stop();setRecording(false);};
+
+  // Auto-start recording when opened via floating button
+  useEffect(() => {
+    if (autoRecord && !autoStarted.current && !recording) {
+      autoStarted.current = true;
+      setTimeout(() => start(), 300);
+    }
+  }, [autoRecord]);
 
   const buildContext = () => {
     const contacts = (db.contacts||[]).map(c=>`[Contact id:${c.id}] ${c.name} — ${c.co||""} — ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
@@ -2352,9 +2385,10 @@ export default function App() {
   const navigate = (targetView, focusTarget) => { setView(targetView); if(focusTarget) setFocus(focusTarget); };
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(window.innerWidth < 768);
+  const [autoRecord, setAutoRecord] = useState(false);
 
-  // Sync view ↔ URL hash
-  useEffect(() => { window.location.hash = "#/" + view; }, [view]);
+  // Sync view ↔ URL hash; reset autoRecord when leaving voice
+  useEffect(() => { window.location.hash = "#/" + view; if (view !== "voice") setAutoRecord(false); }, [view]);
   useEffect(() => {
     const onHash = () => { const v = viewFromHash(); setView(v); };
     window.addEventListener("hashchange", onHash);
@@ -2444,7 +2478,7 @@ export default function App() {
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     operations:   <OperationsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     billing:      <BillingView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
-    voice:        <VoiceView db={db} setDB={setDB}/>,
+    voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
     email:        <EmailView db={db} setDB={setDB}/>,
     admin:        <AdminView session={session}/>,
   };
@@ -2473,6 +2507,23 @@ export default function App() {
           {!mobile && <Sidebar view={view} setView={setView} collapsed={collapsed} setCollapsed={setCollapsed} alerts={alerts}/>}
           <main style={{ flex:1, overflowY:"auto" }}>{VIEWS[view] || VIEWS.dashboard}</main>
         </div>
+        {/* Floating Voice Lab button — mobile only, hidden when already on voice page */}
+        {mobile && view !== "voice" && (
+          <button
+            onClick={() => { setAutoRecord(true); setView("voice"); }}
+            style={{
+              position:"fixed", bottom:72, right:16, zIndex:900,
+              width:52, height:52, borderRadius:"50%",
+              background:"linear-gradient(135deg, #0077cc, #00aaff)",
+              border:"none", cursor:"pointer",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              boxShadow:"0 4px 16px rgba(0,119,204,0.4)",
+              animation:"pulse-voice 2s infinite",
+            }}
+          >
+            <Mic size={22} color="#fff"/>
+          </button>
+        )}
         {mobile && <BottomNav view={view} setView={setView}/>}
       </div>
     </>
