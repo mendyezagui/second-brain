@@ -2337,13 +2337,23 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","operations","billing","voice","email","admin"];
+  const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState(viewFromHash);
   const [focus, setFocus] = useState(null); // {type:"task"|"contact"|"deal"|"invoice"|"project"|"company", id:number}
   const navigate = (targetView, focusTarget) => { setView(targetView); if(focusTarget) setFocus(focusTarget); };
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(window.innerWidth < 768);
+
+  // Sync view ↔ URL hash
+  useEffect(() => { window.location.hash = "#/" + view; }, [view]);
+  useEffect(() => {
+    const onHash = () => { const v = viewFromHash(); setView(v); };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   const dbRef = useRef(null);
   const syncLock = useRef(false);
   const pendingSync = useRef(false);
