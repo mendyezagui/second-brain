@@ -391,7 +391,9 @@ const NAV = [
   {id:"companies",icon:Building2,label:"Companies"},
   {id:"deals",icon:Target,label:"Deals"},
   {id:"marketing",icon:Megaphone,label:"Marketing"},
-  {id:"operations",icon:Briefcase,label:"Operations"},
+  {id:"tasks",icon:CheckCircle,label:"Tasks"},
+  {id:"projects",icon:Briefcase,label:"Projects"},
+  {id:"calendar",icon:Calendar,label:"Calendar"},
   {id:"billing",icon:DollarSign,label:"Billing"},
   {divider:true},
   {id:"email",icon:Mail,label:"Email Lab"},
@@ -427,8 +429,8 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
 
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
-  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"CRM"},{id:"deals",icon:Target,label:"Deals"},{id:"operations",icon:Briefcase,label:"Ops"}];
-  const secondary = [{id:"companies",icon:Building2,label:"Companies"},{id:"billing",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
+  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"CRM"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
+  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"billing",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -475,6 +477,7 @@ const Dashboard = ({ db, setDB, setView, navigate, session }) => {
   const dueTodayOrOverdue = openTasks.filter(t => t.due && t.due <= today());
   const criticalItems = openTasks.filter(t=>t.priority==="critical");
   const decayedContacts = db.contacts.filter(c => c.lastTouch && c.score >= 60 && daysBetween(c.lastTouch, today()) > 14);
+  const todayEvents = (db.events||[]).filter(e=>e.date===today()).sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||""));
 
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:22 }}>
@@ -491,11 +494,11 @@ const Dashboard = ({ db, setDB, setView, navigate, session }) => {
             <Brain size={12}/>Orchestrator
           </button>
         </div>
-        {(dueTodayOrOverdue.length > 0 || criticalItems.length > 0 || decayedContacts.length > 0) && (
+        {(dueTodayOrOverdue.length > 0 || criticalItems.length > 0 || decayedContacts.length > 0 || todayEvents.length > 0) && (
           <div style={{ marginTop:14, display:"flex", flexDirection:"column", gap:6 }}>
             <div className="mono" style={{ fontSize:10, color:"var(--purple)" }}>TODAY'S PRIORITIES</div>
             {criticalItems.slice(0,3).map(t => (
-              <div key={t.id} onClick={()=>navigate("operations",{type:"task",id:t.id})} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--red-dim)", borderRadius:6, cursor:"pointer", transition:"filter .15s" }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.95)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
+              <div key={t.id} onClick={()=>navigate("tasks",{type:"task",id:t.id})} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--red-dim)", borderRadius:6, cursor:"pointer", transition:"filter .15s" }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.95)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
                 <AlertCircle size={12} color="var(--red)"/>
                 <span style={{ fontWeight:600, color:"var(--red)" }}>CRITICAL:</span>
                 <span>{t.title}</span>
@@ -504,7 +507,7 @@ const Dashboard = ({ db, setDB, setView, navigate, session }) => {
               </div>
             ))}
             {dueTodayOrOverdue.filter(t=>t.priority!=="critical").slice(0,4).map(t => (
-              <div key={t.id} onClick={()=>navigate("operations",{type:"task",id:t.id})} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--amber-dim)", borderRadius:6, cursor:"pointer", transition:"filter .15s" }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.95)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
+              <div key={t.id} onClick={()=>navigate("tasks",{type:"task",id:t.id})} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--amber-dim)", borderRadius:6, cursor:"pointer", transition:"filter .15s" }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.95)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
                 <Clock size={12} color="var(--amber)"/>
                 <span>{t.title}</span>
                 <Tag label={t.priority}/>
@@ -519,6 +522,18 @@ const Dashboard = ({ db, setDB, setView, navigate, session }) => {
                 <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0}}/>
               </div>
             ))}
+            {todayEvents.length > 0 && <>
+              <div className="mono" style={{ fontSize:10, color:"var(--blue)", marginTop:6 }}>TODAY'S SCHEDULE</div>
+              {todayEvents.slice(0,4).map(evt => (
+                <div key={evt.id} onClick={()=>setView("calendar")} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"rgba(0,119,204,0.06)", borderRadius:6, cursor:"pointer", borderLeft:`3px solid ${({meeting:"var(--blue)",call:"var(--purple)",reminder:"var(--amber)",event:"var(--green)"}[evt.type]||"var(--blue)")}` }}>
+                  <Calendar size={12} color="var(--blue)"/>
+                  <span className="mono" style={{ fontSize:11, color:"var(--text-sec)", flexShrink:0 }}>{evt.start_time}</span>
+                  <span style={{ fontWeight:500 }}>{evt.title}</span>
+                  {evt.location&&<span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>📍 {evt.location}</span>}
+                  <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0, marginLeft:"auto"}}/>
+                </div>
+              ))}
+            </>}
           </div>
         )}
       </div>
@@ -1242,11 +1257,12 @@ const MarketingView = ({ db, setDB }) => {
 const blankProject = () => ({ name:"", client:"", companyId:"", status:"active", progress:0, dueDate:"", priority:"medium", notes:"" });
 const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" });
 
-const OperationsView = ({ db, setDB, focus, setFocus }) => {
-  const [tab, setTab] = useState("tasks");
+/* ────────────────────────────────────────────────────────
+   TASKS VIEW (standalone)
+──────────────────────────────────────────────────────── */
+const TasksView = ({ db, setDB, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
-  const [pd, setPD] = useState(blankProject());
   const [td, setTD] = useState(blankTask());
 
   // Task filters
@@ -1260,8 +1276,7 @@ const OperationsView = ({ db, setDB, focus, setFocus }) => {
   const [groupBy, setGroupBy] = useState("none"); // none, project, company, person, status
 
   useEffect(() => {
-    if(focus?.type==="task" && focus.id) { setTab("tasks"); setFStatus("all"); const t=db.tasks.find(t=>t.id===focus.id); if(t) { setTD({...t}); setDrawer({mode:"edit",type:"task"}); } setFocus(null); }
-    if(focus?.type==="project" && focus.id) { setTab("projects"); const p=db.projects.find(p=>p.id===focus.id); if(p) { setPD({...p}); setDrawer({mode:"edit",type:"project"}); } setFocus(null); }
+    if(focus?.type==="task" && focus.id) { setFStatus("all"); const t=db.tasks.find(t=>t.id===focus.id); if(t) { setTD({...t,projectId:String(t.projectId||""),contactId:String(t.contactId||""),companyId:String(t.companyId||""),dealId:String(t.dealId||"")}); setDrawer({mode:"edit",type:"task"}); } setFocus(null); }
   }, [focus]);
 
   const filteredTasks = useMemo(() => {
@@ -1298,40 +1313,23 @@ const OperationsView = ({ db, setDB, focus, setFocus }) => {
     return Object.entries(groups).map(([label,tasks])=>({label,tasks}));
   }, [filteredTasks, groupBy, db.projects, db.companies, db.contacts]);
 
-  const saveProject = (d) => {
-    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null};
-    if(drawer.mode==="add") setDB(db=>({...db,projects:[...db.projects,{...rec,id:nextId(db.projects)}]}));
-    else setDB(db=>({...db,projects:db.projects.map(x=>x.id===rec.id?rec:x)}));
-    setDrawer(null);
-  };
   const saveTask = (d) => {
     const rec = {...d, projectId:parseInt(d.projectId)||null, contactId:parseInt(d.contactId)||null, companyId:parseInt(d.companyId)||null, dealId:parseInt(d.dealId)||null};
     if(drawer.mode==="add") setDB(db=>({...db,tasks:[...db.tasks,{...rec,id:nextId(db.tasks)}]}));
     else setDB(db=>({...db,tasks:db.tasks.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
   };
-  const delProject = (id) => { setDB(db=>({...db,projects:db.projects.filter(x=>x.id!==id)})); setConfirm(null); };
   const delTask = (id) => { setDB(db=>({...db,tasks:db.tasks.filter(x=>x.id!==id)})); setConfirm(null); };
   const toggleTask = (id) => setDB(db=>({...db,tasks:db.tasks.map(t=>t.id===id?{...t,done:!t.done,status:t.done?"todo":"done"}:t)}));
 
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Operations</div>
-        <div style={{ display:"flex", gap:8 }}>
-          <div style={{ display:"flex", background:"var(--bg-el)", borderRadius:8, padding:3 }}>
-            {["tasks","projects"].map(t=>(
-              <button key={t} onClick={()=>setTab(t)} style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:500, cursor:"pointer", background:tab===t?"#fff":"transparent", color:tab===t?"var(--text)":"var(--text-sec)", boxShadow:tab===t?"var(--shadow)":"none" }}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
-            ))}
-          </div>
-          {tab==="projects"
-            ? <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setPD(blankProject());setDrawer({mode:"add",type:"project"});}}><Plus size={12}/>Project</button>
-            : <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setTD(blankTask());setDrawer({mode:"add",type:"task"});}}><Plus size={12}/>Task</button>
-          }
-        </div>
+        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Tasks</div>
+        <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setTD(blankTask());setDrawer({mode:"add",type:"task"});}}><Plus size={12}/>Task</button>
       </div>
 
-      {tab==="tasks" && (
+      {true && (
         <>
           {/* FILTER BAR */}
           <div className="card" style={{ padding:"10px 14px" }}>
@@ -1408,35 +1406,6 @@ const OperationsView = ({ db, setDB, focus, setFocus }) => {
         </>
       )}
 
-      {tab==="projects" && db.projects.map(p=>(
-        <div key={p.id} className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}` }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
-            <div><div style={{ fontSize:13, fontWeight:600 }}>{p.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client} · Due {p.dueDate}</div></div>
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}><Tag label={p.priority}/><Tag label={p.status}/><RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||"")});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name,type:"project"})}/></div>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ flex:1, height:5, background:"var(--bg-el)", borderRadius:3 }}>
-              <div style={{ height:"100%", width:`${p.progress}%`, background:p.progress<40?"var(--red)":p.progress<70?"var(--amber)":"var(--green)", borderRadius:3, transition:"width .5s" }}/>
-            </div>
-            <span className="mono" style={{ fontSize:11, color:"var(--text-sec)", flexShrink:0 }}>{p.progress}%</span>
-          </div>
-          {p.notes&&<p style={{ fontSize:12, color:"var(--text-sec)", marginTop:10, lineHeight:1.5 }}>{p.notes}</p>}
-        </div>
-      ))}
-
-      {drawer?.type==="project"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Project`} onClose={()=>setDrawer(null)} onSave={()=>saveProject(pd)}>
-        <Field label="Project Name"><Inp value={pd.name} onChange={v=>setPD(p=>({...p,name:v}))}/></Field>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-          <Field label="Client"><Inp value={pd.client} onChange={v=>setPD(p=>({...p,client:v}))}/></Field>
-          <Field label="Company"><Sel value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={[{value:"",label:"— none —"},...db.companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
-          <Field label="Status"><Sel value={pd.status} onChange={v=>setPD(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
-          <Field label="Priority"><Sel value={pd.priority} onChange={v=>setPD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
-          <Field label="Progress (%)"><Inp type="number" value={pd.progress} onChange={v=>setPD(p=>({...p,progress:v}))}/></Field>
-          <Field label="Due Date"><Inp type="date" value={pd.dueDate} onChange={v=>setPD(p=>({...p,dueDate:v}))}/></Field>
-        </div>
-        <Field label="Notes"><Tex value={pd.notes} onChange={v=>setPD(p=>({...p,notes:v}))}/></Field>
-      </Drawer>}
-
       {drawer?.type==="task"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Task`} onClose={()=>setDrawer(null)} onSave={()=>saveTask(td)}>
         <Field label="Task Title"><Inp value={td.title} onChange={v=>setTD(p=>({...p,title:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
@@ -1453,7 +1422,255 @@ const OperationsView = ({ db, setDB, focus, setFocus }) => {
         </div>
         <Field label="Notes"><Tex value={td.notes} onChange={v=>setTD(p=>({...p,notes:v}))}/></Field>
       </Drawer>}
-      {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>confirm.type==="project"?delProject(confirm.id):delTask(confirm.id)} onCancel={()=>setConfirm(null)}/>}
+      {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delTask(confirm.id)} onCancel={()=>setConfirm(null)}/>}
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────
+   PROJECTS VIEW (with AI Agent)
+──────────────────────────────────────────────────────── */
+const ProjectsView = ({ db, setDB, focus, setFocus }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [pd, setPD] = useState(blankProject());
+  const [expandedId, setExpandedId] = useState(null);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiProposals, setAiProposals] = useState(null);
+  const [selectedProposals, setSelectedProposals] = useState({});
+
+  useEffect(() => {
+    if(focus?.type==="project" && focus.id) {
+      const p = db.projects.find(p=>p.id===focus.id);
+      if(p) { setPD({...p, progress:String(p.progress), companyId:String(p.companyId||"")}); setDrawer({mode:"edit",type:"project"}); }
+      setFocus(null);
+    }
+  }, [focus]);
+
+  const saveProject = (d) => {
+    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null};
+    if(drawer.mode==="add") setDB(db=>({...db,projects:[...db.projects,{...rec,id:nextId(db.projects)}]}));
+    else setDB(db=>({...db,projects:db.projects.map(x=>x.id===rec.id?rec:x)}));
+    setDrawer(null);
+  };
+  const delProject = (id) => { setDB(db=>({...db,projects:db.projects.filter(x=>x.id!==id)})); setConfirm(null); };
+  const toggleTask = (id) => setDB(db=>({...db,tasks:db.tasks.map(t=>t.id===id?{...t,done:!t.done,status:t.done?"todo":"done"}:t)}));
+
+  const handleAIGenerate = async (projectId) => {
+    const proj = db.projects.find(p=>p.id===projectId);
+    if (!proj || !aiInput.trim()) return;
+    setAiLoading(true);
+    try {
+      const existingTasks = db.tasks.filter(t=>t.projectId===projectId).map(t=>`- ${t.title} (${t.status}, ${t.priority})`).join("\n");
+      const system = `You are a project task planner. Given a project context and user instructions, generate actionable tasks. Return ONLY valid JSON: { "tasks": [{ "title": "...", "priority": "high|medium|low", "category": "follow_up|outreach|admin|research|meeting_prep|deliverable", "due": "YYYY-MM-DD or null", "notes": "..." }] }`;
+      const user = `Project: ${proj.name}\nClient: ${proj.client}\nProgress: ${proj.progress}%\nDue: ${proj.dueDate}\nExisting tasks:\n${existingTasks||"(none)"}\n\nUser request: ${aiInput}\n\nGenerate 3-6 concrete tasks. Today is ${today()}.`;
+      const response = await callClaude(system, user, 1200);
+      const parsed = JSON.parse(response);
+      setAiProposals(parsed.tasks || []);
+      const sel = {}; (parsed.tasks||[]).forEach((_,i) => sel[i]=true);
+      setSelectedProposals(sel);
+    } catch(e) { console.error("AI gen failed:", e); setAiProposals([]); }
+    setAiLoading(false);
+  };
+
+  const commitProposals = () => {
+    const toAdd = (aiProposals||[]).filter((_,i) => selectedProposals[i]);
+    if(toAdd.length > 0) {
+      setDB(db => {
+        let id = nextId(db.tasks);
+        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:expandedId, source:"ai_sweep"}))]};
+      });
+    }
+    setAiProposals(null); setAiInput(""); setSelectedProposals({});
+  };
+
+  return (
+    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Projects</div>
+        <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setPD(blankProject());setDrawer({mode:"add",type:"project"});}}><Plus size={12}/>Project</button>
+      </div>
+
+      {db.projects.map(p => {
+        const pTasks = db.tasks.filter(t=>t.projectId===p.id);
+        const open = pTasks.filter(t=>!t.done && t.status!=="done" && t.status!=="cancelled");
+        const isExpanded = expandedId === p.id;
+        return (
+          <div key={p.id}>
+            <div className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}`, cursor:"pointer", borderRadius:isExpanded?"12px 12px 0 0":undefined }} onClick={()=>setExpandedId(isExpanded?null:p.id)}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600 }}>{p.name}</div>
+                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
+                </div>
+                <div style={{ display:"flex", gap:6, alignItems:"center" }} onClick={e=>e.stopPropagation()}>
+                  <Tag label={p.priority}/><Tag label={p.status}/>
+                  <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||"")});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
+                </div>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ flex:1, height:5, background:"var(--bg-el)", borderRadius:3 }}><div style={{ height:"100%", width:`${p.progress}%`, background:p.progress<40?"var(--red)":p.progress<70?"var(--amber)":"var(--green)", borderRadius:3, transition:"width .5s" }}/></div>
+                <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{p.progress}%</span>
+                <ChevronDown size={14} color="var(--text-sec)" style={{ transform:isExpanded?"rotate(180deg)":"none", transition:"transform .2s" }}/>
+              </div>
+            </div>
+
+            {isExpanded && (
+              <div className="card-el" style={{ padding:16, borderRadius:"0 0 12px 12px", borderTop:"1px dashed var(--border)" }}>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>PROJECT TASKS</div>
+                {pTasks.length > 0 ? pTasks.map(t => (
+                  <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
+                    <button onClick={()=>toggleTask(t.id)} style={{ width:16, height:16, borderRadius:3, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>{t.done&&<Check size={9} color="#fff"/>}</button>
+                    <span style={{ fontSize:12, flex:1, textDecoration:t.done?"line-through":"none", opacity:t.done?0.5:1 }}>{t.title}</span>
+                    <Tag label={t.priority}/><span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{t.due||""}</span>
+                  </div>
+                )) : <div style={{ fontSize:12, color:"var(--text-dim)", padding:"8px 0" }}>No tasks yet — use the AI agent below to generate some.</div>}
+
+                {/* AI AGENT */}
+                <div style={{ marginTop:16, paddingTop:14, borderTop:"1px solid var(--border)" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}><Sparkles size={13} color="var(--blue)"/><span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>AI TASK AGENT</span></div>
+                  <textarea className="input" value={aiInput} onChange={e=>setAiInput(e.target.value)} placeholder="Describe what needs to happen for this project..." style={{ marginBottom:8 }}/>
+                  <button className="btn btn-blue" onClick={()=>handleAIGenerate(p.id)} disabled={aiLoading||!aiInput.trim()} style={{ opacity:aiLoading||!aiInput.trim()?0.5:1, fontSize:12 }}>
+                    {aiLoading?<><Loader size={12} className="spin"/>Thinking...</>:<><Sparkles size={12}/>Generate Tasks</>}
+                  </button>
+
+                  {aiProposals && aiProposals.length > 0 && expandedId===p.id && (
+                    <div style={{ marginTop:12, padding:12, background:"var(--bg)", borderRadius:8, border:"1px solid var(--border)" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                        <span style={{ fontSize:12, fontWeight:600 }}>Proposed Tasks ({aiProposals.length})</span>
+                        <div style={{ display:"flex", gap:6 }}>
+                          <button className="btn btn-ghost" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>{const s={};aiProposals.forEach((_,i)=>s[i]=true);setSelectedProposals(s);}}>All</button>
+                          <button className="btn btn-ghost" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>setSelectedProposals({})}>None</button>
+                        </div>
+                      </div>
+                      {aiProposals.map((t, idx) => (
+                        <label key={idx} style={{ display:"flex", gap:8, padding:"8px 6px", borderBottom:"1px solid var(--border)", cursor:"pointer", alignItems:"flex-start" }}>
+                          <input type="checkbox" checked={!!selectedProposals[idx]} onChange={e=>setSelectedProposals(s=>({...s,[idx]:e.target.checked}))} style={{ marginTop:3 }}/>
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontSize:12, fontWeight:500 }}>{t.title}</div>
+                            <div style={{ display:"flex", gap:4, marginTop:3 }}><Tag label={t.priority}/><Tag label={(t.category||"").replace(/_/g," ")} color="var(--purple)"/>{t.due&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due}</span>}</div>
+                            {t.notes&&<div style={{ fontSize:10, color:"var(--text-sec)", marginTop:3, fontStyle:"italic" }}>{t.notes}</div>}
+                          </div>
+                        </label>
+                      ))}
+                      <div style={{ display:"flex", gap:8, marginTop:10 }}>
+                        <button className="btn btn-blue" style={{ flex:1, justifyContent:"center", fontSize:12 }} onClick={commitProposals}><Check size={12}/>Commit Selected</button>
+                        <button className="btn btn-ghost" style={{ flex:1, justifyContent:"center", fontSize:12 }} onClick={()=>{setAiProposals(null);setAiInput("");}}>Discard</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {drawer?.type==="project"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Project`} onClose={()=>setDrawer(null)} onSave={()=>saveProject(pd)}>
+        <Field label="Project Name"><Inp value={pd.name} onChange={v=>setPD(p=>({...p,name:v}))}/></Field>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+          <Field label="Client"><Inp value={pd.client} onChange={v=>setPD(p=>({...p,client:v}))}/></Field>
+          <Field label="Company"><Sel value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={[{value:"",label:"— none —"},...db.companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+          <Field label="Status"><Sel value={pd.status} onChange={v=>setPD(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
+          <Field label="Priority"><Sel value={pd.priority} onChange={v=>setPD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
+          <Field label="Progress (%)"><Inp type="number" value={pd.progress} onChange={v=>setPD(p=>({...p,progress:v}))}/></Field>
+          <Field label="Due Date"><Inp type="date" value={pd.dueDate} onChange={v=>setPD(p=>({...p,dueDate:v}))}/></Field>
+        </div>
+        <Field label="Notes"><Tex value={pd.notes} onChange={v=>setPD(p=>({...p,notes:v}))}/></Field>
+      </Drawer>}
+      {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delProject(confirm.id)} onCancel={()=>setConfirm(null)}/>}
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────
+   CALENDAR VIEW
+──────────────────────────────────────────────────────── */
+const blankEvent = () => ({ title:"", date:today(), start_time:"09:00", end_time:"10:00", type:"meeting", location:"", notes:"", attendees:"", source:"manual", google_event_id:"" });
+
+const CalendarView = ({ db, setDB }) => {
+  const [mode, setMode] = useState("week");
+  const [date, setDate] = useState(today());
+  const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [ed, setED] = useState(null);
+
+  const daysInWeek = () => {
+    const d = new Date(date + "T12:00:00");
+    const day = d.getDay();
+    const start = new Date(d); start.setDate(d.getDate() - day);
+    return Array.from({length:7},(_,i)=>{const x=new Date(start);x.setDate(start.getDate()+i);return x.toISOString().split("T")[0];});
+  };
+  const evtColor = (type) => ({meeting:"var(--blue)",call:"var(--purple)",reminder:"var(--amber)",event:"var(--green)"}[type]||"var(--text-sec)");
+
+  const saveEvent = (d) => {
+    if(drawer==="add") setDB(db=>({...db,events:[...db.events,{...d,id:nextId(db.events)}]}));
+    else setDB(db=>({...db,events:db.events.map(x=>x.id===d.id?d:x)}));
+    setDrawer(null); setED(null);
+  };
+  const delEvent = (id) => { setDB(db=>({...db,events:db.events.filter(x=>x.id!==id)})); setConfirm(null); setDrawer(null); };
+
+  const weekDays = mode==="week" ? daysInWeek() : [date];
+  const todayEvents = db.events.filter(e=>e.date===today());
+
+  return (
+    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <Calendar size={20} color="var(--blue)"/>
+          <div className="display" style={{ fontSize:18, fontWeight:700 }}>Calendar</div>
+          {todayEvents.length>0&&<span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{todayEvents.length} today</span>}
+        </div>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", background:"var(--bg-el)", borderRadius:8, padding:3 }}>
+            {["week","day"].map(v=>(<button key={v} onClick={()=>setMode(v)} style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:500, cursor:"pointer", background:mode===v?"#fff":"transparent", color:mode===v?"var(--text)":"var(--text-sec)", boxShadow:mode===v?"var(--shadow)":"none" }}>{v}</button>))}
+          </div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input" style={{ padding:"5px 8px", fontSize:12, width:"auto" }}/>
+          <button className="btn btn-ghost" style={{ fontSize:12, padding:"6px 10px" }} onClick={()=>setDate(today())}>Today</button>
+          <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setED(blankEvent());setDrawer("add");}}><Plus size={12}/>Event</button>
+        </div>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:`repeat(${weekDays.length}, 1fr)`, gap:10 }}>
+        {weekDays.map(dayStr => {
+          const evts = (db.events||[]).filter(e=>e.date===dayStr).sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||""));
+          const d = new Date(dayStr+"T12:00:00");
+          const isToday = dayStr===today();
+          return (
+            <div key={dayStr} className="card" style={{ padding:14, minHeight:mode==="week"?340:500, display:"flex", flexDirection:"column", background:isToday?"rgba(0,119,204,0.03)":"var(--bg-card)", borderTop:isToday?"3px solid var(--blue)":"none" }}>
+              <div style={{ fontWeight:600, fontSize:12, color:isToday?"var(--blue)":"var(--text)", marginBottom:10 }}>
+                {d.toLocaleDateString("en-US",{weekday:"short"})} {d.toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+              </div>
+              <div style={{ flex:1, display:"flex", flexDirection:"column", gap:6 }}>
+                {evts.length>0 ? evts.map(evt=>(
+                  <div key={evt.id} className="card-el" style={{ padding:8, borderLeft:`3px solid ${evtColor(evt.type)}`, cursor:"pointer" }} onClick={()=>{setED({...evt});setDrawer("edit");}}>
+                    <div className="mono" style={{ fontSize:10, fontWeight:600, color:evtColor(evt.type) }}>{evt.start_time}–{evt.end_time}</div>
+                    <div style={{ fontSize:12, fontWeight:500, marginTop:2 }}>{evt.title}</div>
+                    {evt.location&&<div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:2 }}>📍 {evt.location}</div>}
+                  </div>
+                )) : <div style={{ fontSize:11, color:"var(--text-dim)", textAlign:"center", marginTop:40 }}>No events</div>}
+              </div>
+              <button className="btn btn-ghost" style={{ fontSize:10, width:"100%", marginTop:8, justifyContent:"center" }} onClick={()=>{setED({...blankEvent(),date:dayStr});setDrawer("add");}}>+ Add</button>
+            </div>
+          );
+        })}
+      </div>
+
+      {drawer&&ed&&<Drawer title={drawer==="add"?"New Event":"Edit Event"} onClose={()=>{setDrawer(null);setED(null);}} onSave={()=>saveEvent(ed)}>
+        <Field label="Title"><Inp value={ed.title} onChange={v=>setED(e=>({...e,title:v}))}/></Field>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+          <Field label="Date"><Inp type="date" value={ed.date} onChange={v=>setED(e=>({...e,date:v}))}/></Field>
+          <Field label="Type"><Sel value={ed.type} onChange={v=>setED(e=>({...e,type:v}))} options={["meeting","call","reminder","event"]}/></Field>
+          <Field label="Start Time"><Inp type="time" value={ed.start_time} onChange={v=>setED(e=>({...e,start_time:v}))}/></Field>
+          <Field label="End Time"><Inp type="time" value={ed.end_time} onChange={v=>setED(e=>({...e,end_time:v}))}/></Field>
+        </div>
+        <Field label="Location"><Inp value={ed.location} onChange={v=>setED(e=>({...e,location:v}))}/></Field>
+        <Field label="Attendees"><Inp value={ed.attendees} onChange={v=>setED(e=>({...e,attendees:v}))} placeholder="Comma-separated"/></Field>
+        <Field label="Notes"><Tex value={ed.notes} onChange={v=>setED(e=>({...e,notes:v}))}/></Field>
+        {drawer==="edit"&&<div style={{ marginTop:16, paddingTop:14, borderTop:"1px solid var(--border)" }}><button className="btn" style={{ width:"100%", justifyContent:"center", background:"var(--red-dim)", color:"var(--red)", border:"1px solid var(--red)" }} onClick={()=>setConfirm({id:ed.id,label:ed.title})}><Trash2 size={12}/>Delete Event</button></div>}
+      </Drawer>}
+      {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delEvent(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
   );
 };
@@ -1566,10 +1783,10 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
 
   // Build daily priorities (with navigation targets)
   const allPriorities = [
-    ...criticalTasks.map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🔴", label:t.title, detail:`Due ${t.due} · Critical`, priority:"critical", nav:{view:"operations",focus:{type:"task",id:t.id}} })),
+    ...criticalTasks.map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🔴", label:t.title, detail:`Due ${t.due} · Critical`, priority:"critical", nav:{view:"tasks",focus:{type:"task",id:t.id}} })),
     ...overdueInv.map(i => ({ key:`inv-${i.id}`, isTask:false, icon:"💰", label:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE`, detail:`Due ${i.due}`, priority:"critical", nav:{view:"billing",focus:{type:"invoice",id:i.id}}, taskTitle:`Follow up on overdue invoice ${i.number} — ${i.client} (${fmt(i.amount)})`, taskPriority:"critical", contactId:null, companyId:null })),
     ...atRiskC.map(c => ({ key:`risk-${c.id}`, isTask:false, icon:"⚠️", label:`${c.name} (${c.co}) is at-risk`, detail:`Score: ${c.score}. Last touch: ${c.lastTouch}`, priority:"critical", nav:{view:"crm",focus:{type:"contact",id:c.id}}, taskTitle:`Re-engage at-risk contact: ${c.name} (${c.co})`, taskPriority:"high", contactId:c.id, companyId:c.companyId||null })),
-    ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high", nav:{view:"operations",focus:{type:"task",id:t.id}} })),
+    ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high", nav:{view:"tasks",focus:{type:"task",id:t.id}} })),
     ...decayedContacts.slice(0,3).map(c => ({ key:`decay-${c.id}`, isTask:false, icon:"📞", label:`Reconnect: ${c.name} (${c.co})`, detail:`${daysBetween(c.lastTouch, today())} days since last touch. Score: ${c.score}`, priority:"medium", nav:{view:"crm",focus:{type:"contact",id:c.id}}, taskTitle:`Reconnect with ${c.name} (${c.co})`, taskPriority:"medium", contactId:c.id, companyId:c.companyId||null })),
     ...engagementRecs.slice(0,3).map((r,i) => ({ key:`eng-${i}`, isTask:false, icon:"💡", label:r.message, detail:`Source: ${r.source}`, priority:r.priority, nav:r.contactId?{view:"crm",focus:{type:"contact",id:r.contactId}}:null, taskTitle:r.message.substring(0,120), taskPriority:r.priority==="high"?"high":"medium", contactId:r.contactId||null, companyId:null })),
   ];
@@ -1591,8 +1808,8 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
   const liveAlerts = [
     ...overdueInv.map(i => ({ id:`ov-${i.id}`, agent:"Billing Agent", type:"alert", priority:"critical", message:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE (due ${i.due}).`, nav:{view:"billing",focus:{type:"invoice",id:i.id}} })),
     ...atRiskC.map(c => ({ id:`ar-${c.id}`, agent:"CRM Agent", type:"risk", priority:"critical", message:`${c.name} (${c.co}) at-risk. Score: ${c.score}/100. Last touch: ${c.lastTouch}.`, nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
-    ...criticalTasks.map(t => ({ id:`ct-${t.id}`, agent:"Ops Agent", type:"task", priority:"critical", message:`CRITICAL: "${t.title}" — due ${t.due}.`, nav:{view:"operations",focus:{type:"task",id:t.id}} })),
-    ...stalledProj.map(p => ({ id:`sp-${p.id}`, agent:"Ops Agent", type:"risk", priority:"high", message:`Project stalled: "${p.name}" (${p.client}) — ${p.progress}%.`, nav:{view:"operations",focus:{type:"project",id:p.id}} })),
+    ...criticalTasks.map(t => ({ id:`ct-${t.id}`, agent:"Ops Agent", type:"task", priority:"critical", message:`CRITICAL: "${t.title}" — due ${t.due}.`, nav:{view:"tasks",focus:{type:"task",id:t.id}} })),
+    ...stalledProj.map(p => ({ id:`sp-${p.id}`, agent:"Ops Agent", type:"risk", priority:"high", message:`Project stalled: "${p.name}" (${p.client}) — ${p.progress}%.`, nav:{view:"projects",focus:{type:"project",id:p.id}} })),
     ...decayedContacts.map(c => ({ id:`decay-${c.id}`, agent:"CRM Agent", type:"alert", priority:"medium", message:`Relationship decay: ${c.name} (${c.co}) — ${daysBetween(c.lastTouch, today())} days since last contact.`, nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
     ...activeDeals.filter(d=>d.probability>=60).map(d => ({ id:`deal-${d.id}`, agent:"CRM Agent", type:"opportunity", priority:"high", message:`${d.name} — ${fmt(d.value)} at ${d.probability}%.`, nav:{view:"deals",focus:{type:"deal",id:d.id}} })),
     { id:"pipe-summary", agent:"Orchestrator", type:"synthesis", priority:"high", message:`Pipeline: ${fmt(totalPipe)} total, ${fmt(weightedPipe)} weighted. Gap to ${fmt(goal.target_value)}: ${fmt(revenueGap)}. Coverage: ${pipelineCoverage}%.`, nav:null },
@@ -2379,7 +2596,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","operations","billing","voice","email","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","billing","voice","email","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
@@ -2479,7 +2696,9 @@ export default function App() {
     companies:    <CompaniesView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     deals:        <DealsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     marketing:    <MarketingView db={db} setDB={setDB}/>,
-    operations:   <OperationsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    projects:     <ProjectsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    calendar:     <CalendarView db={db} setDB={setDB}/>,
     billing:      <BillingView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
     email:        <EmailView db={db} setDB={setDB}/>,
