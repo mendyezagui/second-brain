@@ -155,11 +155,14 @@ const loadAllFromDB = async () => {
   const seed = initDB();
   const result = {};
   const fetches = await Promise.all(DB_TABLES.map(([, tbl]) => supabase.from(tbl).select("*").order("id")));
+  // Check if this database has EVER been seeded (any table has data)
+  const hasAnyData = fetches.some(({ data }) => data && data.length > 0);
   const toSeed = [];
   DB_TABLES.forEach(([key], i) => {
     const { data, error } = fetches[i];
     if (!error && data && data.length > 0) { result[key] = data; }
-    else { result[key] = seed[key]; toSeed.push({ key, i }); }
+    else if (!hasAnyData) { result[key] = seed[key]; toSeed.push({ key, i }); }
+    else { result[key] = []; } // Table is empty but DB is not fresh — don't re-seed
   });
   if (toSeed.length > 0) {
     await Promise.all(toSeed.map(({ key, i }) => {
