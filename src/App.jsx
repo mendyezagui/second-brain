@@ -2403,6 +2403,120 @@ const EmailView = ({ db, setDB }) => {
     </div>
   );
 };
+/* ────────────────────────────────────────────────────────
+   GOALS VIEW
+──────────────────────────────────────────────────────── */
+const GOAL_STATUSES = ["active","completed","paused","cancelled"];
+const GOAL_CATEGORIES = ["professional","personal"];
+const blankGoal = () => ({ name:"", description:"", category:"professional", status:"active", target_value:0, current_value:0, unit:"", period:"annual", start_date:today(), end_date:"", priority_order:0, notes:"" });
+const GoalsView = ({ db, setDB }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [gd, setGD] = useState(blankGoal());
+  const [filterCat, setFilterCat] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("active");
+  const goals = useMemo(() => { let g = [...(db.goals || [])]; if (filterCat !== "all") g = g.filter(x => x.category === filterCat); if (filterStatus !== "all") g = g.filter(x => x.status === filterStatus); return g.sort((a, b) => (a.priority_order || 0) - (b.priority_order || 0)); }, [db.goals, filterCat, filterStatus]);
+  const profGoals = (db.goals || []).filter(g => g.category === "professional" && g.status === "active");
+  const persGoals = (db.goals || []).filter(g => g.category === "personal" && g.status === "active");
+  const avgProgress = goals.length ? Math.round(goals.reduce((s, g) => s + (g.target_value > 0 ? Math.min(100, (g.current_value / g.target_value) * 100) : 0), 0) / goals.length) : 0;
+  const saveGoal = (d) => { const rec = { ...d, target_value: parseInt(d.target_value) || 0, current_value: parseInt(d.current_value) || 0, priority_order: parseInt(d.priority_order) || 0 }; if (drawer.mode === "add") setDB(db => ({ ...db, goals: [...(db.goals || []), { ...rec, id: nextId(db.goals || []) }] })); else setDB(db => ({ ...db, goals: (db.goals || []).map(x => x.id === rec.id ? rec : x) })); setDrawer(null); };
+  const delGoal = (id) => { setDB(db => ({ ...db, goals: (db.goals || []).filter(x => x.id !== id) })); setConfirm(null); };
+  const moveGoal = (idx, dir) => { const sorted = [...goals]; const ni = idx + dir; if (ni < 0 || ni >= sorted.length) return; [sorted[idx], sorted[ni]] = [sorted[ni], sorted[idx]]; const upd = sorted.map((g, i) => ({ ...g, priority_order: i })); setDB(db => ({ ...db, goals: (db.goals || []).map(g => { const u = upd.find(x => x.id === g.id); return u || g; }) })); };
+  const pctOf = (g) => g.target_value > 0 ? Math.min(100, Math.round((g.current_value / g.target_value) * 100)) : 0;
+  const catColor = (c) => c === "professional" ? "var(--blue)" : "var(--purple)";
+  const statusColor = (s) => ({ active: "var(--green)", completed: "var(--blue)", paused: "var(--amber)", cancelled: "var(--text-dim)" }[s] || "var(--text-sec)");
+  return (<div style={{padding:"2rem 2.5rem",maxWidth:1100,margin:"0 auto"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.5rem"}}>
+      <h2 style={{margin:0,fontSize:"1.5rem"}}>Goals & Priorities</h2>
+      <button onClick={()=>{setGD(blankGoal());setDrawer({mode:"add"})}} style={{background:"var(--accent)",color:"#fff",border:"none",borderRadius:8,padding:"0.5rem 1.2rem",cursor:"pointer",fontWeight:600}}>+ New Goal</button>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1rem",marginBottom:"1.5rem"}}>
+      {[["Total Goals",(db.goals||[]).length],["Professional",profGoals.length],["Personal",persGoals.length],["Avg Progress",avgProgress+"%"]].map(([l,v],i)=>(<div key={i} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",textAlign:"center"}}><div style={{fontSize:"1.5rem",fontWeight:700}}>{v}</div><div style={{fontSize:"0.85rem",color:"var(--text-sec)"}}>{l}</div></div>))}
+    </div>
+    <div style={{display:"flex",gap:"0.75rem",marginBottom:"1.5rem",flexWrap:"wrap"}}>
+      <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{padding:"0.4rem 0.8rem",borderRadius:8,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)"}}>
+        <option value="all">All Categories</option><option value="professional">Professional</option><option value="personal">Personal</option>
+      </select>
+      <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{padding:"0.4rem 0.8rem",borderRadius:8,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)"}}>
+        <option value="all">All Statuses</option>{GOAL_STATUSES.map(s=>(<option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>))}
+      </select>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
+      {goals.length===0&&<div style={{textAlign:"center",padding:"3rem",color:"var(--text-sec)"}}>No goals found. Create one to get started!</div>}
+      {goals.map((g,idx)=>(<div key={g.id} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",border:"1px solid var(--border)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.5rem"}}>
+          <div style={{display:"flex",alignItems:"center",gap:"0.75rem"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:2}}>
+              <button onClick={()=>moveGoal(idx,-1)} disabled={idx===0} style={{background:"none",border:"none",cursor:idx===0?"default":"pointer",opacity:idx===0?0.3:1,fontSize:"0.7rem",padding:0}}>&#9650;</button>
+              <button onClick={()=>moveGoal(idx,1)} disabled={idx===goals.length-1} style={{background:"none",border:"none",cursor:idx===goals.length-1?"default":"pointer",opacity:idx===goals.length-1?0.3:1,fontSize:"0.7rem",padding:0}}>&#9660;</button>
+            </div>
+            <span style={{fontWeight:600,fontSize:"1.05rem"}}>{g.name}</span>
+            <span style={{fontSize:"0.75rem",padding:"2px 8px",borderRadius:20,background:catColor(g.category)+"22",color:catColor(g.category),fontWeight:600}}>{g.category}</span>
+            <span style={{fontSize:"0.75rem",padding:"2px 8px",borderRadius:20,background:statusColor(g.status)+"22",color:statusColor(g.status),fontWeight:600}}>{g.status}</span>
+          </div>
+          <div style={{display:"flex",gap:"0.5rem"}}>
+            <button onClick={()=>{setGD({...g});setDrawer({mode:"edit"})}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--text)"}}>Edit</button>
+            <button onClick={()=>setConfirm(g)} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--red,#e53e3e)"}}>Del</button>
+          </div>
+        </div>
+        {g.description&&<div style={{fontSize:"0.85rem",color:"var(--text-sec)",marginBottom:"0.5rem"}}>{g.description}</div>}
+        {g.target_value>0&&<div style={{marginBottom:"0.5rem"}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.8rem",marginBottom:4}}>
+            <span>{g.current_value} / {g.target_value} {g.unit}</span><span style={{fontWeight:600}}>{pctOf(g)}%</span>
+          </div>
+          <div style={{background:"var(--bg)",borderRadius:6,height:8,overflow:"hidden"}}>
+            <div style={{width:pctOf(g)+"%",height:"100%",background:pctOf(g)>=100?"var(--green)":"var(--accent)",borderRadius:6,transition:"width 0.3s"}}/>
+          </div>
+        </div>}
+        <div style={{display:"flex",gap:"1rem",fontSize:"0.78rem",color:"var(--text-dim)",flexWrap:"wrap"}}>
+          {g.period&&<span>Period: {g.period}</span>}
+          {g.start_date&&<span>Start: {g.start_date}</span>}
+          {g.end_date&&<span>End: {g.end_date}</span>}
+          {g.notes&&<span>Notes: {g.notes.substring(0,60)}{g.notes.length>60?"...":""}</span>}
+        </div>
+      </div>))}
+    </div>
+    {drawer&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",justifyContent:"flex-end"}} onClick={e=>{if(e.target===e.currentTarget)setDrawer(null)}}>
+      <div style={{width:420,maxWidth:"90vw",background:"var(--card)",height:"100%",overflowY:"auto",padding:"1.5rem",boxShadow:"-4px 0 24px rgba(0,0,0,0.2)"}}>
+        <h3 style={{marginTop:0}}>{drawer.mode==="add"?"New Goal":"Edit Goal"}</h3>
+        <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
+          <label>Name<input value={gd.name} onChange={e=>setGD({...gd,name:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+          <label>Description<textarea value={gd.description} onChange={e=>setGD({...gd,description:e.target.value})} rows={3} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4,resize:"vertical"}} /></label>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.75rem"}}>
+            <label>Category<select value={gd.category} onChange={e=>setGD({...gd,category:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}}>{GOAL_CATEGORIES.map(c=>(<option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>))}</select></label>
+            <label>Status<select value={gd.status} onChange={e=>setGD({...gd,status:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}}>{GOAL_STATUSES.map(s=>(<option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>))}</select></label>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.75rem"}}>
+            <label>Target<input type="number" value={gd.target_value} onChange={e=>setGD({...gd,target_value:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+            <label>Current<input type="number" value={gd.current_value} onChange={e=>setGD({...gd,current_value:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+            <label>Unit<input value={gd.unit} onChange={e=>setGD({...gd,unit:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.75rem"}}>
+            <label>Period<select value={gd.period} onChange={e=>setGD({...gd,period:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}}>{["daily","weekly","monthly","quarterly","annual"].map(p=>(<option key={p} value={p}>{p}</option>))}</select></label>
+            <label>Start<input type="date" value={gd.start_date} onChange={e=>setGD({...gd,start_date:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+            <label>End<input type="date" value={gd.end_date} onChange={e=>setGD({...gd,end_date:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+          </div>
+          <label>Priority Order<input type="number" value={gd.priority_order} onChange={e=>setGD({...gd,priority_order:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+          <label>Notes<textarea value={gd.notes} onChange={e=>setGD({...gd,notes:e.target.value})} rows={3} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4,resize:"vertical"}} /></label>
+          <div style={{display:"flex",gap:"0.75rem",marginTop:"0.5rem"}}>
+            <button onClick={()=>saveGoal(gd)} style={{flex:1,padding:"0.5rem",background:"var(--accent)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Save</button>
+            <button onClick={()=>setDrawer(null)} style={{flex:1,padding:"0.5rem",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",color:"var(--text)"}}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>}
+    {confirm&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1001,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirm(null)}}>
+      <div style={{background:"var(--card)",borderRadius:12,padding:"1.5rem",maxWidth:400,width:"90%"}}>
+        <h3 style={{marginTop:0}}>Delete Goal?</h3>
+        <p>Are you sure you want to delete <strong>{confirm.name}</strong>?</p>
+        <div style={{display:"flex",gap:"0.75rem"}}>
+          <button onClick={()=>delGoal(confirm.id)} style={{flex:1,padding:"0.5rem",background:"var(--red,#e53e3e)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Delete</button>
+          <button onClick={()=>setConfirm(null)} style={{flex:1,padding:"0.5rem",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",color:"var(--text)"}}>Cancel</button>
+        </div>
+      </div>
+    </div>}
+  </div>);
+};
 
 /* ────────────────────────────────────────────────────────
    ADMIN VIEW
@@ -2731,6 +2845,7 @@ export default function App() {
     deals:        <DealsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    goals:        <GoalsView db={db} setDB={setDB}/>,
     projects:     <ProjectsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     calendar:     <CalendarView db={db} setDB={setDB}/>,
     billing:      <BillingView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
