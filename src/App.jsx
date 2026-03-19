@@ -386,12 +386,12 @@ const NAV = [
   {divider:true},
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
   {id:"orchestrator",icon:Brain,label:"Orchestrator"},
+  {id:"tasks",icon:CheckCircle,label:"Tasks"},
   {divider:true},
   {id:"crm",icon:Users,label:"CRM"},
   {id:"companies",icon:Building2,label:"Companies"},
   {id:"deals",icon:Target,label:"Deals"},
   {id:"marketing",icon:Megaphone,label:"Marketing"},
-  {id:"tasks",icon:CheckCircle,label:"Tasks"},
   {id:"projects",icon:Briefcase,label:"Projects"},
   {id:"calendar",icon:Calendar,label:"Calendar"},
   {id:"billing",icon:DollarSign,label:"Billing"},
@@ -1269,10 +1269,8 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
   const [fStatus, setFStatus] = useState("open"); // open = not done/cancelled
   const [fPriority, setFPriority] = useState("all");
   const [fCategory, setFCategory] = useState("all");
-  const [fCompany, setFCompany] = useState("all");
-  const [fPerson, setFPerson] = useState("all");
-  const [fProject, setFProject] = useState("all");
-  const [sortBy, setSortBy] = useState("due"); // due, priority, company, person
+  const [searchQ, setSearchQ] = useState(""); // free-text search across title, contact, company, project
+  const [sortBy, setSortBy] = useState("priority"); // priority, due
   const [groupBy, setGroupBy] = useState("none"); // none, project, company, person, status
 
   useEffect(() => {
@@ -1285,9 +1283,15 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
     else if (fStatus !== "all") tasks = tasks.filter(t => t.status === fStatus);
     if (fPriority !== "all") tasks = tasks.filter(t => t.priority === fPriority);
     if (fCategory !== "all") tasks = tasks.filter(t => t.category === fCategory);
-    if (fCompany !== "all") tasks = tasks.filter(t => String(t.companyId) === fCompany);
-    if (fPerson !== "all") tasks = tasks.filter(t => String(t.contactId) === fPerson);
-    if (fProject !== "all") tasks = tasks.filter(t => String(t.projectId) === fProject);
+    if (searchQ.trim()) {
+      const q = searchQ.toLowerCase();
+      tasks = tasks.filter(t => {
+        const contact = db.contacts.find(c=>c.id===t.contactId);
+        const company = db.companies.find(c=>c.id===t.companyId);
+        const project = db.projects.find(p=>p.id===t.projectId);
+        return (t.title||"").toLowerCase().includes(q) || (t.notes||"").toLowerCase().includes(q) || (contact?.name||"").toLowerCase().includes(q) || (company?.name||"").toLowerCase().includes(q) || (project?.name||"").toLowerCase().includes(q);
+      });
+    }
 
     const priOrder = { critical:0, high:1, medium:2, low:3 };
     tasks = [...tasks].sort((a,b) => {
@@ -1296,7 +1300,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
       return 0;
     });
     return tasks;
-  }, [db.tasks, fStatus, fPriority, fCategory, fCompany, fPerson, fProject, sortBy]);
+  }, [db.tasks, fStatus, fPriority, fCategory, searchQ, sortBy, db.contacts, db.companies, db.projects]);
 
   const grouped = useMemo(() => {
     if (groupBy === "none") return [{ label:null, tasks:filteredTasks }];
@@ -1331,39 +1335,28 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
 
       {true && (
         <>
-          {/* FILTER BAR */}
+          {/* SEARCH + FILTER BAR */}
           <div className="card" style={{ padding:"10px 14px" }}>
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
-              <Filter size={12} color="var(--text-sec)"/>
-              <select className="filter-select" value={fStatus} onChange={e=>setFStatus(e.target.value)}>
-                <option value="open">Open</option><option value="all">All</option>
-                {TASK_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}
-              </select>
-              <select className="filter-select" value={fPriority} onChange={e=>setFPriority(e.target.value)}>
-                <option value="all">Any Priority</option>
-                {["critical","high","medium","low"].map(p=><option key={p} value={p}>{p}</option>)}
-              </select>
-              <select className="filter-select" value={fCategory} onChange={e=>setFCategory(e.target.value)}>
-                <option value="all">Any Category</option>
-                {TASK_CATEGORIES.map(c=><option key={c} value={c}>{c.replace(/_/g," ")}</option>)}
-              </select>
-              <select className="filter-select" value={fCompany} onChange={e=>setFCompany(e.target.value)}>
-                <option value="all">Any Company</option>
-                {db.companies.map(c=><option key={c.id} value={String(c.id)}>{c.name}</option>)}
-              </select>
-              <select className="filter-select" value={fPerson} onChange={e=>setFPerson(e.target.value)}>
-                <option value="all">Any Person</option>
-                {db.contacts.map(c=><option key={c.id} value={String(c.id)}>{c.name}</option>)}
-              </select>
-              <select className="filter-select" value={fProject} onChange={e=>setFProject(e.target.value)}>
-                <option value="all">Any Project</option>
-                {db.projects.map(p=><option key={p.id} value={String(p.id)}>{p.name}</option>)}
-              </select>
+            <div style={{ position:"relative", marginBottom:10 }}>
+              <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:9, pointerEvents:"none" }}/>
+              <input className="input" placeholder="Search tasks, contacts, companies, projects…" value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+            </div>
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
+              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:2 }}>Status:</span>
+              {["open","all",...TASK_STATUSES].map(s=>(<button key={s} className={`filter-chip${fStatus===s?" active":""}`} onClick={()=>setFStatus(s)}>{s.replace(/_/g," ")}</button>))}
+            </div>
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
+              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:2 }}>Priority:</span>
+              {["all","critical","high","medium","low"].map(p=>(<button key={p} className={`filter-chip${fPriority===p?" active":""}`} onClick={()=>setFPriority(p)}>{p}</button>))}
+            </div>
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
+              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:2 }}>Category:</span>
+              {["all",...TASK_CATEGORIES].map(c=>(<button key={c} className={`filter-chip${fCategory===c?" active":""}`} onClick={()=>setFCategory(c)}>{c.replace(/_/g," ")}</button>))}
             </div>
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               <SortAsc size={12} color="var(--text-sec)"/>
               <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Sort:</span>
-              {["due","priority"].map(s=>(<button key={s} className={`filter-chip${sortBy===s?" active":""}`} onClick={()=>setSortBy(s)}>{s}</button>))}
+              {["priority","due"].map(s=>(<button key={s} className={`filter-chip${sortBy===s?" active":""}`} onClick={()=>setSortBy(s)}>{s}</button>))}
               <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:12 }}>Group:</span>
               {["none","project","company","person","status"].map(g=>(<button key={g} className={`filter-chip${groupBy===g?" active":""}`} onClick={()=>setGroupBy(g)}>{g}</button>))}
               <span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>{filteredTasks.length} tasks</span>
