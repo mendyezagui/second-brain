@@ -430,6 +430,7 @@ const NAV = [
   {divider:true},
   {id:"email",icon:Mail,label:"Email Lab"},
   {divider:true},
+  {id:"goals",icon:Award,label:"Goals"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
