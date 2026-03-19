@@ -304,6 +304,38 @@ const Sel = ({ value, onChange, options }) => (
 const Tex = ({ value, onChange, placeholder }) => (
   <textarea className="input" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} />
 );
+const SearchSelect = ({ value, onChange, options, placeholder }) => {
+  // options: [{value:"1", label:"Name"}, ...]. value is the selected value string.
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = options.find(o => String(o.value) === String(value));
+  const filtered = q ? options.filter(o => o.label.toLowerCase().includes(q.toLowerCase())) : options;
+  return (
+    <div style={{ position:"relative" }}>
+      <input className="input" value={open ? q : (selected?.label || "")} placeholder={placeholder || "Search…"}
+        onFocus={() => { setOpen(true); setQ(""); }}
+        onChange={e => { setQ(e.target.value); setOpen(true); }}
+        style={{ fontSize:13 }}
+      />
+      {open && (
+        <>
+          <div style={{ position:"fixed", inset:0, zIndex:998 }} onClick={() => setOpen(false)}/>
+          <div style={{ position:"absolute", top:"100%", left:0, right:0, maxHeight:180, overflowY:"auto", background:"var(--bg-card)", border:"1px solid var(--border)", borderRadius:8, boxShadow:"0 8px 24px rgba(0,0,0,0.12)", zIndex:999, marginTop:2 }}>
+            <div style={{ padding:"6px 10px", fontSize:11, color:"var(--text-dim)", cursor:"pointer", borderBottom:"1px solid var(--border)" }} onClick={() => { onChange(""); setOpen(false); }}>— none —</div>
+            {filtered.slice(0, 20).map(o => (
+              <div key={o.value} style={{ padding:"7px 10px", fontSize:12, cursor:"pointer", background:String(o.value)===String(value)?"var(--blue-dim)":"transparent" }}
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { onChange(String(o.value)); setOpen(false); setQ(""); }}>
+                {o.label}
+              </div>
+            ))}
+            {filtered.length === 0 && <div style={{ padding:"8px 10px", fontSize:11, color:"var(--text-dim)" }}>No results</div>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 const RowActions = ({ onEdit, onDelete }) => (
   <div className="row-actions" style={{ display:"flex", gap:2, opacity:0, transition:"opacity .15s" }}>
     <button className="btn-icon" title="Edit" onClick={e=>{e.stopPropagation();onEdit();}}><Pencil size={13} color="var(--text-sec)"/></button>
@@ -609,7 +641,7 @@ const ContactForm = ({ data, onChange, companies }) => (
   <>
     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
       <Field label="Name"><Inp value={data.name} onChange={v=>onChange({...data,name:v})} placeholder="Full name"/></Field>
-      <Field label="Company"><Sel value={data.companyId||""} onChange={v=>onChange({...data,companyId:v?parseInt(v):null,co:companies.find(c=>c.id===parseInt(v))?.name||data.co})} options={[{value:"",label:"— select or type below —"},...companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+      <Field label="Company"><SearchSelect value={data.companyId||""} onChange={v=>onChange({...data,companyId:v?parseInt(v):null,co:companies.find(c=>c.id===parseInt(v))?.name||data.co})} options={companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
       <Field label="Company (text)"><Inp value={data.co} onChange={v=>onChange({...data,co:v})} placeholder="Company name"/></Field>
       <Field label="Role"><Inp value={data.role} onChange={v=>onChange({...data,role:v})} placeholder="Title"/></Field>
       <Field label="Category"><Sel value={data.category||"customer_lead"} onChange={v=>onChange({...data,category:v})} options={CONTACT_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
@@ -1181,8 +1213,8 @@ const DealsView = ({ db, setDB, focus, setFocus }) => {
       {drawer&&<Drawer title={drawer==="add"?"New Deal":"Edit Deal"} onClose={()=>setDrawer(null)} onSave={save}>
         <Field label="Deal Name"><Inp value={d.name} onChange={v=>setD(p=>({...p,name:v}))} placeholder="Client — Initiative"/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-          <Field label="Contact"><Sel value={d.contactId} onChange={v=>setD(p=>({...p,contactId:v}))} options={[{value:"",label:"— none —"},...db.contacts.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
-          <Field label="Company"><Sel value={d.companyId} onChange={v=>setD(p=>({...p,companyId:v}))} options={[{value:"",label:"— none —"},...db.companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+          <Field label="Contact"><SearchSelect value={d.contactId} onChange={v=>setD(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…"/></Field>
+          <Field label="Company"><SearchSelect value={d.companyId} onChange={v=>setD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
           <Field label="Stage"><Sel value={d.stage} onChange={v=>setD(p=>({...p,stage:v}))} options={STAGES}/></Field>
           <Field label="Value ($)"><Inp type="number" value={d.value} onChange={v=>setD(p=>({...p,value:v}))}/></Field>
           <Field label="Probability (%)"><Inp type="number" value={d.probability} onChange={v=>setD(p=>({...p,probability:v}))}/></Field>
@@ -1408,10 +1440,10 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Priority"><Sel value={td.priority} onChange={v=>setTD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
           <Field label="Category"><Sel value={td.category} onChange={v=>setTD(p=>({...p,category:v}))} options={TASK_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
           <Field label="Due Date"><Inp type="date" value={td.due} onChange={v=>setTD(p=>({...p,due:v}))}/></Field>
-          <Field label="Person"><Sel value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={[{value:"",label:"— none —"},...db.contacts.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
-          <Field label="Company"><Sel value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={[{value:"",label:"— none —"},...db.companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
-          <Field label="Project"><Sel value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={[{value:"",label:"— none —"},...db.projects.map(x=>({value:String(x.id),label:x.name}))]}/></Field>
-          <Field label="Deal"><Sel value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={[{value:"",label:"— none —"},...db.deals.map(x=>({value:String(x.id),label:x.name}))]}/></Field>
+          <Field label="Person"><SearchSelect value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…"/></Field>
+          <Field label="Company"><SearchSelect value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
+          <Field label="Project"><SearchSelect value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search projects…"/></Field>
+          <Field label="Deal"><SearchSelect value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search deals…"/></Field>
           <Field label="Assigned To"><Inp value={td.assignedTo} onChange={v=>setTD(p=>({...p,assignedTo:v}))}/></Field>
           <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","orchestrator","news_engine","gmail_scan","ai_sweep"]}/></Field>
         </div>
@@ -1566,7 +1598,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
         <Field label="Project Name"><Inp value={pd.name} onChange={v=>setPD(p=>({...p,name:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Client"><Inp value={pd.client} onChange={v=>setPD(p=>({...p,client:v}))}/></Field>
-          <Field label="Company"><Sel value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={[{value:"",label:"— none —"},...db.companies.map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+          <Field label="Company"><SearchSelect value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
           <Field label="Status"><Sel value={pd.status} onChange={v=>setPD(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
           <Field label="Priority"><Sel value={pd.priority} onChange={v=>setPD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
           <Field label="Progress (%)"><Inp type="number" value={pd.progress} onChange={v=>setPD(p=>({...p,progress:v}))}/></Field>
@@ -1582,7 +1614,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
 /* ────────────────────────────────────────────────────────
    CALENDAR VIEW
 ──────────────────────────────────────────────────────── */
-const blankEvent = () => ({ title:"", date:today(), start_time:"09:00", end_time:"10:00", type:"meeting", location:"", notes:"", attendees:"", source:"manual", google_event_id:"" });
+const blankEvent = () => ({ title:"", date:today(), start_time:"09:00", end_time:"10:00", type:"meeting", location:"", notes:"", attendees:"", source:"manual", google_event_id:"", contactId:"", companyId:"", projectId:"", dealId:"", invoiceId:"" });
 
 const CalendarView = ({ db, setDB }) => {
   const [mode, setMode] = useState("week");
@@ -1662,6 +1694,13 @@ const CalendarView = ({ db, setDB }) => {
         </div>
         <Field label="Location"><Inp value={ed.location} onChange={v=>setED(e=>({...e,location:v}))}/></Field>
         <Field label="Attendees"><Inp value={ed.attendees} onChange={v=>setED(e=>({...e,attendees:v}))} placeholder="Comma-separated"/></Field>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+          <Field label="Person"><SearchSelect value={ed.contactId} onChange={v=>setED(e=>({...e,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…"/></Field>
+          <Field label="Company"><SearchSelect value={ed.companyId} onChange={v=>setED(e=>({...e,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
+          <Field label="Project"><SearchSelect value={ed.projectId} onChange={v=>setED(e=>({...e,projectId:v}))} options={db.projects.map(p=>({value:String(p.id),label:p.name}))} placeholder="Search projects…"/></Field>
+          <Field label="Deal"><SearchSelect value={ed.dealId} onChange={v=>setED(e=>({...e,dealId:v}))} options={db.deals.map(d=>({value:String(d.id),label:d.name}))} placeholder="Search deals…"/></Field>
+          <Field label="Invoice"><SearchSelect value={ed.invoiceId} onChange={v=>setED(e=>({...e,invoiceId:v}))} options={db.invoices.map(i=>({value:String(i.id),label:`${i.number} — ${i.client}`}))} placeholder="Search invoices…"/></Field>
+        </div>
         <Field label="Notes"><Tex value={ed.notes} onChange={v=>setED(e=>({...e,notes:v}))}/></Field>
         {drawer==="edit"&&<div style={{ marginTop:16, paddingTop:14, borderTop:"1px solid var(--border)" }}><button className="btn" style={{ width:"100%", justifyContent:"center", background:"var(--red-dim)", color:"var(--red)", border:"1px solid var(--red)" }} onClick={()=>setConfirm({id:ed.id,label:ed.title})}><Trash2 size={12}/>Delete Event</button></div>}
       </Drawer>}
