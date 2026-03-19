@@ -388,7 +388,7 @@ const NAV = [
   {id:"orchestrator",icon:Brain,label:"Orchestrator"},
   {id:"tasks",icon:CheckCircle,label:"Tasks"},
   {divider:true},
-  {id:"crm",icon:Users,label:"CRM"},
+  {id:"crm",icon:Users,label:"Contacts"},
   {id:"companies",icon:Building2,label:"Companies"},
   {id:"deals",icon:Target,label:"Deals"},
   {id:"marketing",icon:Megaphone,label:"Marketing"},
@@ -429,7 +429,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
 
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
-  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"CRM"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
+  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
   const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"billing",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
@@ -1337,29 +1337,31 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
         <>
           {/* SEARCH + FILTER BAR */}
           <div className="card" style={{ padding:"10px 14px" }}>
-            <div style={{ position:"relative", marginBottom:10 }}>
-              <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:9, pointerEvents:"none" }}/>
-              <input className="input" placeholder="Search tasks, contacts, companies, projects…" value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-            </div>
-            <div style={{ display:"flex", gap:4, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
-              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:2 }}>Status:</span>
-              {["open","all",...TASK_STATUSES].map(s=>(<button key={s} className={`filter-chip${fStatus===s?" active":""}`} onClick={()=>setFStatus(s)}>{s.replace(/_/g," ")}</button>))}
-            </div>
-            <div style={{ display:"flex", gap:4, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
-              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:2 }}>Priority:</span>
-              {["all","critical","high","medium","low"].map(p=>(<button key={p} className={`filter-chip${fPriority===p?" active":""}`} onClick={()=>setFPriority(p)}>{p}</button>))}
-            </div>
-            <div style={{ display:"flex", gap:4, flexWrap:"wrap", alignItems:"center", marginBottom:8 }}>
-              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:2 }}>Category:</span>
-              {["all",...TASK_CATEGORIES].map(c=>(<button key={c} className={`filter-chip${fCategory===c?" active":""}`} onClick={()=>setFCategory(c)}>{c.replace(/_/g," ")}</button>))}
-            </div>
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-              <SortAsc size={12} color="var(--text-sec)"/>
-              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Sort:</span>
-              {["priority","due"].map(s=>(<button key={s} className={`filter-chip${sortBy===s?" active":""}`} onClick={()=>setSortBy(s)}>{s}</button>))}
-              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:12 }}>Group:</span>
-              {["none","project","company","person","status"].map(g=>(<button key={g} className={`filter-chip${groupBy===g?" active":""}`} onClick={()=>setGroupBy(g)}>{g}</button>))}
-              <span className="mono" style={{ marginLeft:"auto", fontSize:10, color:"var(--text-sec)" }}>{filteredTasks.length} tasks</span>
+            <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+              <div style={{ position:"relative", flex:1, minWidth:180 }}>
+                <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:9, pointerEvents:"none" }}/>
+                <input className="input" placeholder="Search tasks…" value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{ paddingLeft:30, fontSize:12 }}/>
+              </div>
+              <select className="filter-select" value={fStatus} onChange={e=>setFStatus(e.target.value)}>
+                <option value="open">Open</option><option value="all">All</option>
+                {TASK_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}
+              </select>
+              <select className="filter-select" value={fPriority} onChange={e=>setFPriority(e.target.value)}>
+                <option value="all">Any Priority</option>
+                {["critical","high","medium","low"].map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+              <select className="filter-select" value={fCategory} onChange={e=>setFCategory(e.target.value)}>
+                <option value="all">Any Category</option>
+                {TASK_CATEGORIES.map(c=><option key={c} value={c}>{c.replace(/_/g," ")}</option>)}
+              </select>
+              <select className="filter-select" value={sortBy} onChange={e=>setSortBy(e.target.value)}>
+                <option value="priority">Sort: Urgency</option><option value="due">Sort: Due Date</option>
+              </select>
+              <select className="filter-select" value={groupBy} onChange={e=>setGroupBy(e.target.value)}>
+                <option value="none">No Grouping</option>
+                {["project","company","person","status"].map(g=><option key={g} value={g}>Group: {g}</option>)}
+              </select>
+              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{filteredTasks.length} tasks</span>
             </div>
           </div>
 
