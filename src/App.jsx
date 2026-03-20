@@ -7,7 +7,7 @@ import {
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
   FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash,
   Linkedin, ExternalLink, Filter, SortAsc, ChevronDown, CreditCard, Globe, Newspaper,
-  Star, ArrowRightCircle, Activity, Award, Building2
+  Star, ArrowRightCircle, Activity, Award, Building2, BookOpen
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -137,7 +137,7 @@ const ENV_READY = SUPA_URL.startsWith("https://") && SUPA_KEY.length > 10;
 const supabase = ENV_READY ? createClient(SUPA_URL, SUPA_KEY) : null;
 
 const DB_TABLES = [
-  ["contacts",    "contacts","payments","payment_allocations"],
+  ["contacts",    "contacts","payments","payment_allocations","instructions"],
   ["deals",       "deals"],
   ["tasks",       "tasks"],
   ["projects",    "projects"],
@@ -433,6 +433,7 @@ const NAV = [
   {id:"email",icon:Mail,label:"Email Lab"},
   {divider:true},
   {id:"goals",icon:Award,label:"Goals"},
+  {id:"instructions",icon:BookOpen,label:"Instructions"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
@@ -2418,6 +2419,145 @@ const EmailView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    PAYMENTS VIEW
 ──────────────────────────────────────────────────────── */
+const InstructionsView = ({ db, setDB }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [ed, setEd] = useState({ title:"", body:"", active:true });
+  const items = (db.instructions || []).sort((a,b) => a.sort_order - b.sort_order);
+  const activeCount = items.filter(i => i.active).length;
+
+  const save = () => {
+    const rec = { ...ed, sort_order: ed.sort_order ?? items.length };
+    if (drawer === "new") {
+      const id = Math.max(0, ...items.map(i=>i.id)) + 1;
+      setDB(p => ({ ...p, instructions: [...(p.instructions||[]), { ...rec, id }] }));
+    } else {
+      setDB(p => ({ ...p, instructions: (p.instructions||[]).map(x => x.id === drawer ? { ...x, ...rec } : x) }));
+    }
+    setDrawer(null);
+  };
+
+  const del = (id) => {
+    setDB(p => ({ ...p, instructions: (p.instructions||[]).filter(x => x.id !== id) }));
+    setConfirm(null);
+  };
+
+  const toggle = (id) => {
+    setDB(p => ({ ...p, instructions: (p.instructions||[]).map(x => x.id === id ? { ...x, active: !x.active } : x) }));
+  };
+
+  const moveUp = (idx) => {
+    if (idx === 0) return;
+    const arr = [...items];
+    [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+    const reordered = arr.map((x,i) => ({ ...x, sort_order: i }));
+    setDB(p => ({ ...p, instructions: reordered }));
+  };
+
+  const moveDown = (idx) => {
+    if (idx === items.length - 1) return;
+    const arr = [...items];
+    [arr[idx], arr[idx+1]] = [arr[idx+1], arr[idx]];
+    const reordered = arr.map((x,i) => ({ ...x, sort_order: i }));
+    setDB(p => ({ ...p, instructions: reordered }));
+  };
+
+  return (
+    <div style={{ maxWidth:900, margin:"0 auto" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
+        <div>
+          <h2 style={{ margin:0 }}>Instructions</h2>
+          <p style={{ margin:"4px 0 0", color:"var(--text-dim)", fontSize:13 }}>Directives your Second Brain follows when generating tasks and priorities</p>
+        </div>
+        <button onClick={() => { setEd({ title:"", body:"", active:true }); setDrawer("new"); }}
+          style={{ background:"var(--blue)", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:"pointer", display:"flex", alignItems:"center", gap:6, fontSize:14 }}>
+          <Plus size={16}/> New Instruction
+        </button>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:24 }}>
+        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
+          <div style={{ fontSize:28, fontWeight:700 }}>{items.length}</div>
+          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Total Instructions</div>
+        </div>
+        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
+          <div style={{ fontSize:28, fontWeight:700, color:"var(--green)" }}>{activeCount}</div>
+          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Active</div>
+        </div>
+        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
+          <div style={{ fontSize:28, fontWeight:700, color:"var(--text-dim)" }}>{items.length - activeCount}</div>
+          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Paused</div>
+        </div>
+      </div>
+
+      {items.length === 0 && <p style={{ textAlign:"center", color:"var(--text-dim)", padding:40 }}>No instructions yet. Add your first directive to guide your Second Brain.</p>}
+
+      <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+        {items.map((inst, idx) => (
+          <div key={inst.id} style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)", opacity: inst.active ? 1 : 0.5 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+              <div style={{ flex:1 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                  <BookOpen size={16} style={{ color:"var(--blue)" }}/>
+                  <h3 style={{ margin:0, fontSize:16 }}>{inst.title || "Untitled"}</h3>
+                  {!inst.active && <span style={{ fontSize:11, background:"var(--bg-el)", padding:"2px 8px", borderRadius:8, color:"var(--text-dim)" }}>Paused</span>}
+                </div>
+                <p style={{ margin:0, color:"var(--text-sec)", fontSize:13, whiteSpace:"pre-wrap", maxHeight:80, overflow:"hidden" }}>{inst.body}</p>
+              </div>
+              <div style={{ display:"flex", gap:4, marginLeft:12, flexShrink:0 }}>
+                <button onClick={() => moveUp(idx)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--text-dim)" }} title="Move up"><ArrowUp size={14}/></button>
+                <button onClick={() => moveDown(idx)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--text-dim)" }} title="Move down"><ArrowDown size={14}/></button>
+                <button onClick={() => toggle(inst.id)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color: inst.active ? "var(--green)" : "var(--text-dim)" }} title={inst.active ? "Pause" : "Activate"}>{inst.active ? <Eye size={14}/> : <MicOff size={14}/>}</button>
+                <button onClick={() => { setEd({ title:inst.title, body:inst.body, active:inst.active, sort_order:inst.sort_order }); setDrawer(inst.id); }} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--blue)" }} title="Edit"><Pencil size={14}/></button>
+                <button onClick={() => setConfirm(inst.id)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--red)" }} title="Delete"><Trash2 size={14}/></button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {drawer && <>
+        <div onClick={() => setDrawer(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:100 }}/>
+        <div style={{ position:"fixed", top:0, right:0, width:500, height:"100vh", background:"var(--bg-card)", zIndex:101, boxShadow:"-2px 0 20px rgba(0,0,0,0.15)", display:"flex", flexDirection:"column" }}>
+          <div style={{ padding:"20px 24px", borderBottom:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <h3 style={{ margin:0 }}>{drawer === "new" ? "New Instruction" : "Edit Instruction"}</h3>
+            <button onClick={() => setDrawer(null)} style={{ background:"none", border:"none", cursor:"pointer" }}><X size={18}/></button>
+          </div>
+          <div style={{ padding:24, flex:1, overflowY:"auto", display:"flex", flexDirection:"column", gap:16 }}>
+            <div>
+              <label style={{ fontSize:13, fontWeight:600, marginBottom:4, display:"block" }}>Title</label>
+              <input value={ed.title} onChange={e => setEd(p => ({...p, title:e.target.value}))} placeholder="e.g. Healthcare Billing Model" style={{ width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", fontSize:14, background:"var(--bg-el)" }}/>
+            </div>
+            <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
+              <label style={{ fontSize:13, fontWeight:600, marginBottom:4, display:"block" }}>Instructions</label>
+              <textarea value={ed.body} onChange={e => setEd(p => ({...p, body:e.target.value}))} placeholder="Write the rules, context, and directives here..." style={{ flex:1, minHeight:300, padding:"10px 12px", borderRadius:8, border:"1px solid var(--border)", fontSize:14, background:"var(--bg-el)", resize:"vertical", fontFamily:"var(--font-b)" }}/>
+            </div>
+            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:14, cursor:"pointer" }}>
+              <input type="checkbox" checked={ed.active} onChange={e => setEd(p => ({...p, active:e.target.checked}))}/> Active
+            </label>
+          </div>
+          <div style={{ padding:"16px 24px", borderTop:"1px solid var(--border)", display:"flex", gap:8, justifyContent:"flex-end" }}>
+            <button onClick={() => setDrawer(null)} style={{ padding:"8px 20px", borderRadius:8, border:"1px solid var(--border)", background:"var(--bg-el)", cursor:"pointer" }}>Cancel</button>
+            <button onClick={save} style={{ padding:"8px 20px", borderRadius:8, border:"none", background:"var(--blue)", color:"#fff", cursor:"pointer" }}>Save</button>
+          </div>
+        </div>
+      </>}
+
+      {confirm && <>
+        <div onClick={() => setConfirm(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:100 }}/>
+        <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", background:"var(--bg-card)", borderRadius:12, padding:24, zIndex:101, width:360, boxShadow:"0 8px 32px rgba(0,0,0,0.2)" }}>
+          <h3 style={{ margin:"0 0 8px" }}>Delete Instruction?</h3>
+          <p style={{ color:"var(--text-dim)", margin:"0 0 20px", fontSize:14 }}>This cannot be undone.</p>
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+            <button onClick={() => setConfirm(null)} style={{ padding:"8px 20px", borderRadius:8, border:"1px solid var(--border)", background:"var(--bg-el)", cursor:"pointer" }}>Cancel</button>
+            <button onClick={() => del(confirm)} style={{ padding:"8px 20px", borderRadius:8, border:"none", background:"var(--red)", color:"#fff", cursor:"pointer" }}>Delete</button>
+          </div>
+        </div>
+      </>}
+    </div>
+  );
+};
+
 const PAYMENT_METHODS = ["check","wire","ach","card","cash","other"];
 const blankPayment = () => ({ amount:0, date:today(), payer:"", payer_type:"company", method:"check", reference:"", notes:"", allocations:[] });
 const PaymentsView = ({ db, setDB }) => {
@@ -2855,7 +2995,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","instructions","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
@@ -2957,6 +3097,7 @@ export default function App() {
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB}/>,
+    instructions: <InstructionsView db={db} setDB={setDB}/>,
     payments:      <PaymentsView db={db} setDB={setDB}/>,
     projects:     <ProjectsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     calendar:     <CalendarView db={db} setDB={setDB}/>,
