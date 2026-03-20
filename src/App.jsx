@@ -749,6 +749,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
       });
       const data = await res.json();
       const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+    const instrList = (db.instructions || []).filter(i => i.active).map(i => `[${i.title}]: ${i.body}`).join('\n');
       let signals = [];
       try { const m = text.match(/\[[\s\S]*\]/); if (m) signals = JSON.parse(m[0]); } catch { signals = []; }
       let synthesis = signals.length > 0
@@ -1501,7 +1502,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
     try {
       const existingTasks = db.tasks.filter(t=>t.projectId===projectId).map(t=>`- ${t.title} (${t.status}, ${t.priority})`).join("\n");
       const system = `You are a project task planner. Given a project context and user instructions, generate actionable tasks. Return ONLY valid JSON: { "tasks": [{ "title": "...", "priority": "high|medium|low", "category": "follow_up|outreach|admin|research|meeting_prep|deliverable", "due": "YYYY-MM-DD or null", "notes": "..." }] }`;
-      const user = `Project: ${proj.name}\nClient: ${proj.client}\nProgress: ${proj.progress}%\nDue: ${proj.dueDate}\nExisting tasks:\n${existingTasks||"(none)"}\n\nUser request: ${aiInput}\n\nGenerate 3-6 concrete tasks. Today is ${today()}.`;
+      const user = `Project: ${proj.name}\nClient: ${proj.client}\nProgress: ${proj.progress}%\nDue: ${proj.dueDate}\nExisting tasks:\n${existingTasks||"(none)"}\n\nUser request: ${aiInput}\n\n\n\nActive Instructions (follow these directives when generating tasks):\n${(db.instructions||[]).filter(i=>i.active).map(i=>i.title+": "+i.body).join("\n")||"None set"}\n\nGenerate 3-6 concrete tasks. Today is ${today()}.`;
       const response = await callClaude(system, user, 1200);
       const parsed = JSON.parse(response);
       setAiProposals(parsed.tasks || []);
@@ -1878,9 +1879,10 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
         tasks: openTasks.map(t=>({title:t.title,due:t.due,priority:t.priority,category:t.category,contactId:t.contactId})),
         invoices: db.invoices.filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
         metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, pipelineCoverage, openTasks:openTasks.length, decayedContacts:decayedContacts.length },
-      };
+      ,
+      instructions: (db.instructions || []).filter(i => i.active).map(i => ({ title: i.title, body: i.body }))};
       const msg = await callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. Be specific — name names, cite numbers. One tight paragraph, max 4 sentences.`,
+        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. IMPORTANT: The snapshot includes an instructions array containing the user\\s active directives. These are rules, strategies, and context that MUST guide your analysis, task generation, and priority recommendations. Read each instruction carefully and incorporate them into your briefing. Be specific — name names, cite numbers. One tight paragraph, max 4 sentences.`,
         `Live snapshot — ${today()}:\n${JSON.stringify(snap,null,2)}\n\nSurface the single most important thing RIGHT NOW. What's at stake and what exactly should he do today?`,
         500
       );
@@ -2121,7 +2123,7 @@ const VoiceView = ({ db, setDB, autoRecord }) => {
     const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} — $${d.value} — stage:${d.stage} (prob:${d.probability}%)`).join("\n");
     const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} — status:${p.status} (progress:${p.progress}%)`).join("\n");
     const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} — due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
-    return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}`;
+    return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}\n\nACTIVE INSTRUCTIONS (directives to follow):\n${instrList || 'None set'}`;
   };
 
   /* Describe an operation in human-readable form */
