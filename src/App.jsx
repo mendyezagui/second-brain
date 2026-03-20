@@ -436,8 +436,9 @@ const NAV = [
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
-const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => (
-  <div style={{ width:collapsed?60:210, background:"var(--bg-card)", borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 8px", gap:2, transition:"width .25s", flexShrink:0 }}>
+const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
+  const [collGroups, setCollGroups] = useState({});
+  return (<div style={{ width:collapsed?60:210, background:"var(--bg-card)", borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 8px", gap:2, transition:"width .25s", flexShrink:0 }}>
     <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 6px 18px", cursor:"pointer" }} onClick={()=>setCollapsed(!collapsed)}>
       <div style={{ width:32, height:32, borderRadius:8, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
         <Brain size={16} color="var(--blue)"/>
@@ -465,7 +466,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => (
       </div>
     </div>
   </div>
-);
+)}
 
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
@@ -2859,8 +2860,7 @@ export default function App() {
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
   const [view, setView] = useState(viewFromHash);
-  const [collGroups, setCollGroups] = useState({});
-  const [focus, setFocus] = useState(null); // {type:"task"|"contact"|"deal"|"invoice"|"project"|"company", id:number}
+    const [focus, setFocus] = useState(null); // {type:"task"|"contact"|"deal"|"invoice"|"project"|"company", id:number}
   const navigate = (targetView, focusTarget) => { setView(targetView); if(focusTarget) setFocus(focusTarget); };
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(window.innerWidth < 768);
