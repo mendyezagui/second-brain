@@ -456,7 +456,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
               </div>; }
               if(n.parent) return null;
               const act=view===n.id;
-              return <button key={i} onClick={()=>setView(n.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 12px",border:"none",background:act?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:act?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.85rem"}}><n.icon size={16}/>{n.label}{n.id==="orchestrator"&&critCount>0&&<span style={{marginLeft:"auto",background:"var(--red,#e53e3e)",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:"0.7rem"}}>{critCount}</span>}</button>;
+              return <button key={i} onClick={()=>setView(n.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 12px",border:"none",background:act?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:act?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.85rem"}}><n.icon size={16}/>{n.label}{n.id==="orchestrator"&&(db.tasks||[]).filter(t=>t.priority==="critical"&&t.status!=="done").length>0&&<span style={{marginLeft:"auto",background:"var(--red,#e53e3e)",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:"0.7rem"}}>{(db.tasks||[]).filter(t=>t.priority==="critical"&&t.status!=="done").length}</span>}</button>;
             })}
     <div style={{ marginTop:"auto" }}>
       <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 6px" }}>
