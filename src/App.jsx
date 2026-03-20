@@ -6,7 +6,7 @@ import {
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
   FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash,
-  Linkedin, ExternalLink, Filter, SortAsc, ChevronDown, Globe, Newspaper,
+  Linkedin, ExternalLink, Filter, SortAsc, ChevronDown, CreditCard, Globe, Newspaper,
   Star, ArrowRightCircle, Activity, Award, Building2
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -137,7 +137,7 @@ const ENV_READY = SUPA_URL.startsWith("https://") && SUPA_KEY.length > 10;
 const supabase = ENV_READY ? createClient(SUPA_URL, SUPA_KEY) : null;
 
 const DB_TABLES = [
-  ["contacts",    "contacts"],
+  ["contacts",    "contacts","payments","payment_allocations"],
   ["deals",       "deals"],
   ["tasks",       "tasks"],
   ["projects",    "projects"],
@@ -422,11 +422,13 @@ const NAV = [
   {divider:true},
   {id:"crm",icon:Users,label:"Contacts"},
   {id:"companies",icon:Building2,label:"Companies"},
-  {id:"deals",icon:Target,label:"Deals"},
-  {id:"marketing",icon:Megaphone,label:"Marketing"},
+    {id:"marketing",icon:Megaphone,label:"Marketing"},
   {id:"projects",icon:Briefcase,label:"Projects"},
   {id:"calendar",icon:Calendar,label:"Calendar"},
-  {id:"billing",icon:DollarSign,label:"Billing"},
+    {id:"_fin",icon:DollarSign,label:"Financials",group:true,children:["deals","invoices","payments"]},
+  {id:"deals",icon:Target,label:"Deals",parent:"_fin"},
+  {id:"invoices",icon:FileText,label:"Invoices",parent:"_fin"},
+  {id:"payments",icon:CreditCard,label:"Payments",parent:"_fin"},
   {divider:true},
   {id:"email",icon:Mail,label:"Email Lab"},
   {divider:true},
@@ -442,15 +444,20 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
       </div>
       {!collapsed && <div><div className="display" style={{ fontSize:13, fontWeight:700 }}>Second Brain</div><div className="mono" style={{ fontSize:9, color:"var(--text-sec)" }}>Life OS</div></div>}
     </div>
-    {NAV.map((n,i)=>n.divider?(
-      <div key={i} style={{ height:1, background:"var(--border)", margin:"6px 6px" }}/>
-    ):(
-      <button key={n.id} className={`nav-item${view===n.id?" active":""}`} onClick={()=>setView(n.id)} style={{ justifyContent:collapsed?"center":"flex-start", position:"relative" }}>
-        <n.icon size={15} style={{ flexShrink:0 }}/>
-        {!collapsed && <span>{n.label}</span>}
-        {!collapsed && n.id==="orchestrator" && alerts>0 && <span style={{ marginLeft:"auto", background:"var(--red)", color:"#fff", borderRadius:10, padding:"1px 6px", fontSize:10 }}>{alerts}</span>}
-      </button>
-    ))}
+    {NAV.map((n,i)=>{
+              if(!n.id) return <div key={i} style={{marginTop:8,marginBottom:8,borderTop:"1px solid var(--border)"}} />;
+              if(n.group) { const open=!collGroups[n.id]; const childActive=n.children&&n.children.includes(view); return <div key={i}>
+                <button onClick={()=>setCollGroups(g=>({...g,[n.id]:!g[n.id]}))} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 12px",border:"none",background:childActive?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:childActive?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.85rem"}}>
+                  <n.icon size={16}/><span style={{flex:1,textAlign:"left"}}>{n.label}</span><ChevronRight size={14} style={{transform:open?"rotate(90deg)":"none",transition:"transform 0.2s"}}/>
+                </button>
+                {open&&<div style={{marginLeft:12}}>
+                  {NAV.filter(c=>c.parent===n.id).map(c=>{const act=view===c.id;return <button key={c.id} onClick={()=>setView(c.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"5px 12px",border:"none",background:act?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:act?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.82rem"}}><c.icon size={14}/>{c.label}</button>})}
+                </div>}
+              </div>; }
+              if(n.parent) return null;
+              const act=view===n.id;
+              return <button key={i} onClick={()=>setView(n.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 12px",border:"none",background:act?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:act?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.85rem"}}><n.icon size={16}/>{n.label}{n.id==="orchestrator"&&critCount>0&&<span style={{marginLeft:"auto",background:"var(--red,#e53e3e)",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:"0.7rem"}}>{critCount}</span>}</button>;
+            })}
     <div style={{ marginTop:"auto" }}>
       <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 6px" }}>
         <div style={{ width:7, height:7, borderRadius:"50%", background:"var(--green)", flexShrink:0 }} className="blink"/>
@@ -463,7 +470,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts }) => (
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"billing",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -1736,7 +1743,7 @@ const BillingView = ({ db, setDB, focus, setFocus }) => {
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Billing</div>
+        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Invoices</div>
         <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setD(blankInvoice());setDrawer("add");}}><Plus size={12}/>New Invoice</button>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12 }}>
@@ -1746,7 +1753,7 @@ const BillingView = ({ db, setDB, focus, setFocus }) => {
         <MetricCard icon={TrendingUp} label="ARR Run Rate" value={fmt(Math.round(paid*12/3))} sub={`toward ${fmt(db.goals[0]?.target_value||800000)}`} color="--blue"/>
       </div>
       {overdue>0&&<div className="card" style={{ padding:16, borderLeft:"3px solid var(--red)" }}>
-        <div style={{ display:"flex", gap:7, alignItems:"center", marginBottom:6 }}><AlertCircle size={14} color="var(--red)"/><span style={{ fontSize:12, fontWeight:700, color:"var(--red)" }}>BILLING AGENT ALERT</span></div>
+        <div style={{ display:"flex", gap:7, alignItems:"center", marginBottom:6 }}><AlertCircle size={14} color="var(--red)"/><span style={{ fontSize:12, fontWeight:700, color:"var(--red)" }}>INVOICE AGENT ALERT</span></div>
         <p style={{ fontSize:13, lineHeight:1.5 }}>{db.invoices.filter(i=>i.status==="overdue").length} invoices totaling {fmt(overdue)} overdue. Escalation recommended.</p>
       </div>}
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
@@ -1819,7 +1826,7 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
   // Build daily priorities (with navigation targets)
   const allPriorities = [
     ...criticalTasks.map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🔴", label:t.title, detail:`Due ${t.due} · Critical`, priority:"critical", nav:{view:"tasks",focus:{type:"task",id:t.id}} })),
-    ...overdueInv.map(i => ({ key:`inv-${i.id}`, isTask:false, icon:"💰", label:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE`, detail:`Due ${i.due}`, priority:"critical", nav:{view:"billing",focus:{type:"invoice",id:i.id}}, taskTitle:`Follow up on overdue invoice ${i.number} — ${i.client} (${fmt(i.amount)})`, taskPriority:"critical", contactId:null, companyId:null })),
+    ...overdueInv.map(i => ({ key:`inv-${i.id}`, isTask:false, icon:"💰", label:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE`, detail:`Due ${i.due}`, priority:"critical", nav:{view:"invoices",focus:{type:"invoice",id:i.id}}, taskTitle:`Follow up on overdue invoice ${i.number} — ${i.client} (${fmt(i.amount)})`, taskPriority:"critical", contactId:null, companyId:null })),
     ...atRiskC.map(c => ({ key:`risk-${c.id}`, isTask:false, icon:"⚠️", label:`${c.name} (${c.co}) is at-risk`, detail:`Score: ${c.score}. Last touch: ${c.lastTouch}`, priority:"critical", nav:{view:"crm",focus:{type:"contact",id:c.id}}, taskTitle:`Re-engage at-risk contact: ${c.name} (${c.co})`, taskPriority:"high", contactId:c.id, companyId:c.companyId||null })),
     ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high", nav:{view:"tasks",focus:{type:"task",id:t.id}} })),
     ...decayedContacts.slice(0,3).map(c => ({ key:`decay-${c.id}`, isTask:false, icon:"📞", label:`Reconnect: ${c.name} (${c.co})`, detail:`${daysBetween(c.lastTouch, today())} days since last touch. Score: ${c.score}`, priority:"medium", nav:{view:"crm",focus:{type:"contact",id:c.id}}, taskTitle:`Reconnect with ${c.name} (${c.co})`, taskPriority:"medium", contactId:c.id, companyId:c.companyId||null })),
@@ -1841,7 +1848,7 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
   const dismissItem = (p) => setDismissed(d=>({...d,[p.key]:true}));
 
   const liveAlerts = [
-    ...overdueInv.map(i => ({ id:`ov-${i.id}`, agent:"Billing Agent", type:"alert", priority:"critical", message:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE (due ${i.due}).`, nav:{view:"billing",focus:{type:"invoice",id:i.id}} })),
+    ...overdueInv.map(i => ({ id:`ov-${i.id}`, agent:"Billing Agent", type:"alert", priority:"critical", message:`${i.number} — ${i.client} — ${fmt(i.amount)} OVERDUE (due ${i.due}).`, nav:{view:"invoices",focus:{type:"invoice",id:i.id}} })),
     ...atRiskC.map(c => ({ id:`ar-${c.id}`, agent:"CRM Agent", type:"risk", priority:"critical", message:`${c.name} (${c.co}) at-risk. Score: ${c.score}/100. Last touch: ${c.lastTouch}.`, nav:{view:"crm",focus:{type:"contact",id:c.id}} })),
     ...criticalTasks.map(t => ({ id:`ct-${t.id}`, agent:"Ops Agent", type:"task", priority:"critical", message:`CRITICAL: "${t.title}" — due ${t.due}.`, nav:{view:"tasks",focus:{type:"task",id:t.id}} })),
     ...stalledProj.map(p => ({ id:`sp-${p.id}`, agent:"Ops Agent", type:"risk", priority:"high", message:`Project stalled: "${p.name}" (${p.client}) — ${p.progress}%.`, nav:{view:"projects",focus:{type:"project",id:p.id}} })),
@@ -2407,6 +2414,108 @@ const EmailView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    GOALS VIEW
 ──────────────────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────
+   PAYMENTS VIEW
+──────────────────────────────────────────────────────── */
+const PAYMENT_METHODS = ["check","wire","ach","card","cash","other"];
+const blankPayment = () => ({ amount:0, date:today(), payer:"", payer_type:"company", method:"check", reference:"", notes:"", allocations:[] });
+const PaymentsView = ({ db, setDB }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [pd, setPD] = useState(blankPayment());
+  const [filterMethod, setFilterMethod] = useState("all");
+  const payments = useMemo(() => { let p = [...(db.payments || [])]; if (filterMethod !== "all") p = p.filter(x => x.method === filterMethod); return p.sort((a, b) => (b.date || "").localeCompare(a.date || "")); }, [db.payments, filterMethod]);
+  const invoices = db.invoices || [];
+  const totalReceived = (db.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
+  const totalAllocated = (db.payment_allocations || []).reduce((s, a) => s + (a.amount || 0), 0);
+  const unallocated = totalReceived - totalAllocated;
+  const openInvoices = invoices.filter(inv => { const paid = (db.payment_allocations || []).filter(a => a.invoice_id === inv.id).reduce((s, a) => s + a.amount, 0); return inv.amount - paid > 0 && inv.status !== "cancelled"; });
+  const savePayment = (d) => { const rec = { ...d, amount: parseInt(d.amount) || 0 }; const allocs = rec.allocations || []; delete rec.allocations; if (drawer.mode === "add") { const newId = nextId(db.payments || []); setDB(db => { const newAllocs = allocs.filter(a => a.amount > 0).map(a => ({ ...a, id: nextId([...(db.payment_allocations || []), ...allocs]), payment_id: newId })); return { ...db, payments: [...(db.payments || []), { ...rec, id: newId }], payment_allocations: [...(db.payment_allocations || []), ...newAllocs] }; }); } else { setDB(db => { const cleaned = (db.payment_allocations || []).filter(a => a.payment_id !== rec.id); const newAllocs = allocs.filter(a => a.amount > 0).map((a, i) => ({ id: nextId([...cleaned]), payment_id: rec.id, invoice_id: a.invoice_id, amount: parseInt(a.amount) || 0 })); return { ...db, payments: (db.payments || []).map(x => x.id === rec.id ? rec : x), payment_allocations: [...cleaned, ...newAllocs] }; }); } setDrawer(null); };
+  const delPayment = (id) => { setDB(db => ({ ...db, payments: (db.payments || []).filter(x => x.id !== id), payment_allocations: (db.payment_allocations || []).filter(a => a.payment_id !== id) })); setConfirm(null); };
+  const getAllocs = (pid) => (db.payment_allocations || []).filter(a => a.payment_id === pid);
+  const getInvLabel = (iid) => { const inv = invoices.find(x => x.id === iid); return inv ? inv.number + " - " + inv.client : "Invoice #" + iid; };
+  return (<div style={{padding:"2rem 2.5rem",maxWidth:1100,margin:"0 auto"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.5rem"}}>
+      <h2 style={{margin:0,fontSize:"1.5rem"}}>Payments</h2>
+      <button onClick={()=>{setPD(blankPayment());setDrawer({mode:"add"})}} style={{background:"var(--accent)",color:"#fff",border:"none",borderRadius:8,padding:"0.5rem 1.2rem",cursor:"pointer",fontWeight:600}}>+ Record Payment</button>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1rem",marginBottom:"1.5rem"}}>
+      {[["Total Received","$"+(totalReceived/100).toLocaleString()],["Payments",(db.payments||[]).length],["Allocated","$"+(totalAllocated/100).toLocaleString()],["Unallocated","$"+(unallocated/100).toLocaleString()]].map(([l,v],i)=>(<div key={i} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",textAlign:"center"}}><div style={{fontSize:"1.5rem",fontWeight:700}}>{v}</div><div style={{fontSize:"0.85rem",color:"var(--text-sec)"}}>{l}</div></div>))}
+    </div>
+    <div style={{display:"flex",gap:"0.75rem",marginBottom:"1.5rem"}}>
+      <select value={filterMethod} onChange={e=>setFilterMethod(e.target.value)} style={{padding:"0.4rem 0.8rem",borderRadius:8,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)"}}>
+        <option value="all">All Methods</option>{PAYMENT_METHODS.map(m=>(<option key={m} value={m}>{m.toUpperCase()}</option>))}
+      </select>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
+      {payments.length===0&&<div style={{textAlign:"center",padding:"3rem",color:"var(--text-sec)"}}>No payments recorded yet.</div>}
+      {payments.map(p=>{const allocs=getAllocs(p.id);return(<div key={p.id} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",border:"1px solid var(--border)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.4rem"}}>
+          <div style={{display:"flex",alignItems:"center",gap:"0.75rem"}}>
+            <span style={{fontWeight:700,fontSize:"1.1rem",color:"var(--green)"}}>{"$"+(p.amount/100).toLocaleString()}</span>
+            <span style={{fontWeight:600}}>{p.payer}</span>
+            <span style={{fontSize:"0.75rem",padding:"2px 8px",borderRadius:20,background:"var(--blue)22",color:"var(--blue)",fontWeight:600}}>{p.method}</span>
+          </div>
+          <div style={{display:"flex",gap:"0.5rem"}}>
+            <button onClick={()=>{setPD({...p,allocations:allocs.map(a=>({invoice_id:a.invoice_id,amount:a.amount}))});setDrawer({mode:"edit"})}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--text)"}}>Edit</button>
+            <button onClick={()=>setConfirm(p)} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--red,#e53e3e)"}}>Del</button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:"1rem",fontSize:"0.78rem",color:"var(--text-dim)",flexWrap:"wrap"}}>
+          <span>Date: {p.date}</span>
+          {p.reference&&<span>Ref: {p.reference}</span>}
+          {allocs.length>0&&<span>Applied to: {allocs.map(a=>getInvLabel(a.invoice_id)+" ($"+(a.amount/100).toLocaleString()+")").join(", ")}</span>}
+          {p.notes&&<span>Notes: {p.notes.substring(0,60)}{p.notes.length>60?"...":""}</span>}
+        </div>
+      </div>)})}
+    </div>
+    {drawer&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",justifyContent:"flex-end"}} onClick={e=>{if(e.target===e.currentTarget)setDrawer(null)}}>
+      <div style={{width:480,maxWidth:"90vw",background:"var(--card)",height:"100%",overflowY:"auto",padding:"1.5rem",boxShadow:"-4px 0 24px rgba(0,0,0,0.2)"}}>
+        <h3 style={{marginTop:0}}>{drawer.mode==="add"?"Record Payment":"Edit Payment"}</h3>
+        <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.75rem"}}>
+            <label>Amount (cents)<input type="number" value={pd.amount} onChange={e=>setPD({...pd,amount:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+            <label>Date<input type="date" value={pd.date} onChange={e=>setPD({...pd,date:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.75rem"}}>
+            <label>Payer<input value={pd.payer} onChange={e=>setPD({...pd,payer:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+            <label>Method<select value={pd.method} onChange={e=>setPD({...pd,method:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}}>{PAYMENT_METHODS.map(m=>(<option key={m} value={m}>{m.toUpperCase()}</option>))}</select></label>
+          </div>
+          <label>Reference #<input value={pd.reference} onChange={e=>setPD({...pd,reference:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+          <label>Notes<textarea value={pd.notes} onChange={e=>setPD({...pd,notes:e.target.value})} rows={2} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4,resize:"vertical"}} /></label>
+          <div style={{borderTop:"1px solid var(--border)",paddingTop:"0.75rem",marginTop:"0.25rem"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.5rem"}}>
+              <strong style={{fontSize:"0.9rem"}}>Apply to Invoices</strong>
+              <button onClick={()=>setPD({...pd,allocations:[...(pd.allocations||[]),{invoice_id:openInvoices[0]?.id||0,amount:0}]})} style={{background:"none",border:"1px solid var(--border)",borderRadius:6,padding:"2px 10px",cursor:"pointer",fontSize:"0.8rem",color:"var(--accent)"}}>+ Add</button>
+            </div>
+            {(pd.allocations||[]).map((a,ai)=>(<div key={ai} style={{display:"flex",gap:"0.5rem",alignItems:"center",marginBottom:"0.4rem"}}>
+              <select value={a.invoice_id} onChange={e=>{const allocs=[...pd.allocations];allocs[ai]={...allocs[ai],invoice_id:parseInt(e.target.value)};setPD({...pd,allocations:allocs})}} style={{flex:2,padding:"0.35rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontSize:"0.82rem"}}>
+                <option value={0}>Select invoice...</option>{invoices.map(inv=>(<option key={inv.id} value={inv.id}>{inv.number} - {inv.client} ({"$"+(inv.amount/100).toLocaleString()})</option>))}
+              </select>
+              <input type="number" placeholder="Amount" value={a.amount} onChange={e=>{const allocs=[...pd.allocations];allocs[ai]={...allocs[ai],amount:parseInt(e.target.value)||0};setPD({...pd,allocations:allocs})}} style={{flex:1,padding:"0.35rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontSize:"0.82rem"}} />
+              <button onClick={()=>{const allocs=[...pd.allocations];allocs.splice(ai,1);setPD({...pd,allocations:allocs})}} style={{background:"none",border:"none",color:"var(--red,#e53e3e)",cursor:"pointer",fontSize:"1rem"}}>x</button>
+            </div>))}
+            {(pd.allocations||[]).length>0&&<div style={{fontSize:"0.8rem",color:"var(--text-dim)",marginTop:4}}>Total allocated: {"$"+((pd.allocations||[]).reduce((s,a)=>s+(parseInt(a.amount)||0),0)/100).toLocaleString()} of {"$"+((parseInt(pd.amount)||0)/100).toLocaleString()}</div>}
+          </div>
+          <div style={{display:"flex",gap:"0.75rem",marginTop:"0.5rem"}}>
+            <button onClick={()=>savePayment(pd)} style={{flex:1,padding:"0.5rem",background:"var(--accent)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Save</button>
+            <button onClick={()=>setDrawer(null)} style={{flex:1,padding:"0.5rem",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",color:"var(--text)"}}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>}
+    {confirm&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1001,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirm(null)}}>
+      <div style={{background:"var(--card)",borderRadius:12,padding:"1.5rem",maxWidth:400,width:"90%"}}>
+        <h3 style={{marginTop:0}}>Delete Payment?</h3>
+        <p>Delete payment of <strong>{"$"+(confirm.amount/100).toLocaleString()}</strong> from <strong>{confirm.payer}</strong>? This will also remove all invoice allocations.</p>
+        <div style={{display:"flex",gap:"0.75rem"}}>
+          <button onClick={()=>delPayment(confirm.id)} style={{flex:1,padding:"0.5rem",background:"var(--red,#e53e3e)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Delete</button>
+          <button onClick={()=>setConfirm(null)} style={{flex:1,padding:"0.5rem",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",color:"var(--text)"}}>Cancel</button>
+        </div>
+      </div>
+    </div>}
+  </div>);
+};
 const GOAL_STATUSES = ["active","completed","paused","cancelled"];
 const GOAL_CATEGORIES = ["professional","personal"];
 const blankGoal = () => ({ name:"", description:"", category:"professional", status:"active", target_value:0, current_value:0, unit:"", period:"annual", start_date:today(), end_date:"", priority_order:0, notes:"" });
@@ -2745,11 +2854,12 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","billing","voice","email","goals","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
   const [view, setView] = useState(viewFromHash);
+  const [collGroups, setCollGroups] = useState({});
   const [focus, setFocus] = useState(null); // {type:"task"|"contact"|"deal"|"invoice"|"project"|"company", id:number}
   const navigate = (targetView, focusTarget) => { setView(targetView); if(focusTarget) setFocus(focusTarget); };
   const [collapsed, setCollapsed] = useState(false);
@@ -2847,9 +2957,10 @@ export default function App() {
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB}/>,
+    payments:      <PaymentsView db={db} setDB={setDB}/>,
     projects:     <ProjectsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     calendar:     <CalendarView db={db} setDB={setDB}/>,
-    billing:      <BillingView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    invoices:      <BillingView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
     email:        <EmailView db={db} setDB={setDB}/>,
     admin:        <AdminView session={session}/>,
