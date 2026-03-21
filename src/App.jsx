@@ -1020,7 +1020,7 @@ const CompaniesView = ({ db, setDB, focus, setFocus }) => {
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"add",data:blankCompany()})}><Plus size={12}/>Add</button>
           </div>
           <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-            {["all","prospect","customer","partner","churned"].map(s=>(
+            {["all","prospect","customer","partner","parked","churned"].map(s=>(
               <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
             ))}
           </div>
@@ -1100,7 +1100,7 @@ const CompaniesView = ({ db, setDB, focus, setFocus }) => {
         <Field label="Company Name"><Inp value={drawer.data.name} onChange={v=>setDrawer(d=>({...d,data:{...d.data,name:v}}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Industry"><Inp value={drawer.data.industry} onChange={v=>setDrawer(d=>({...d,data:{...d.data,industry:v}}))}/></Field>
-          <Field label="Status"><Sel value={drawer.data.status} onChange={v=>setDrawer(d=>({...d,data:{...d.data,status:v}}))} options={["prospect","customer","partner","churned"]}/></Field>
+          <Field label="Status"><Sel value={drawer.data.status} onChange={v=>setDrawer(d=>({...d,data:{...d.data,status:v}}))} options={["prospect","customer","partner","parked","churned"]}/></Field>
           <Field label="Website"><Inp value={drawer.data.website} onChange={v=>setDrawer(d=>({...d,data:{...d.data,website:v}}))}/></Field>
           <Field label="LinkedIn URL"><Inp value={drawer.data.linkedin_url} onChange={v=>setDrawer(d=>({...d,data:{...d.data,linkedin_url:v}}))}/></Field>
         </div>
@@ -1873,7 +1873,7 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
     setLoading(true);
     try {
       const snap = {
-        contacts: db.contacts.map(c=>({name:c.name,co:c.co,status:c.status,category:c.category,score:c.score,lastTouch:c.lastTouch,follow_up:c.follow_up})),
+        contacts: db.contacts.filter(c=>{const comp=(db.companies||[]).find(co=>co.name===c.co);return !comp||comp.status!=="parked"}).map(c=>({name:c.name,co:c.co,status:c.status,category:c.category,score:c.score,lastTouch:c.lastTouch,follow_up:c.follow_up})),
         deals: db.deals.map(d=>({name:d.name,value:d.value,stage:d.stage,probability:d.probability,closeDate:d.closeDate,notes:d.notes})),
         projects: db.projects.map(p=>({name:p.name,client:p.client,status:p.status,progress:p.progress})),
         tasks: openTasks.map(t=>({title:t.title,due:t.due,priority:t.priority,category:t.category,contactId:t.contactId})),
@@ -1896,7 +1896,7 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
   const runNewsEngine = async () => {
     setNewsLoading(true);
     try {
-      const companiesWithKeywords = db.companies.filter(c => c.name);
+      const companiesWithKeywords = db.companies.filter(c => c.name && c.status !== "parked");
       if (companiesWithKeywords.length === 0) { setNewsLoading(false); return; }
 
       const companyList = companiesWithKeywords.map(c => `${c.name}${c.news_keywords ? ` (keywords: ${c.news_keywords})` : ""}`).join(", ");
@@ -2118,8 +2118,8 @@ const VoiceView = ({ db, setDB, autoRecord }) => {
   }, [autoRecord]);
 
   const buildContext = () => {
-    const contacts = (db.contacts||[]).map(c=>`[Contact id:${c.id}] ${c.name} — ${c.co||""} — ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
-    const companies = (db.companies||[]).map(c=>`[Company id:${c.id}] ${c.name} — ${c.industry||""} (status:${c.status||"prospect"})`).join("\n");
+    const contacts = (db.contacts||[]).filter(c=>{const comp=(db.companies||[]).find(co=>co.name===c.co);return !comp||comp.status!=="parked"}).map(c=>`[Contact id:${c.id}] ${c.name} — ${c.co||""} — ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
+    const companies = (db.companies||[]).filter(c=>c.status!=="parked").map(c=>`[Company id:${c.id}] ${c.name} — ${c.industry||""} (status:${c.status||"prospect"})`).join("\n");
     const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} — $${d.value} — stage:${d.stage} (prob:${d.probability}%)`).join("\n");
     const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} — status:${p.status} (progress:${p.progress}%)`).join("\n");
     const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} — due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
