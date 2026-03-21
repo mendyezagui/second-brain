@@ -1964,49 +1964,6 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
         </div>
       </div>
 
-      {/* Daily Priorities */}
-      {dailyPriorities.length > 0 && (
-        <div className="card" style={{ padding:18, borderLeft:"4px solid var(--purple)" }}>
-          <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:12 }}>
-            <Sparkles size={14} color="var(--purple)"/>
-            <span style={{ fontFamily:"var(--font-d)", fontSize:14, fontWeight:700, color:"var(--purple)" }}>Daily Priorities</span>
-            <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{dailyPriorities.length} items · auto-generated</span>
-          </div>
-          {dailyPriorities.slice(0,8).map((p,i) => (
-            <div key={p.key} className="row-hover" style={{ display:"flex", gap:8, alignItems:"flex-start", padding:"6px 4px", borderBottom:i<Math.min(dailyPriorities.length,8)-1?"1px solid var(--border)":"none", borderRadius:4, transition:"background .15s", position:"relative" }}>
-              <span style={{ fontSize:13, flexShrink:0, cursor:p.nav?"pointer":"default" }} onClick={()=>p.nav&&navigate(p.nav.view,p.nav.focus)}>{p.icon}</span>
-              <div style={{ flex:1, cursor:p.nav?"pointer":"default", minWidth:0 }} onClick={()=>p.nav&&navigate(p.nav.view,p.nav.focus)}>
-                <div style={{ fontSize:12, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.label}</div>
-                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{p.detail}</div>
-              </div>
-              <Tag label={p.priority}/>
-              {/* Action buttons for non-task items */}
-              {p.isTask ? (
-                <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0,marginTop:2,cursor:"pointer"}} onClick={()=>p.nav&&navigate(p.nav.view,p.nav.focus)}/>
-              ) : (
-                <div className="row-actions" style={{ display:"flex", gap:2, opacity:0, transition:"opacity .15s", flexShrink:0 }}>
-                  {snoozing===p.key ? (
-                    <div style={{ display:"flex", gap:4, alignItems:"center" }} onClick={e=>e.stopPropagation()}>
-                      {[{label:"Tomorrow",d:1},{label:"+3d",d:3},{label:"+7d",d:7}].map(opt=>(
-                        <button key={opt.d} className="btn btn-ghost" style={{ padding:"2px 6px", fontSize:10, lineHeight:1 }} onClick={(e)=>{e.stopPropagation();const nd=new Date();nd.setDate(nd.getDate()+opt.d);snoozeItem(p,nd.toISOString().split("T")[0]);}}>
-                          {opt.label}
-                        </button>
-                      ))}
-                      <button className="btn-icon" style={{ width:20, height:20 }} onClick={(e)=>{e.stopPropagation();setSnoozing(null);}}><X size={10}/></button>
-                    </div>
-                  ) : (
-                    <>
-                      <button title="Mark complete" className="btn-icon" style={{ width:24, height:24 }} onClick={(e)=>{e.stopPropagation();convertToTask(p);}}><CheckCircle size={12} color="var(--green)"/></button>
-                      <button title="Snooze" className="btn-icon" style={{ width:24, height:24 }} onClick={(e)=>{e.stopPropagation();setSnoozing(p.key);}}><Calendar size={12} color="var(--blue)"/></button>
-                      <button title="Dismiss" className="btn-icon delete" style={{ width:24, height:24 }} onClick={(e)=>{e.stopPropagation();dismissItem(p);}}><X size={12}/></button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Agent stat cards */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 }}>
@@ -2022,22 +1979,6 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
         ))}
       </div>
 
-      {/* Metrics strip */}
-      <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-        {[
-          { label:"YTD Collected", val:fmt(paidYTD), color:"var(--green)" },
-          { label:"Wtd Pipeline", val:fmt(weightedPipe), color:"var(--blue)" },
-          { label:"Pipeline Coverage", val:`${pipelineCoverage}%`, color:pipelineCoverage>=80?"var(--green)":pipelineCoverage>=40?"var(--amber)":"var(--red)" },
-          { label:"Overdue A/R", val:fmt(overdueAR), color:"var(--red)" },
-          { label:"Revenue Gap", val:fmt(revenueGap), color:"var(--amber)" },
-          { label:"Critical Items", val:criticalTasks.length+atRiskC.length+stalledProj.length, color:"var(--red)" },
-        ].map(m=>(
-          <div key={m.label} className="card-el" style={{ padding:"8px 14px", display:"flex", gap:8, alignItems:"center" }}>
-            <span style={{ fontFamily:"var(--font-d)", fontWeight:700, fontSize:15, color:m.color }}>{m.val}</span>
-            <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{m.label}</span>
-          </div>
-        ))}
-      </div>
 
       {/* Live Alerts */}
       <div>
