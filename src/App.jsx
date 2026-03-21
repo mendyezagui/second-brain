@@ -1879,10 +1879,9 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
         tasks: openTasks.map(t=>({title:t.title,due:t.due,priority:t.priority,category:t.category,contactId:t.contactId})),
         invoices: db.invoices.filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
         metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, pipelineCoverage, openTasks:openTasks.length, decayedContacts:decayedContacts.length },
-      ,
       instructions: (db.instructions || []).filter(i => i.active).map(i => ({ title: i.title, body: i.body }))};
       const msg = await callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. IMPORTANT: The snapshot includes an instructions array containing the user\\s active directives. These are rules, strategies, and context that MUST guide your analysis, task generation, and priority recommendations. Read each instruction carefully and incorporate them into your briefing. Be specific — name names, cite numbers. One tight paragraph, max 4 sentences.`,
+        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. IMPORTANT: The snapshot includes an instructions array containing the user's active directives. These are rules, strategies, and context that MUST guide your analysis, task generation, and priority recommendations. Read each instruction carefully and incorporate them into your briefing. Be specific — name names, cite numbers. One tight paragraph, max 4 sentences.`,
         `Live snapshot — ${today()}:\n${JSON.stringify(snap,null,2)}\n\nSurface the single most important thing RIGHT NOW. What's at stake and what exactly should he do today?`,
         500
       );
