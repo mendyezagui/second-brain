@@ -40,13 +40,14 @@ export default async function handler(req, res) {
 
   try {
     // ── Pull all live data from Supabase ──
-    const [contacts, deals, tasks, projects, invoices, campaigns] = await Promise.all([
+    const [contacts, deals, tasks, projects, invoices, campaigns, instructions] = await Promise.all([
       supabase.from("contacts").select("*"),
       supabase.from("deals").select("*"),
       supabase.from("tasks").select("*").eq("done", false),
       supabase.from("projects").select("*"),
       supabase.from("invoices").select("*").neq("status", "paid"),
       supabase.from("campaigns").select("*"),
+      supabase.from("instructions").select("*").eq("active", true),
     ]);
 
     const db = {
@@ -56,6 +57,7 @@ export default async function handler(req, res) {
       projects:  projects.data  || [],
       invoices:  invoices.data  || [],
       campaigns: campaigns.data || [],
+      instructions: instructions.data || [],
     };
 
     // ── Compute key metrics ──
@@ -72,7 +74,8 @@ export default async function handler(req, res) {
       contacts:  db.contacts.map(c => ({ name:c.name, co:c.co, status:c.status, score:c.score, lastTouch:c.lastTouch, notes:c.notes })),
       deals:     db.deals.map(d => ({ name:d.name, value:d.value, stage:d.stage, probability:d.probability, closeDate:d.closeDate, notes:d.notes })),
       tasks:     db.tasks.map(t => ({ title:t.title, due:t.due, priority:t.priority, notes:t.notes||"" })),
-      projects:  db.projects.map(p => ({ name:p.name, client:p.client, status:p.status, progress:p.progress, dueDate:p.dueDate })),
+      projects:  db.projects.map(p => ({ name:p.name, client:p.client, type:p.type||"client", status:p.status, progress:p.progress, priority:p.priority||"medium", dueDate:p.dueDate })),
+      instructions: db.instructions.map(i => ({ title:i.title, body:i.body })),
       invoices:  db.invoices.map(i => ({ client:i.client, amount:i.amount, status:i.status, due:i.due, number:i.number })),
       metrics: {
         weightedPipeline: weightedPipe,
@@ -91,9 +94,9 @@ export default async function handler(req, res) {
     const [orchestratorMsg, billingMsg, crmMsg] = await Promise.all([
 
       callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant in LA targeting property management/HOA companies. Revenue target: $800K/year. Anchor client: Scott Management. At-risk: Rapid Medical (payments behind). Be specific — name names and cite numbers. Max 3 sentences.`,
-        `Good morning — today is ${today}. Live database snapshot:\n${JSON.stringify(snap, null, 2)}\n\nWhat is the single most important thing Mendy needs to do TODAY? Name specific people, deals, or tasks. What's at stake right now?`,
-        400
+        `You are Mendy Ezagui's Orchestrator Agent — his proactive daily strategist. He's an independent AI ops consultant in LA targeting property management/HOA companies. Revenue target: $800K/year. Projects are typed as "client" or "strategic" with priorities (high/medium/low). High-priority strategic projects should drive weekly focus. Evaluate deals by revenue potential, strategic alignment, and momentum. Follow any active instructions from the instructions array. Be specific — name names, cite dollar amounts, reference deadlines.`,
+        `Good morning — today is ${today}. Live database snapshot:\n${JSON.stringify(snap, null, 2)}\n\nGenerate Mendy's Daily Action Plan:\n\nTOP PRIORITIES — The 1-2 most urgent items from critical tasks, high-priority strategic projects, and approaching deadlines.\n\nDEAL MOVES — Specific next actions on active deals, ranked by revenue potential and urgency. Flag stale deals (no activity >7 days).\n\nSTRATEGIC PLAYS — One move to advance a high-priority strategic project today.\n\nSMART NUDGES — Follow-ups due, relationships going cold, upcoming deadlines, billing issues.\n\nBe direct. Name people, amounts, dates. Max 8 sentences total.`,
+        800
       ),
 
       overdueAR > 0 ? callClaude(
