@@ -76,6 +76,7 @@ create table if not exists projects (
   id            int4 primary key,
   name          text not null,
   client        text default '',
+  type          text default 'client',
   "companyId"   int4,
   status        text default 'active',
   progress      int4 default 0,
@@ -168,6 +169,40 @@ create table if not exists events (
 );
 
 -- ============================================================
+
+-- INSTRUCTIONS
+create table if not exists instructions (
+  id            serial primary key,
+  title         text not null default '',
+  body          text not null default '',
+  active        boolean not null default true,
+  sort_order    integer not null default 0,
+  modified_by   text,
+  modified_at   timestamptz default now()
+);
+
+-- PAYMENTS
+create table if not exists payments (
+  id            int4 primary key,
+  "invoiceId"   int4,
+  amount        int4 default 0,
+  date          text default '',
+  method        text default '',
+  notes         text default '',
+  modified_by   text,
+  modified_at   timestamptz default now()
+);
+
+-- PAYMENT ALLOCATIONS
+create table if not exists payment_allocations (
+  id            int4 primary key,
+  "paymentId"   int4,
+  "invoiceId"   int4,
+  amount        int4 default 0,
+  modified_by   text,
+  modified_at   timestamptz default now()
+);
+
 -- ROW LEVEL SECURITY
 -- ============================================================
 alter table contacts     enable row level security;
@@ -183,6 +218,10 @@ alter table company_news enable row level security;
 alter table goals        enable row level security;
 alter table events       enable row level security;
 
+alter table instructions enable row level security;
+alter table payments enable row level security;
+alter table payment_allocations enable row level security;
+
 create policy "auth_all" on contacts     for all using (auth.role() = 'authenticated');
 create policy "auth_all" on companies    for all using (auth.role() = 'authenticated');
 create policy "auth_all" on deals        for all using (auth.role() = 'authenticated');
@@ -195,3 +234,6 @@ create policy "auth_all" on voicenotes   for all using (auth.role() = 'authentic
 create policy "auth_all" on company_news for all using (auth.role() = 'authenticated');
 create policy "auth_all" on goals        for all using (auth.role() = 'authenticated');
 create policy "auth_all" on events       for all using (auth.role() = 'authenticated');
+create policy "auth_all" on instructions for all using (auth.role() = 'authenticated');
+create policy "auth_all" on payments for all using (auth.role() = 'authenticated');
+create policy "auth_all" on payment_allocations for all using (auth.role() = 'authenticated');
