@@ -96,10 +96,10 @@ const initDB = () => ({
     { id:4, name:"Property Mgmt Pain-Point Outreach", type:"Email", status:"draft", leads:0, opens:0, conversions:0, startDate:"2026-04-01" },
   ],
   projects: [
-    { id:1, name:"Scott Mgmt AI Ops Deployment", client:"Scott Management", companyId:null, status:"active", progress:72, dueDate:"2026-04-15", priority:"high", notes:"" },
+    { id:1, name:"Scott Mgmt AI Ops Deployment", client:"Scott Management", companyId:null, type:"client", status:"active", progress:72, dueDate:"2026-04-15", priority:"high", notes:"" },
     { id:2, name:"Rapid Medical — Agentforce POC", client:"Rapid Medical", companyId:null, status:"stalled", progress:35, dueDate:"2026-03-31", priority:"critical", notes:"Stalled at 35%." },
     { id:3, name:"Horizon HOA SOW Finalization", client:"Horizon HOA", companyId:null, status:"active", progress:20, dueDate:"2026-03-20", priority:"high", notes:"" },
-    { id:4, name:"BD Signal Tool — V2", client:"Internal", companyId:null, status:"active", progress:55, dueDate:"2026-04-01", priority:"medium", notes:"" },
+    { id:4, name:"BD Signal Tool — V2", client:"Internal", companyId:null, type:"strategic", status:"active", progress:55, dueDate:"2026-04-01", priority:"medium", notes:"" },
   ],
   tasks: [
     { id:1, title:"Follow up with Rachel Kim re: payment", projectId:2, contactId:2, companyId:null, dealId:2, due:"2026-03-14", done:false, priority:"critical", assignedTo:"Orchestrator", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" },
@@ -1300,7 +1300,7 @@ const MarketingView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    OPERATIONS — Projects + RELATIONAL TASKS with Filters
 ──────────────────────────────────────────────────────── */
-const blankProject = () => ({ name:"", client:"", companyId:"", status:"active", progress:0, dueDate:"", priority:"medium", notes:"" });
+const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"" });
 const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" });
 
 /* ────────────────────────────────────────────────────────
@@ -1473,6 +1473,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
 ──────────────────────────────────────────────────────── */
 const ProjectsView = ({ db, setDB, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
+  const [typeFilter, setTypeFilter] = useState("all");
   const [confirm, setConfirm] = useState(null);
   const [pd, setPD] = useState(blankProject());
   const [expandedId, setExpandedId] = useState(null);
@@ -1533,7 +1534,11 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
         <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setPD(blankProject());setDrawer({mode:"add",type:"project"});}}><Plus size={12}/>Project</button>
       </div>
 
-      {db.projects.map(p => {
+      <div style={{ display:"flex", gap:6, marginTop:4 }}>
+        {["all","client","strategic"].map(f => <button key={f} className={`btn ${typeFilter===f?"btn-blue":""}`} style={{ fontSize:11, padding:"4px 10px", textTransform:"capitalize" }} onClick={()=>setTypeFilter(f)}>{f}</button>)}
+      </div>
+
+      {db.projects.filter(p => typeFilter === "all" || (p.type || "client") === typeFilter).map(p => {
         const pTasks = db.tasks.filter(t=>t.projectId===p.id);
         const open = pTasks.filter(t=>!t.done && t.status!=="done" && t.status!=="cancelled");
         const isExpanded = expandedId === p.id;
@@ -1542,7 +1547,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
             <div className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}`, cursor:"pointer", borderRadius:isExpanded?"12px 12px 0 0":undefined }} onClick={()=>setExpandedId(isExpanded?null:p.id)}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
                 <div>
-                  <div style={{ fontSize:13, fontWeight:600 }}>{p.name}</div>
+                  <div style={{ fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{p.name} <span style={{ fontSize:9, padding:"1px 6px", borderRadius:8, background: (p.type||"client")==="strategic"?"var(--purple-dim)":"var(--blue-dim)", color:(p.type||"client")==="strategic"?"var(--purple)":"var(--blue)", fontWeight:500 }}>{(p.type||"client")}</span></div>
                   <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
                 </div>
                 <div style={{ display:"flex", gap:6, alignItems:"center" }} onClick={e=>e.stopPropagation()}>
@@ -1614,6 +1619,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Client"><Inp value={pd.client} onChange={v=>setPD(p=>({...p,client:v}))}/></Field>
           <Field label="Company"><SearchSelect value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
           <Field label="Status"><Sel value={pd.status} onChange={v=>setPD(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
+          <Field label="Type"><Sel value={pd.type||"client"} onChange={v=>setPD(p=>({...p,type:v}))} options={["client","strategic"]}/></Field>
           <Field label="Priority"><Sel value={pd.priority} onChange={v=>setPD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
           <Field label="Progress (%)"><Inp type="number" value={pd.progress} onChange={v=>setPD(p=>({...p,progress:v}))}/></Field>
           <Field label="Due Date"><Inp type="date" value={pd.dueDate} onChange={v=>setPD(p=>({...p,dueDate:v}))}/></Field>
@@ -1837,6 +1843,8 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
     ...highTasks.filter(t=>t.due && t.due <= today()).map(t => ({ key:`task-${t.id}`, isTask:true, icon:"🟡", label:t.title, detail:`Due today or overdue`, priority:"high", nav:{view:"tasks",focus:{type:"task",id:t.id}} })),
     ...decayedContacts.slice(0,3).map(c => ({ key:`decay-${c.id}`, isTask:false, icon:"📞", label:`Reconnect: ${c.name} (${c.co})`, detail:`${daysBetween(c.lastTouch, today())} days since last touch. Score: ${c.score}`, priority:"medium", nav:{view:"crm",focus:{type:"contact",id:c.id}}, taskTitle:`Reconnect with ${c.name} (${c.co})`, taskPriority:"medium", contactId:c.id, companyId:c.companyId||null })),
     ...engagementRecs.slice(0,3).map((r,i) => ({ key:`eng-${i}`, isTask:false, icon:"💡", label:r.message, detail:`Source: ${r.source}`, priority:r.priority, nav:r.contactId?{view:"crm",focus:{type:"contact",id:r.contactId}}:null, taskTitle:r.message.substring(0,120), taskPriority:r.priority==="high"?"high":"medium", contactId:r.contactId||null, companyId:null })),
+      ...(db.projects||[]).filter(p=>p.type==="strategic"&&(p.priority==="high"||p.priority==="critical")&&p.status==="active").map(p=>({ key:"strat-"+p.id, icon:Star, color:"var(--purple)", label:p.name, sub:"Strategic priority — "+p.priority, taskTitle:"Advance "+p.name, taskPriority:p.priority, companyId:p.companyId||null })),
+    ...(db.deals||[]).filter(d=>d.stage!=="closed_won"&&d.stage!=="closed_lost"&&d.lastActivity&&daysBetween(d.lastActivity,today())>7).map(d=>({ key:"stale-deal-"+d.id, icon:AlertCircle, color:"var(--amber)", label:d.name+" (⚠ stale)", sub:"No activity in "+daysBetween(d.lastActivity,today())+" days — $"+fmt(d.value), taskTitle:"Follow up on "+d.name, taskPriority:"high", dealId:d.id, companyId:d.companyId||null })),
   ];
   const dailyPriorities = allPriorities.filter(p => !dismissed[p.key]);
 
@@ -1878,14 +1886,14 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
       const snap = {
         contacts: db.contacts.filter(c=>{const comp=(db.companies||[]).find(co=>co.name===c.co);return !comp||comp.status!=="parked"}).map(c=>({name:c.name,co:c.co,status:c.status,category:c.category,score:c.score,lastTouch:c.lastTouch,follow_up:c.follow_up})),
         deals: db.deals.map(d=>({name:d.name,value:d.value,stage:d.stage,probability:d.probability,closeDate:d.closeDate,notes:d.notes})),
-        projects: db.projects.map(p=>({name:p.name,client:p.client,status:p.status,progress:p.progress})),
+        projects: db.projects.map(p=>({name:p.name,client:p.client,type:p.type||"client",status:p.status,progress:p.progress,priority:p.priority,dueDate:p.dueDate})),
         tasks: openTasks.map(t=>({title:t.title,due:t.due,priority:t.priority,category:t.category,contactId:t.contactId})),
         invoices: db.invoices.filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
         metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, pipelineCoverage, openTasks:openTasks.length, decayedContacts:decayedContacts.length },
       instructions: (db.instructions || []).filter(i => i.active).map(i => ({ title: i.title, body: i.body }))};
       const msg = await callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. IMPORTANT: The snapshot includes an instructions array containing the user's active directives. These are rules, strategies, and context that MUST guide your analysis, task generation, and priority recommendations. Read each instruction carefully and incorporate them into your briefing. Be specific — name names, cite numbers. One tight paragraph, max 4 sentences.`,
-        `Live snapshot — ${today()}:\n${JSON.stringify(snap,null,2)}\n\nSurface the single most important thing RIGHT NOW. What's at stake and what exactly should he do today?`,
+        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. IMPORTANT: The snapshot includes an instructions array containing the user's active directives. These MUST guide your analysis. Projects have a "type" field: "client" (revenue-generating work) or "strategic" (partnerships, marketing, internal tools). Strategic projects have priority levels (critical/high/medium/low). HIGH-PRIORITY STRATEGIC projects should be weighted alongside client deliverables when generating priorities. Use goals, instructions, and strategic project priorities to shape your daily recommendations. Be specific — name names and cite numbers.`,
+        `Live snapshot \u2014 ${today()}:\n${JSON.stringify(snap,null,2)}\n\nGenerate a DAILY ACTION PLAN with these sections:\n1. TOP PRIORITY: The single most critical action today (revenue, deadline, or relationship at stake)\n2. DEAL MOVES: Specific next steps for deals closest to closing or with highest revenue potential\n3. STRATEGIC PLAYS: Actions to advance high-priority strategic projects and partnerships\n4. SMART NUDGES: Flag any stale deals (no activity 7+ days), contacts not touched in 14+ days, upcoming deadlines this week, or at-risk relationships\n\nBe specific \u2014 name people, dollar amounts, and exact actions. Max 8 sentences total.`,
         500
       );
       setDB(d=>({...d, agentLogs:[{id:nextId(d.agentLogs)+1, agent:"Orchestrator", type:"synthesis", message:msg, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:"high"}, ...d.agentLogs]}));
@@ -2064,7 +2072,7 @@ const VoiceView = ({ db, setDB, autoRecord }) => {
     const contacts = (db.contacts||[]).filter(c=>{const comp=(db.companies||[]).find(co=>co.name===c.co);return !comp||comp.status!=="parked"}).map(c=>`[Contact id:${c.id}] ${c.name} — ${c.co||""} — ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
     const companies = (db.companies||[]).filter(c=>c.status!=="parked").map(c=>`[Company id:${c.id}] ${c.name} — ${c.industry||""} (status:${c.status||"prospect"})`).join("\n");
     const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} — $${d.value} — stage:${d.stage} (prob:${d.probability}%)`).join("\n");
-    const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} — status:${p.status} (progress:${p.progress}%)`).join("\n");
+    const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} (${p.type||"client"}) — status:${p.status} priority:${p.priority||"medium"} (progress:${p.progress}%)`).join("\n");
     const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} — due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
     return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}\n\nACTIVE INSTRUCTIONS (directives to follow):\n${instrList || 'None set'}`;
   };
