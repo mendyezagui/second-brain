@@ -137,7 +137,10 @@ const ENV_READY = SUPA_URL.startsWith("https://") && SUPA_KEY.length > 10;
 const supabase = ENV_READY ? createClient(SUPA_URL, SUPA_KEY) : null;
 
 const DB_TABLES = [
-  ["contacts",    "contacts","payments","payment_allocations","instructions"],
+  ["contacts",              "contacts"],
+  ["payments",              "payments"],
+  ["payment_allocations",   "payment_allocations"],
+  ["instructions",          "instructions"],
   ["deals",       "deals"],
   ["tasks",       "tasks"],
   ["projects",    "projects"],
