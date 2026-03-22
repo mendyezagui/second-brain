@@ -417,10 +417,7 @@ const LoginScreen = () => {
 
 /* ── SIDEBAR ── */
 const NAV = [
-  {id:"voice",icon:Mic,label:"Voice Lab"},
-  {divider:true},
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
-  {id:"orchestrator",icon:Brain,label:"Orchestrator"},
   {id:"tasks",icon:CheckCircle,label:"Tasks"},
   {divider:true},
   {id:"crm",icon:Users,label:"Contacts"},
@@ -509,7 +506,7 @@ const BottomNav = ({ view, setView }) => {
 /* ────────────────────────────────────────────────────────
    DASHBOARD — Morning Brief + Goal Tracking
 ──────────────────────────────────────────────────────── */
-const Dashboard = ({ db, setDB, setView, navigate, session }) => {
+const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sweepRunning, setShowVoiceLab}) => {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const userName = session?.user?.user_metadata?.full_name?.split(" ")[0] || session?.user?.email?.split("@")[0] || "there";
@@ -535,9 +532,7 @@ const Dashboard = ({ db, setDB, setView, navigate, session }) => {
               {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} · 6 agents running
             </div>
           </div>
-          <button className="btn btn-ghost" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>setView("orchestrator")}>
-            <Brain size={12}/>Orchestrator
-          </button>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={13} className="spin"/>:<Zap size={13}/>} {sweepRunning?"Running...":"AI Sweep"}</button><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{setShowVoiceLab(true)}}><Mic size={13}/> Voice</button></div>
         </div>
         {(dueTodayOrOverdue.length > 0 || criticalItems.length > 0 || decayedContacts.length > 0 || todayEvents.length > 0) && (
           <div style={{ marginTop:14, display:"flex", flexDirection:"column", gap:6 }}>
@@ -629,7 +624,7 @@ const Dashboard = ({ db, setDB, setView, navigate, session }) => {
       <div>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
           <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700 }}>Agent Feed</div>
-          <button className="btn btn-ghost" style={{ fontSize:12, padding:"5px 10px" }} onClick={()=>setView("orchestrator")}>All <ChevronRight size={12}/></button>
+          <button className="btn btn-ghost" style={{ fontSize:12, padding:"5px 10px" }} onClick={()=>{}}>All <ChevronRight size={12}/></button>
         </div>
         {db.agentLogs.slice(0,4).map(l=>(
           <div key={l.id} className="card-el slide-in" style={{ padding:"12px 14px", marginBottom:8, borderLeft:`2px solid ${sc(l.priority)}` }}>
@@ -2958,6 +2953,32 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(window.innerWidth < 768);
   const [autoRecord, setAutoRecord] = useState(false);
+  const [showVoiceLab, setShowVoiceLab] = useState(false);
+  const [sweepRunning, setSweepRunning] = useState(false);
+
+  const runSweep = async () => {
+    setSweepRunning(true);
+    try {
+      const today = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+      const snap = {
+        projects: (db.projects||[]).map(p=>({name:p.name,client:p.client,type:p.type||"client",status:p.status,priority:p.priority||"medium",progress:p.progress})),
+        deals: (db.deals||[]).map(d=>({name:d.name,value:d.value,stage:d.stage,probability:d.probability,closeDate:d.closeDate})),
+        tasks: (db.tasks||[]).filter(t=>!t.done).map(t=>({title:t.title,due:t.due,priority:t.priority})),
+        contacts: (db.contacts||[]).filter(c=>c.status==="at-risk"||c.score<30).map(c=>({name:c.name,co:c.co,status:c.status,score:c.score})),
+        invoices: (db.invoices||[]).filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
+        instructions: (db.instructions||[]).filter(i=>i.active).map(i=>({title:i.title,body:i.body})),
+      };
+      const msg = await callClaude(
+        "You are Mendy Ezagui's proactive daily strategist. Projects are typed client/strategic with priorities high/medium/low. Follow active instructions. Be specific with names, amounts, dates.",
+        "Today is "+today+". Snapshot: "+JSON.stringify(snap)+"\nGenerate Daily Action Plan: TOP PRIORITIES (1-2 urgent items), DEAL MOVES (actions ranked by revenue+urgency), STRATEGIC PLAYS (advance high-priority strategic project), SMART NUDGES (follow-ups, cold relationships, deadlines, billing). Max 8 sentences.",
+        800
+      );
+      const nextId = Math.max(0,...(db.agentlogs||[]).map(l=>l.id))+1;
+      const ts = new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"});
+      setDB(p=>({...p, agentlogs:[...(p.agentlogs||[]),{id:nextId,agent:"Orchestrator",type:"sweep",message:msg,ts,priority:"high"}]}));
+    } catch(e) { console.error("Sweep error:",e); }
+    setSweepRunning(false);
+  };
 
   // Sync view ↔ URL hash; reset autoRecord when leaving voice
   useEffect(() => { window.location.hash = "#/" + view; if (view !== "voice") setAutoRecord(false); }, [view]);
@@ -3042,7 +3063,7 @@ export default function App() {
     return critTasks.length + overdueInv.length + atRisk.length;
   })();
   const VIEWS = {
-    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session}/>,
+    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} setShowVoiceLab={setShowVoiceLab} />,
     orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
     crm:          <CRMView db={db} setDB={setDB} setView={setView} focus={focus} setFocus={setFocus}/>,
     companies:    <CompaniesView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
@@ -3072,7 +3093,7 @@ export default function App() {
           <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
             {alerts > 0 && (
               <div style={{ background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.25)", borderRadius:6, padding:"3px 8px", fontSize:11, color:"var(--red)", fontFamily:"var(--font-m)", cursor:"pointer" }}
-                onClick={()=>setView("orchestrator")}>{alerts} CRITICAL</div>
+                onClick={()=>setView("dashboard")}>{alerts} CRITICAL</div>
             )}
             <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", background:"var(--bg-el)", padding:"4px 10px", borderRadius:6 }}>
               {(session.user.user_metadata?.full_name || session.user.email?.split("@")[0])?.toUpperCase() || "ME"}
@@ -3084,23 +3105,18 @@ export default function App() {
           {!mobile && <Sidebar view={view} setView={setView} collapsed={collapsed} setCollapsed={setCollapsed} alerts={alerts} db={db}/>}
           <main style={{ flex:1, overflowY:"auto" }}>{VIEWS[view] || VIEWS.dashboard}</main>
         </div>
-        {/* Floating Voice Lab button — mobile only, hidden when already on voice page */}
-        {mobile && view !== "voice" && (
-          <button
-            onClick={() => { setAutoRecord(true); setView("voice"); }}
-            style={{
-              position:"fixed", bottom:72, right:16, zIndex:900,
-              width:52, height:52, borderRadius:"50%",
-              background:"linear-gradient(135deg, #0077cc, #00aaff)",
-              border:"none", cursor:"pointer",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              boxShadow:"0 4px 16px rgba(0,119,204,0.4)",
-              animation:"pulse-voice 2s infinite",
-            }}
-          >
-            <Mic size={22} color="#fff"/>
-          </button>
-        )}
+        {/* Voice Lab Overlay */}
+      {showVoiceLab && <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9998,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShowVoiceLab(false)}}>
+        <div style={{background:"var(--card)",borderRadius:16,width:"90%",maxWidth:700,maxHeight:"85vh",overflow:"auto",position:"relative",padding:0}}>
+          <button onClick={()=>setShowVoiceLab(false)} style={{position:"absolute",top:12,right:12,zIndex:10,background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text)"}}>✕</button>
+          <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>
+        </div>
+      </div>}
+      {/* Floating Action Buttons */}
+      <div style={{position:"fixed",bottom:24,right:24,zIndex:9990,display:"flex",flexDirection:"column",gap:12,alignItems:"flex-end"}}>
+        <button title="AI Sweep" onClick={()=>{if(!sweepRunning){runSweep();setShowVoiceLab(true)}}} style={{width:52,height:52,borderRadius:"50%",background:sweepRunning?"var(--amber)":"linear-gradient(135deg,#667eea,#764ba2)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",transition:"transform 0.2s",animation:sweepRunning?"pulse 1.5s infinite":"none"}}><Zap size={22} color="#fff"/></button>
+        <button title="Voice Lab" onClick={()=>{setShowVoiceLab(v=>!v);setAutoRecord(true)}} style={{width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#cc77ff,#aaafff)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",animation:"pulse 2s infinite"}}><Mic size={24} color="#fff"/></button>
+      </div>
         {mobile && <BottomNav view={view} setView={setView}/>}
       </div>
     </>
