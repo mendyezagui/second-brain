@@ -152,6 +152,7 @@ const DB_TABLES = [
   ["companyNews", "company_news"],
   ["goals",       "goals"],
   ["events",      "events"],
+  ["strategies",  "strategies"],
 ];
 
 const loadAllFromDB = async () => {
@@ -432,6 +433,7 @@ const NAV = [
   {divider:true},
   {id:"email",icon:Mail,label:"Email Lab"},
   {divider:true},
+  {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
   {id:"instructions",icon:BookOpen,label:"Instructions"},
   {id:"admin",icon:Shield,label:"Admin"},
@@ -1295,7 +1297,7 @@ const MarketingView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    OPERATIONS — Projects + RELATIONAL TASKS with Filters
 ──────────────────────────────────────────────────────── */
-const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"" });
+const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"", links:[], strategyId:"" });
 const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" });
 
 /* ────────────────────────────────────────────────────────
@@ -1468,7 +1470,6 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
 ──────────────────────────────────────────────────────── */
 const ProjectsView = ({ db, setDB, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
-  const [typeFilter, setTypeFilter] = useState("all");
   const [confirm, setConfirm] = useState(null);
   const [pd, setPD] = useState(blankProject());
   const [expandedId, setExpandedId] = useState(null);
@@ -1480,13 +1481,13 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
   useEffect(() => {
     if(focus?.type==="project" && focus.id) {
       const p = db.projects.find(p=>p.id===focus.id);
-      if(p) { setPD({...p, progress:String(p.progress), companyId:String(p.companyId||"")}); setDrawer({mode:"edit",type:"project"}); }
+      if(p) { setPD({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:p.links||[]}); setDrawer({mode:"edit",type:"project"}); }
       setFocus(null);
     }
   }, [focus]);
 
   const saveProject = (d) => {
-    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null};
+    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null, strategyId:parseInt(d.strategyId)||null, links:d.links||[]};
     if(drawer.mode==="add") setDB(db=>({...db,projects:[...db.projects,{...rec,id:nextId(db.projects)}]}));
     else setDB(db=>({...db,projects:db.projects.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
@@ -1536,11 +1537,8 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
         <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setPD(blankProject());setDrawer({mode:"add",type:"project"});}}><Plus size={12}/>Project</button>
       </div>
 
-      <div style={{ display:"flex", gap:6, marginTop:4 }}>
-        {["all","client","strategic"].map(f => <button key={f} className={`btn ${typeFilter===f?"btn-blue":""}`} style={{ fontSize:11, padding:"4px 10px", textTransform:"capitalize" }} onClick={()=>setTypeFilter(f)}>{f}</button>)}
-      </div>
-
-      {db.projects.filter(p => typeFilter === "all" || (p.type || "client") === typeFilter).map(p => {
+      
+      {db.projects.filter(p => (p.type || "client") !== "strategic").map(p => {
         const pTasks = db.tasks.filter(t=>t.projectId===p.id);
         const open = pTasks.filter(t=>!t.done && t.status!=="done" && t.status!=="cancelled");
         const isExpanded = expandedId === p.id;
@@ -1551,10 +1549,11 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
                 <div>
                   <div style={{ fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{p.name} <span style={{ fontSize:9, padding:"1px 6px", borderRadius:8, background: (p.type||"client")==="strategic"?"var(--purple-dim)":"var(--blue-dim)", color:(p.type||"client")==="strategic"?"var(--purple)":"var(--blue)", fontWeight:500 }}>{(p.type||"client")}</span></div>
                   <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
+                  {p.strategyId && (db.strategies||[]).find(s=>s.id===p.strategyId) && <div className="mono" style={{fontSize:9,color:"var(--purple)",marginTop:1}}>Strategy: {(db.strategies||[]).find(s=>s.id===p.strategyId)?.name}</div>}
                 </div>
                 <div style={{ display:"flex", gap:6, alignItems:"center" }} onClick={e=>e.stopPropagation()}>
                   <Tag label={p.priority}/><Tag label={p.status}/>
-                  <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||"")});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
+                  <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[]});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
                 </div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:12 }}>
@@ -1566,7 +1565,14 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
 
             {isExpanded && (
               <div className="card-el" style={{ padding:16, borderRadius:"0 0 12px 12px", borderTop:"1px dashed var(--border)" }}>
-                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>PROJECT TASKS</div>
+{/* PROJECT LINKS */}
+                {(p.links||[]).length > 0 && <div style={{marginBottom:14}}>
+                  <div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginBottom:6}}>LINKS</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {(p.links||[]).map((lnk,li)=>(<a key={li} href={lnk.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,fontSize:11,color:"var(--blue)",textDecoration:"none",cursor:"pointer"}} title={lnk.desc||lnk.url}><ExternalLink size={11}/>{lnk.label||lnk.url}</a>))}
+                  </div>
+                </div>}
+                                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>PROJECT TASKS</div>
                 {pTasks.length > 0 ? pTasks.map(t => (
                   <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
                     <button onClick={()=>toggleTask(t.id)} style={{ width:16, height:16, borderRadius:3, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>{t.done&&<Check size={9} color="#fff"/>}</button>
@@ -1627,6 +1633,21 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Due Date"><Inp type="date" value={pd.dueDate} onChange={v=>setPD(p=>({...p,dueDate:v}))}/></Field>
         </div>
         <Field label="Notes"><Tex value={pd.notes} onChange={v=>setPD(p=>({...p,notes:v}))}/></Field>
+        <Field label="Strategy"><Sel value={pd.strategyId||""} onChange={v=>setPD(p=>({...p,strategyId:v}))} options={[{value:"",label:"None"},...(db.strategies||[]).map(s=>({value:String(s.id),label:s.name}))]}/></Field>
+        <div style={{marginTop:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:12,fontWeight:600,color:"var(--text-sec)"}}>Links</span>
+            <button type="button" className="btn btn-ghost" style={{fontSize:11,padding:"3px 8px"}} onClick={()=>setPD(p=>({...p,links:[...(p.links||[]),{url:"",label:"",desc:""}]}))}>+ Add Link</button>
+          </div>
+          {(pd.links||[]).map((lnk,li)=>(<div key={li} style={{display:"flex",gap:6,marginBottom:8,alignItems:"flex-start"}}>
+            <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
+              <input className="input" placeholder="Label (e.g. Google Drive)" value={lnk.label} onChange={e=>{const links=[...(pd.links||[])];links[li]={...links[li],label:e.target.value};setPD(p=>({...p,links}));}} style={{padding:"6px 8px",fontSize:12}}/>
+              <input className="input" placeholder="https://..." value={lnk.url} onChange={e=>{const links=[...(pd.links||[])];links[li]={...links[li],url:e.target.value};setPD(p=>({...p,links}));}} style={{padding:"6px 8px",fontSize:12}}/>
+              <input className="input" placeholder="Short description" value={lnk.desc||""} onChange={e=>{const links=[...(pd.links||[])];links[li]={...links[li],desc:e.target.value};setPD(p=>({...p,links}));}} style={{padding:"6px 8px",fontSize:12}}/>
+            </div>
+            <button type="button" onClick={()=>setPD(p=>({...p,links:(p.links||[]).filter((_,i)=>i!==li)}))} style={{background:"none",border:"none",color:"var(--red)",cursor:"pointer",padding:4,marginTop:2}}><X size={14}/></button>
+          </div>))}
+        </div>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delProject(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -2613,6 +2634,141 @@ const PaymentsView = ({ db, setDB }) => {
     </div>}
   </div>);
 };
+/* ────────────────────────────────────────────────────────
+   STRATEGIES VIEW
+──────────────────────────────────────────────────────── */
+const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"high", links:[], notes:"" });
+
+const StrategiesView = ({ db, setDB }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [sd, setSD] = useState(blankStrategy());
+  const [expandedId, setExpandedId] = useState(null);
+
+  const strategies = (db.strategies || []);
+  const goals = (db.goals || []);
+  const instructions = (db.instructions || []).filter(i => i.active);
+
+  const saveStrategy = (d) => {
+    const rec = { ...d, goalId: parseInt(d.goalId) || null, links: d.links || [] };
+    if (drawer.mode === "add") setDB(db => ({ ...db, strategies: [...(db.strategies || []), { ...rec, id: nextId(db.strategies || []) }] }));
+    else setDB(db => ({ ...db, strategies: (db.strategies || []).map(x => x.id === rec.id ? rec : x) }));
+    setDrawer(null);
+  };
+  const delStrategy = (id) => { setDB(db => ({ ...db, strategies: (db.strategies || []).filter(x => x.id !== id) })); setConfirm(null); };
+
+  const statusColor = (s) => ({ active: "var(--green)", completed: "var(--blue)", paused: "var(--amber)", cancelled: "var(--text-dim)" }[s] || "var(--text-sec)");
+
+  return (
+    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, maxWidth: 900 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="display" style={{ fontSize: 18, fontWeight: 700 }}>Strategies</div>
+        <button className="btn btn-blue" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => { setSD(blankStrategy()); setDrawer({ mode: "add" }); }}><Plus size={12} />Strategy</button>
+      </div>
+
+      {/* Active Goals summary */}
+      {goals.filter(g => g.status === "active").length > 0 && <div className="card" style={{ padding: 14 }}>
+        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8 }}>ACTIVE GOALS</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {goals.filter(g => g.status === "active").map(g => {
+            const pct = g.target_value > 0 ? Math.min(100, Math.round((g.current_value / g.target_value) * 100)) : 0;
+            return (<div key={g.id} style={{ padding: "6px 12px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}>
+              <div style={{ fontWeight: 600 }}>{g.name}</div>
+              <div style={{ color: "var(--text-sec)", fontSize: 10 }}>{pct}% — {g.current_value}/{g.target_value} {g.unit}</div>
+            </div>);
+          })}
+        </div>
+      </div>}
+
+      {/* Active Instructions */}
+      {instructions.length > 0 && <div className="card" style={{ padding: 14 }}>
+        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8 }}>ACTIVE INSTRUCTIONS</div>
+        {instructions.map(inst => (<div key={inst.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+          <span style={{ fontWeight: 600 }}>{inst.title}</span>: <span style={{ color: "var(--text-sec)" }}>{inst.body}</span>
+        </div>))}
+      </div>}
+
+      {/* Strategies list */}
+      {strategies.length === 0 && <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No strategies yet. Create one to start organizing your strategic initiatives.</div>}
+      {strategies.map(s => {
+        const goal = goals.find(g => g.id === s.goalId);
+        const linkedProjects = (db.projects || []).filter(p => p.strategyId === s.id);
+        const isExpanded = expandedId === s.id;
+        return (
+          <div key={s.id}>
+            <div className="card row-hover" style={{ padding: 16, borderLeft: "3px solid " + statusColor(s.status), cursor: "pointer", borderRadius: isExpanded ? "12px 12px 0 0" : undefined }} onClick={() => setExpandedId(isExpanded ? null : s.id)}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{s.name} <Tag label={s.priority} /></div>
+                  {goal && <div className="mono" style={{ fontSize: 10, color: "var(--purple)", marginTop: 2 }}>Goal: {goal.name}</div>}
+                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 2 }}>{linkedProjects.length} linked project{linkedProjects.length !== 1 ? "s" : ""}</div>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+                  <Tag label={s.status} />
+                  <RowActions onEdit={() => { setSD({ ...s, goalId: String(s.goalId || ""), links: s.links || [] }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: s.id, label: s.name })} />
+                </div>
+              </div>
+              {s.description && <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>{s.description}</div>}
+              <ChevronDown size={14} color="var(--text-sec)" style={{ transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform .2s", marginTop: 4 }} />
+            </div>
+
+            {isExpanded && <div className="card-el" style={{ padding: 16, borderRadius: "0 0 12px 12px", borderTop: "1px dashed var(--border)" }}>
+              {/* Strategy Links */}
+              {(s.links || []).length > 0 && <div style={{ marginBottom: 14 }}>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>LINKS</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {(s.links || []).map((lnk, li) => (<a key={li} href={lnk.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--blue)", textDecoration: "none" }} title={lnk.desc || lnk.url}><ExternalLink size={11} />{lnk.label || lnk.url}</a>))}
+                </div>
+              </div>}
+
+              {/* Linked Projects */}
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>LINKED PROJECTS</div>
+              {linkedProjects.length > 0 ? linkedProjects.map(p => (
+                <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
+                  <Briefcase size={12} color="var(--text-sec)" />
+                  <span style={{ fontSize: 12, flex: 1 }}>{p.name}</span>
+                  <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{p.client}</span>
+                  <Tag label={p.status} />
+                  <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{p.progress}%</span>
+                </div>
+              )) : <div style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 0" }}>No projects linked yet. Link projects via the project edit form.</div>}
+
+              {s.notes && <div style={{ marginTop: 12, padding: 10, background: "var(--bg)", borderRadius: 8, fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>{s.notes}</div>}
+            </div>}
+          </div>
+        );
+      })}
+
+      {/* Drawer */}
+      {drawer && <Drawer title={drawer.mode === "add" ? "New Strategy" : "Edit Strategy"} onClose={() => setDrawer(null)} onSave={() => saveStrategy(sd)}>
+        <Field label="Strategy Name"><Inp value={sd.name} onChange={v => setSD(p => ({ ...p, name: v }))} /></Field>
+        <Field label="Description"><Tex value={sd.description} onChange={v => setSD(p => ({ ...p, description: v }))} /></Field>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <Field label="Goal"><Sel value={sd.goalId || ""} onChange={v => setSD(p => ({ ...p, goalId: v }))} options={[{ value: "", label: "None" }, ...goals.map(g => ({ value: String(g.id), label: g.name }))]} /></Field>
+          <Field label="Status"><Sel value={sd.status} onChange={v => setSD(p => ({ ...p, status: v }))} options={["active", "completed", "paused", "cancelled"]} /></Field>
+          <Field label="Priority"><Sel value={sd.priority} onChange={v => setSD(p => ({ ...p, priority: v }))} options={["critical", "high", "medium", "low"]} /></Field>
+        </div>
+        <Field label="Notes"><Tex value={sd.notes} onChange={v => setSD(p => ({ ...p, notes: v }))} /></Field>
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-sec)" }}>Links</span>
+            <button type="button" className="btn btn-ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => setSD(p => ({ ...p, links: [...(p.links || []), { url: "", label: "", desc: "" }] }))}>+ Add Link</button>
+          </div>
+          {(sd.links || []).map((lnk, li) => (<div key={li} style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "flex-start" }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+              <input className="input" placeholder="Label" value={lnk.label} onChange={e => { const links = [...(sd.links || [])]; links[li] = { ...links[li], label: e.target.value }; setSD(p => ({ ...p, links })); }} style={{ padding: "6px 8px", fontSize: 12 }} />
+              <input className="input" placeholder="https://..." value={lnk.url} onChange={e => { const links = [...(sd.links || [])]; links[li] = { ...links[li], url: e.target.value }; setSD(p => ({ ...p, links })); }} style={{ padding: "6px 8px", fontSize: 12 }} />
+              <input className="input" placeholder="Short description" value={lnk.desc || ""} onChange={e => { const links = [...(sd.links || [])]; links[li] = { ...links[li], desc: e.target.value }; setSD(p => ({ ...p, links })); }} style={{ padding: "6px 8px", fontSize: 12 }} />
+            </div>
+            <button type="button" onClick={() => setSD(p => ({ ...p, links: (p.links || []).filter((_, i) => i !== li) }))} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", padding: 4, marginTop: 2 }}><X size={14} /></button>
+          </div>))}
+        </div>
+      </Drawer>}
+      {confirm && <ConfirmDelete label={confirm.label} onConfirm={() => delStrategy(confirm.id)} onCancel={() => setConfirm(null)} />}
+    </div>
+  );
+};
+
 const GOAL_STATUSES = ["active","completed","paused","cancelled"];
 const GOAL_CATEGORIES = ["professional","personal"];
 const blankGoal = () => ({ name:"", description:"", category:"professional", status:"active", target_value:0, current_value:0, unit:"", period:"annual", start_date:today(), end_date:"", priority_order:0, notes:"" });
@@ -2951,7 +3107,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","instructions","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","strategies","instructions","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
@@ -3079,6 +3235,7 @@ export default function App() {
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB}/>,
+    strategies:   <StrategiesView db={db} setDB={setDB}/>,
     instructions: <InstructionsView db={db} setDB={setDB}/>,
     payments:      <PaymentsView db={db} setDB={setDB}/>,
     projects:     <ProjectsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
