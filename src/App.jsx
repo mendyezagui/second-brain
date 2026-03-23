@@ -1538,7 +1538,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
       </div>
 
       
-      {db.projects.filter(p => (p.type || "client") !== "strategic").map(p => {
+      {db.projects.map(p => {
         const pTasks = db.tasks.filter(t=>t.projectId===p.id);
         const open = pTasks.filter(t=>!t.done && t.status!=="done" && t.status!=="cancelled");
         const isExpanded = expandedId === p.id;
