@@ -82,7 +82,9 @@ create table if not exists projects (
   progress      int4 default 0,
   "dueDate"     text default '',
   priority      text default 'medium',
-  notes         text default ''
+  notes         text default '',
+  "strategyId"  int4,
+  links         jsonb default '[]'::jsonb
 );
 
 -- CAMPAIGNS
@@ -237,3 +239,20 @@ create policy "auth_all" on events       for all using (auth.role() = 'authentic
 create policy "auth_all" on instructions for all using (auth.role() = 'authenticated');
 create policy "auth_all" on payments for all using (auth.role() = 'authenticated');
 create policy "auth_all" on payment_allocations for all using (auth.role() = 'authenticated');
+
+
+-- STRATEGIES
+create table if not exists strategies (
+  id            serial primary key,
+  name          text not null default '',
+  description   text default '',
+  "goalId"      int4,
+  status        text default 'active',
+  priority      text default 'high',
+  links         jsonb default '[]'::jsonb,
+  notes         text default '',
+  modified_by   text,
+  modified_at   timestamptz default now()
+);
+alter table strategies enable row level security;
+create policy "Auth users full access" on strategies for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
