@@ -1503,9 +1503,14 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
       const system = `You are a project task planner. Given a project context and user instructions, generate actionable tasks. Return ONLY valid JSON: { "tasks": [{ "title": "...", "priority": "high|medium|low", "category": "follow_up|outreach|admin|research|meeting_prep|deliverable", "due": "YYYY-MM-DD or null", "notes": "..." }] }`;
       const user = `Project: ${proj.name}\nClient: ${proj.client}\nProgress: ${proj.progress}%\nDue: ${proj.dueDate}\nExisting tasks:\n${existingTasks||"(none)"}\n\nUser request: ${aiInput}\n\n\n\nActive Instructions (follow these directives when generating tasks):\n${(db.instructions||[]).filter(i=>i.active).map(i=>i.title+": "+i.body).join("\n")||"None set"}\n\nGenerate 3-6 concrete tasks. Today is ${today()}.`;
       const response = await callClaude(system, user, 1200);
-      const parsed = JSON.parse(response);
-      setAiProposals(parsed.tasks || []);
-      const sel = {}; (parsed.tasks||[]).forEach((_,i) => sel[i]=true);
+      let parsed;
+      try { parsed = JSON.parse(response); } catch {
+        const m = response.match(/\{[\s\S]*\}/);
+        try { parsed = JSON.parse(m?.[0] || "{}"); } catch { parsed = { tasks: [] }; }
+      }
+      const tasks = parsed.tasks || [];
+      setAiProposals(tasks);
+      const sel = {}; tasks.forEach((_,i) => sel[i]=true);
       setSelectedProposals(sel);
     } catch(e) { console.error("AI gen failed:", e); setAiProposals([]); }
     setAiLoading(false);
@@ -1514,9 +1519,11 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
   const commitProposals = () => {
     const toAdd = (aiProposals||[]).filter((_,i) => selectedProposals[i]);
     if(toAdd.length > 0) {
+      const proj = db.projects.find(p=>p.id===expandedId);
+      const companyId = proj?.companyId || null;
       setDB(db => {
         let id = nextId(db.tasks);
-        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:expandedId, source:"ai_sweep"}))]};
+        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:expandedId, companyId, source:"ai_sweep"}))]};
       });
     }
     setAiProposals(null); setAiInput(""); setSelectedProposals({});
