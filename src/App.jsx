@@ -2069,6 +2069,7 @@ const VoiceView = ({ db, setDB, autoRecord }) => {
     const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} — $${d.value} — stage:${d.stage} (prob:${d.probability}%)`).join("\n");
     const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} (${p.type||"client"}) — status:${p.status} priority:${p.priority||"medium"} (progress:${p.progress}%)`).join("\n");
     const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} — due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
+    const instrList = (db.instructions || []).filter(i => i.active).map(i => `[${i.title}]: ${i.body}`).join('\n');
     return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}\n\nACTIVE INSTRUCTIONS (directives to follow):\n${instrList || 'None set'}`;
   };
 
