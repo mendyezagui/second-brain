@@ -100,7 +100,10 @@ create table if not exists campaigns (
   leads         int4 default 0,
   conversions   int4 default 0,
   channel       text default '',
-  notes         text default ''
+  notes         text default '',
+  type          text default 'Email',
+  opens         int4 default 0,
+  "startDate"   text default ''
 );
 
 -- INVOICES
