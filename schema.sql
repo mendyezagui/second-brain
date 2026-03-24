@@ -23,7 +23,10 @@ create table if not exists contacts (
   priority      text default 'Medium',
   follow_up     text default '',
   "companyId"   int4,
-  category      text default 'customer_lead'
+  category      text default 'customer_lead',
+  source        text default '',
+  "referredBy"  int4,
+  "campaignId"  int4
 );
 
 -- COMPANIES (NEW)
