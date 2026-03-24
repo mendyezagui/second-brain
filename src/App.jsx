@@ -645,14 +645,39 @@ const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sweepRunn
 /* ────────────────────────────────────────────────────────
    CRM — Contacts with Categories + Company Linking
 ──────────────────────────────────────────────────────── */
-const blankContact = () => ({ name:"", co:"", role:"", email:"", phone:"", status:"prospect", score:50, notes:"", lastTouch:today(), tags:[], linkedin_url:"", headline:"", connected_date:"", messaging_activity:"", priority:"Medium", follow_up:"", category:"customer_lead", companyId:"" });
+const blankContact = () => ({ name:"", co:"", role:"", email:"", phone:"", status:"prospect", score:50, notes:"", lastTouch:today(), tags:[], linkedin_url:"", headline:"", connected_date:"", messaging_activity:"", priority:"Medium", follow_up:"", category:"customer_lead", companyId:"", source:"", referredBy:"", campaignId:"" });
 
-const ContactForm = ({ data, onChange, companies }) => (
+const ContactForm = ({ data, onChange, companies, contacts, campaigns, setDB, db }) => {
+  const handleCompany = (v) => {
+    if (v) {
+      const comp = companies.find(c => c.id === parseInt(v));
+      onChange({...data, companyId: parseInt(v), co: comp?.name || data.co});
+    } else {
+      onChange({...data, companyId: null});
+    }
+  };
+  const handleCompanyCreate = (name) => {
+    if (!name.trim()) return;
+    const existing = companies.find(c => c.name.toLowerCase() === name.trim().toLowerCase());
+    if (existing) {
+      onChange({...data, companyId: existing.id, co: existing.name});
+    } else if (setDB) {
+      const newId = companies.length ? Math.max(...companies.map(c=>c.id)) + 1 : 1;
+      const newCo = { id: newId, name: name.trim(), industry: "", website: "", linkedin_url: "", news_keywords: "", status: "prospect", notes: "", created_at: new Date().toISOString().split("T")[0] };
+      setDB(d => ({...d, companies: [...d.companies, newCo]}));
+      onChange({...data, companyId: newId, co: name.trim()});
+    }
+  };
+  return (
   <>
     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
       <Field label="Name"><Inp value={data.name} onChange={v=>onChange({...data,name:v})} placeholder="Full name"/></Field>
-      <Field label="Company"><SearchSelect value={data.companyId||""} onChange={v=>onChange({...data,companyId:v?parseInt(v):null,co:companies.find(c=>c.id===parseInt(v))?.name||data.co})} options={companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
-      <Field label="Company (text)"><Inp value={data.co} onChange={v=>onChange({...data,co:v})} placeholder="Company name"/></Field>
+      <Field label="Company">
+        <div style={{display:"flex",gap:6}}>
+          <div style={{flex:1}}><SearchSelect value={data.companyId?String(data.companyId):""} onChange={handleCompany} options={companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></div>
+          <button type="button" className="btn btn-ghost" style={{fontSize:11,padding:"4px 8px",whiteSpace:"nowrap"}} onClick={()=>{const name=prompt("New company name:");if(name)handleCompanyCreate(name);}}>+ New</button>
+        </div>
+      </Field>
       <Field label="Role"><Inp value={data.role} onChange={v=>onChange({...data,role:v})} placeholder="Title"/></Field>
       <Field label="Category"><Sel value={data.category||"customer_lead"} onChange={v=>onChange({...data,category:v})} options={CONTACT_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
       <Field label="Status"><Sel value={data.status} onChange={v=>onChange({...data,status:v})} options={["prospect","active","outreach","client","at-risk","inactive"]}/></Field>
@@ -664,12 +689,16 @@ const ContactForm = ({ data, onChange, companies }) => (
       <Field label="Headline"><Inp value={data.headline||""} onChange={v=>onChange({...data,headline:v})} placeholder="LinkedIn headline"/></Field>
       <Field label="Connected Date"><Inp value={data.connected_date||""} onChange={v=>onChange({...data,connected_date:v})} placeholder="e.g. Mar 12"/></Field>
       <Field label="Priority"><Sel value={data.priority||"Medium"} onChange={v=>onChange({...data,priority:v})} options={["High","Medium","Low"]}/></Field>
+      <Field label="Source"><Sel value={data.source||""} onChange={v=>onChange({...data,source:v})} options={[{value:"",label:"Select source..."},{value:"referral",label:"Referral"},{value:"linkedin",label:"LinkedIn"},{value:"cold_outreach",label:"Cold Outreach"},{value:"inbound",label:"Inbound"},{value:"event",label:"Event"},{value:"campaign",label:"Campaign"},{value:"website",label:"Website"},{value:"other",label:"Other"}]}/></Field>
+      <Field label="Referred By"><SearchSelect value={data.referredBy?String(data.referredBy):""} onChange={v=>onChange({...data,referredBy:v?parseInt(v):null})} options={(contacts||[]).filter(c=>c.id!==data.id).map(c=>({value:String(c.id),label:c.name+(c.co?" ("+c.co+")":"")}))} placeholder="Search contacts…"/></Field>
+      <Field label="Campaign"><SearchSelect value={data.campaignId?String(data.campaignId):""} onChange={v=>onChange({...data,campaignId:v?parseInt(v):null})} options={(campaigns||[]).map(c=>({value:String(c.id),label:c.name}))} placeholder="Search campaigns…"/></Field>
     </div>
     <Field label="Messaging Activity"><Tex value={data.messaging_activity||""} onChange={v=>onChange({...data,messaging_activity:v})} placeholder="Messaging history summary…"/></Field>
     <Field label="Follow-Up Recommendation"><Tex value={data.follow_up||""} onChange={v=>onChange({...data,follow_up:v})} placeholder="Recommended next action…"/></Field>
     <Field label="Notes"><Tex value={data.notes} onChange={v=>onChange({...data,notes:v})} placeholder="Context, next steps…"/></Field>
   </>
-);
+  );
+};
 
 const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
@@ -681,6 +710,15 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
   const [showGmail, setShowGmail] = useState(false);
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const [editContact, setEditContact] = useState(null);
+
+  // Sync editContact when selection changes
+  useEffect(() => {
+    if (sel) {
+      const c = db.contacts.find(c => c.id === sel);
+      if (c) setEditContact({...c, companyId: c.companyId ? String(c.companyId) : "", referredBy: c.referredBy ? String(c.referredBy) : "", campaignId: c.campaignId ? String(c.campaignId) : ""});
+    } else setEditContact(null);
+  }, [sel, db.contacts]);
 
   useEffect(() => {
     if(focus?.type==="contact" && focus.id) { setCatFilter("all"); setSel(focus.id); setFocus(null); }
@@ -868,17 +906,21 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               </div>
             ))}
           </div>
-        ) : contact ? (
+        ) : (contact && editContact) ? (
           <div className="slide-in">
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
-              <div>
+            {/* Header with name and actions */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
+              <div style={{ flex:1 }}>
                 <div className="display" style={{ fontSize:20, fontWeight:800 }}>{contact.name}</div>
                 <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{contact.co} · {contact.role}</div>
               </div>
               <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                 <Tag label={contact.category?.replace(/_/g," ")||"lead"} color={sc(contact.category)}/>
                 <Tag label={contact.status}/><ScoreBadge score={contact.score}/>
-                <button className="btn btn-ghost" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"edit",data:{...contact}})}><Pencil size={12}/>Edit</button>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={()=>{
+                  const updated = {...editContact, companyId:parseInt(editContact.companyId)||null, score:parseInt(editContact.score)||50, referredBy:parseInt(editContact.referredBy)||null, campaignId:parseInt(editContact.campaignId)||null};
+                  setDB(d=>({...d,contacts:d.contacts.map(c=>c.id===updated.id?updated:c)}));
+                }}><Save size={12}/>Save</button>
                 <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:contact.id,label:contact.name})}><Trash2 size={12}/></button>
               </div>
             </div>
@@ -895,19 +937,10 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               </div>
             )}
 
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:18 }}>
-              {[{icon:Mail,val:contact.email},{icon:Phone,val:contact.phone},{icon:Calendar,val:`Last touch: ${contact.lastTouch}`},{icon:Building,val:contact.co}].map(({icon:I,val},i)=>(
-                <div key={i} className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><I size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>{val||"—"}</span></div>
-              ))}
-              {contact.linkedin_url&&<a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9, textDecoration:"none", color:"var(--text)" }}><Linkedin size={13} color="#0A66C2"/><span style={{ fontSize:13, color:"#0A66C2" }}>LinkedIn Profile</span><ExternalLink size={10} color="var(--text-sec)" style={{marginLeft:"auto"}}/></a>}
-              {contact.connected_date&&<div className="card-el" style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:9 }}><Calendar size={13} color="var(--text-sec)"/><span style={{ fontSize:13 }}>Connected: {contact.connected_date}</span></div>}
+            {/* Inline editable form */}
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <ContactForm data={editContact} onChange={setEditContact} companies={db.companies} contacts={db.contacts} campaigns={db.campaigns} setDB={setDB} db={db}/>
             </div>
-
-            {contact.headline&&<div className="card-el" style={{ padding:14, marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>HEADLINE</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.headline}</p></div>}
-            {contact.priority&&<div style={{ marginBottom:12 }}><span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginRight:8 }}>PRIORITY</span><Tag label={contact.priority}/></div>}
-            {contact.messaging_activity&&contact.messaging_activity!=="No messaging activity."&&<div className="card-el" style={{ padding:14, marginBottom:12, borderLeft:"3px solid var(--blue)" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>MESSAGING ACTIVITY</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.messaging_activity}</p></div>}
-            {contact.follow_up&&<div className="card-el" style={{ padding:14, marginBottom:12, borderLeft:"3px solid var(--green)" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>FOLLOW-UP RECOMMENDATION</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.follow_up}</p></div>}
-            {contact.notes&&<div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{contact.notes}</p></div>}
 
             {/* Related Tasks */}
             {contactTasks.length>0&&<div style={{ marginBottom:16 }}>
@@ -931,6 +964,16 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               ))}
             </div>}
 
+            {/* Source info */}
+            {(contact.source || contact.referredBy || contact.campaignId) && <div className="card-el" style={{ padding:14, marginBottom:16 }}>
+              <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>SOURCE</div>
+              <div style={{ display:"flex", gap:12, fontSize:12, flexWrap:"wrap" }}>
+                {contact.source && <span>Channel: <strong>{contact.source.replace(/_/g," ")}</strong></span>}
+                {contact.referredBy && <span>Referred by: <strong>{(db.contacts.find(c=>c.id===contact.referredBy))?.name || "Unknown"}</strong></span>}
+                {contact.campaignId && <span>Campaign: <strong>{(db.campaigns.find(c=>c.id===contact.campaignId))?.name || "Unknown"}</strong></span>}
+              </div>
+            </div>}
+
             {/* Company News */}
             {contact.companyId && db.companyNews.filter(n=>n.companyId===contact.companyId).length>0 && (
               <div style={{ marginBottom:16 }}>
@@ -939,7 +982,6 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
                   <div key={n.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, borderLeft:"2px solid var(--blue)" }}>
                     <div style={{ fontSize:12, fontWeight:600 }}>{n.headline}</div>
                     <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{n.published_date} · Relevance: {n.relevance_score}/10</div>
-                    {n.summary && <p style={{ fontSize:11, color:"var(--text-sec)", marginTop:4 }}>{n.summary}</p>}
                   </div>
                 ))}
               </div>
@@ -956,7 +998,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
       </div>
 
       {drawer&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Contact`} onClose={()=>setDrawer(null)} onSave={save} saveLabel={drawer.mode==="add"?"Add Contact":"Save Changes"}>
-        <ContactForm data={drawer.data} onChange={data=>setDrawer(d=>({...d,data}))} companies={db.companies}/>
+        <ContactForm data={drawer.data} onChange={data=>setDrawer(d=>({...d,data}))} companies={db.companies} contacts={db.contacts} campaigns={db.campaigns} setDB={setDB} db={db}/>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
       {pasteMode&&(
