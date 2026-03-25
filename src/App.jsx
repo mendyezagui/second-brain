@@ -127,7 +127,7 @@ const initDB = () => ({
   companyNews: [],
   goals: [{ id:1, name:"Annual Revenue Target", target_value:800000, current_value:0, unit:"$", period:"annual", start_date:"2026-01-01", end_date:"2026-12-31", status:"active", notes:"" }],
   events: [],
-  ai_memories: [],
+    ai_memories: [],
 });
 
 /* ── SUPABASE CLIENT ── */
@@ -154,8 +154,7 @@ const DB_TABLES = [
   ["goals",       "goals"],
   ["events",      "events"],
   ["strategies",  "strategies"],
-  ["ai_memories", "ai_memories"],
-  ["ai_memories", "ai_memories"],
+  ["ai_memories",  "ai_memories"],
 ];
 
 const loadAllFromDB = async () => {
@@ -434,9 +433,8 @@ const NAV = [
   {id:"invoices",icon:FileText,label:"Invoices",parent:"_fin"},
   {id:"payments",icon:CreditCard,label:"Payments",parent:"_fin"},
   {divider:true},
-  {id:"email",icon:Mail,label:"Email Lab"},
+  {id:"ai_memories",icon:Sparkles,label:"AI Memories"},  {id:"email",icon:Mail,label:"Email Lab"},
   {divider:true},
-  {id:"ai_memories",icon:Sparkles,label:"AI Memories"},
   {id:"ai_memories",icon:Sparkles,label:"AI Memories"},
   {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
@@ -479,7 +477,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"ai_memories",icon:Sparkles,label:"AI Memories"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -2681,6 +2679,7 @@ const PaymentsView = ({ db, setDB }) => {
     </div>}
   </div>);
 };
+
 /* ────────────────────────────────────────────────────────
    AI MEMORIES VIEW
 ──────────────────────────────────────────────────────── */
@@ -2695,13 +2694,13 @@ const AIMemoriesView = ({ db, setDB }) => {
   const [filterType, setFilterType] = useState("all");
   const [filterSystem, setFilterSystem] = useState("all");
   const [search, setSearch] = useState("");
+
   const memories = (db.ai_memories || []);
   const contacts = (db.contacts || []);
   const companies = (db.companies || []);
   const deals = (db.deals || []);
   const projects = (db.projects || []);
   const strategies = (db.strategies || []);
-  window.__componentPartial = true;
 
   const filtered = memories.filter(m => {
     if (filterType !== "all" && m.memory_type !== filterType) return false;
@@ -2717,140 +2716,11 @@ const AIMemoriesView = ({ db, setDB }) => {
     setDrawer(null);
   };
   const delMemory = (id) => { setDB(db => ({ ...db, ai_memories: (db.ai_memories || []).filter(x => x.id !== id) })); setConfirm(null); };
+
   const typeColor = (t) => ({ general:"var(--text-sec)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--blue)", decision:"var(--green)", relationship:"var(--red)", insight:"var(--purple)" }[t] || "var(--text-sec)");
   const systemIcon = (s) => ({ claude:"🟣", chatgpt:"🟢", gemini:"🔵", copilot:"⚪", other:"⚙️" }[s] || "⚙️");
-  const linkedName = (id, arr, fallback) => { const r = arr.find(x => x.id === id); return r ? (r.name || r.title || fallback) : null; };
 
-  return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, maxWidth: 900 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div className="display" style={{ fontSize: 18, fontWeight: 700 }}>AI Memories</div>
-        <button className="btn btn-blue" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => { setMD(blankMemory()); setDrawer({ mode: "add" }); }}><Plus size={12} />Memory</button>
-      </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {[{ label: "Total", value: memories.length, color: "var(--blue)" },
-          ...AI_SYSTEMS.filter(s => memories.some(m => m.ai_system === s)).map(s => ({ label: s.charAt(0).toUpperCase() + s.slice(1), value: memories.filter(m => m.ai_system === s).length, color: "var(--purple)" }))
-        ].map((s, i) => (
-          <div key={i} style={{ padding: "8px 14px", background: "var(--bg-el)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}>
-            <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{s.label}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>{s.value}</div>
-          </div>
-        ))}
-      </div>
-      <div className="filter-bar">
-        <div style={{ position: "relative", flex: 1, maxWidth: 260 }}>
-          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)" }} />
-          <input className="input" placeholder="Search memories…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 30, fontSize: 12, padding: "6px 10px 6px 30px" }} />
-        </div>
-        <select className="filter-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
-          <option value="all">All types</option>
-          {MEMORY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select className="filter-select" value={filterSystem} onChange={e => setFilterSystem(e.target.value)}>
-          <option value="all">All AI systems</option>
-          {AI_SYSTEMS.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
-      </div>
-      {filtered.length === 0 && <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
-        {memories.length === 0 ? "No AI memories yet. Add one to start tracking what your AI systems know." : "No memories match your filters."}
-      </div>}
-      {filtered.map(m => {
-        const links = [
-          linkedName(m.contactId, contacts) && { icon: Users, label: linkedName(m.contactId, contacts) },
-          linkedName(m.companyId, companies) && { icon: Building2, label: linkedName(m.companyId, companies) },
-          linkedName(m.dealId, deals) && { icon: Target, label: linkedName(m.dealId, deals) },
-          linkedName(m.projectId, projects) && { icon: Briefcase, label: linkedName(m.projectId, projects) },
-          linkedName(m.strategyId, strategies) && { icon: Target, label: linkedName(m.strategyId, strategies, "Strategy") },
-        ].filter(Boolean);
-        return (
-          <div key={m.id} className="card row-hover" style={{ padding: 16, borderLeft: "3px solid " + typeColor(m.memory_type) }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 14 }}>{systemIcon(m.ai_system)}</span>
-                <Tag label={m.memory_type} color={typeColor(m.memory_type)} />
-                <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>{m.ai_system}</span>
-              </div>
-              <RowActions onEdit={() => { setMD({ ...m, companyId: String(m.companyId || ""), contactId: String(m.contactId || ""), dealId: String(m.dealId || ""), projectId: String(m.projectId || ""), strategyId: String(m.strategyId || "") }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: m.id, label: (m.memory_summary||"").substring(0, 40) })} />
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>{m.memory_summary}</div>
-            {m.source_context && <div style={{ fontSize: 11, color: "var(--text-sec)", fontStyle: "italic", marginBottom: 6 }}>Source: {m.source_context}</div>}
-            {links.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-                {links.map((lnk, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", background: "var(--bg-el)", borderRadius: 4, fontSize: 10 }}>
-                    <lnk.icon size={10} color="var(--text-sec)" /><span style={{ color: "var(--text-sec)" }}>{lnk.label}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {m.created_at && <div className="mono" style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 6 }}>{new Date(m.created_at).toLocaleString()}</div>}
-          </div>
-        );
-      })}
-      {drawer && <Drawer title={drawer.mode === "add" ? "New AI Memory" : "Edit AI Memory"} onClose={() => setDrawer(null)} onSave={() => saveMemory(md)}>
-        <Field label="Memory Summary"><Tex value={md.memory_summary} onChange={v => setMD(p => ({ ...p, memory_summary: v }))} placeholder="What does the AI remember?" /></Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="AI System"><Sel value={md.ai_system} onChange={v => setMD(p => ({ ...p, ai_system: v }))} options={AI_SYSTEMS} /></Field>
-          <Field label="Memory Type"><Sel value={md.memory_type} onChange={v => setMD(p => ({ ...p, memory_type: v }))} options={MEMORY_TYPES} /></Field>
-        </div>
-        <Field label="Source / Context"><Inp value={md.source_context} onChange={v => setMD(p => ({ ...p, source_context: v }))} placeholder="Where did this memory come from?" /></Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Contact"><Sel value={md.contactId} onChange={v => setMD(p => ({ ...p, contactId: v }))} options={[{ value: "", label: "None" }, ...contacts.map(c => ({ value: String(c.id), label: c.name }))]} /></Field>
-          <Field label="Company"><Sel value={md.companyId} onChange={v => setMD(p => ({ ...p, companyId: v }))} options={[{ value: "", label: "None" }, ...companies.map(c => ({ value: String(c.id), label: c.name }))]} /></Field>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Deal"><Sel value={md.dealId} onChange={v => setMD(p => ({ ...p, dealId: v }))} options={[{ value: "", label: "None" }, ...deals.map(d => ({ value: String(d.id), label: d.name }))]} /></Field>
-          <Field label="Project"><Sel value={md.projectId} onChange={v => setMD(p => ({ ...p, projectId: v }))} options={[{ value: "", label: "None" }, ...projects.map(p => ({ value: String(p.id), label: p.name }))]} /></Field>
-        </div>
-        <Field label="Strategy"><Sel value={md.strategyId} onChange={v => setMD(p => ({ ...p, strategyId: v }))} options={[{ value: "", label: "None" }, ...strategies.map(s => ({ value: String(s.id), label: s.name }))]} /></Field>
-      </Drawer>}
-      {confirm && <ConfirmDelete label={confirm.label} onConfirm={() => delMemory(confirm.id)} onCancel={() => setConfirm(null)} />}
-    </div>
-  );
-};
-
-/* ────────────────────────────────────────────────────────
-   AI MEMORIES VIEW
-──────────────────────────────────────────────────────── */
-const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
-const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
-const blankMemory = () => ({ ai_system:"claude", memory_summary:"", memory_type:"general", source_context:"", companyId:"", contactId:"", dealId:"", projectId:"", strategyId:"" });
-
-const AIMemoriesView = ({ db, setDB }) => {
-  const [drawer, setDrawer] = useState(null);
-  const [confirm, setConfirm] = useState(null);
-  const [md, setMD] = useState(blankMemory());
-  const [filterType, setFilterType] = useState("all");
-  const [filterSystem, setFilterSystem] = useState("all");
-  const [search, setSearch] = useState("");
-
-  const memories = (db.ai_memories || []);
-  const contacts = (db.contacts || []);
-  const companies = (db.companies || []);
-  const deals = (db.deals || []);
-  const projects = (db.projects || []);
-  const strategies = (db.strategies || []);
-
-  const filtered = memories.filter(m => {
-    if (filterType !== "all" && m.memory_type !== filterType) return false;
-    if (filterSystem !== "all" && m.ai_system !== filterSystem) return false;
-    if (search && !m.memory_summary.toLowerCase().includes(search.toLowerCase()) && !(m.source_context||"").toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  }).sort((a, b) => (b.id || 0) - (a.id || 0));
-
-  const saveMemory = (d) => {
-    const rec = { ...d, companyId:parseInt(d.companyId)||null, contactId:parseInt(d.contactId)||null, dealId:parseInt(d.dealId)||null, projectId:parseInt(d.projectId)||null, strategyId:parseInt(d.strategyId)||null };
-    if (drawer.mode === "add") setDB(db => ({ ...db, ai_memories: [...(db.ai_memories || []), { ...rec, id: nextId(db.ai_memories || []), created_at: new Date().toISOString() }] }));
-    else setDB(db => ({ ...db, ai_memories: (db.ai_memories || []).map(x => x.id === rec.id ? rec : x) }));
-    setDrawer(null);
-  };
-  const delMemory = (id) => { setDB(db => ({ ...db, ai_memories: (db.ai_memories || []).filter(x => x.id !== id) })); setConfirm(null); };
-
-  const typeColor = (t) => ({ general:"var(--text-sec)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--blue)", decision:"var(--green)", relationship:"var(--red)", insight:"var(--purple)" }[t] || "var(--text-sec)");
-  const systemIcon = (s) => ({ claude:"\u{1F7E3}", chatgpt:"\u{1F7E2}", gemini:"\u{1F535}", copilot:"\u{26AA}", other:"\u{2699}\u{FE0F}" }[s] || "\u{2699}\u{FE0F}");
-
-  const linkedName = (id, arr, fallback="\u{2014}") => { const r = arr.find(x => x.id === id); return r ? (r.name || r.title || fallback) : null; };
+  const linkedName = (id, arr, fallback="—") => { const r = arr.find(x => x.id === id); return r ? (r.name || r.title || fallback) : null; };
 
   return (
     <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, maxWidth: 900 }}>
@@ -2870,11 +2740,12 @@ const AIMemoriesView = ({ db, setDB }) => {
           </div>
         ))}
       </div>
+
       {/* Filters */}
       <div className="filter-bar">
         <div style={{ position: "relative", flex: 1, maxWidth: 260 }}>
           <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)" }} />
-          <input className="input" placeholder="Search memories\u{2026}" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 30, fontSize: 12, padding: "6px 10px 6px 30px" }} />
+          <input className="input" placeholder="Search memories…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 30, fontSize: 12, padding: "6px 10px 6px 30px" }} />
         </div>
         <select className="filter-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
           <option value="all">All types</option>
@@ -2909,7 +2780,7 @@ const AIMemoriesView = ({ db, setDB }) => {
                 <Tag label={m.memory_type} color={typeColor(m.memory_type)} />
                 <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>{m.ai_system}</span>
               </div>
-              <RowActions onEdit={() => { setMD({ ...m, companyId: String(m.companyId || ""), contactId: String(m.contactId || ""), dealId: String(m.dealId || ""), projectId: String(m.projectId || ""), strategyId: String(m.strategyId || "") }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: m.id, label: m.memory_summary.substring(0, 40) + "\u{2026}" })} />
+              <RowActions onEdit={() => { setMD({ ...m, companyId: String(m.companyId || ""), contactId: String(m.contactId || ""), dealId: String(m.dealId || ""), projectId: String(m.projectId || ""), strategyId: String(m.strategyId || "") }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: m.id, label: m.memory_summary.substring(0, 40) + "…" })} />
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>{m.memory_summary}</div>
             {m.source_context && <div style={{ fontSize: 11, color: "var(--text-sec)", fontStyle: "italic", marginBottom: 6 }}>Source: {m.source_context}</div>}
@@ -2926,6 +2797,7 @@ const AIMemoriesView = ({ db, setDB }) => {
           </div>
         );
       })}
+
       {/* Drawer */}
       {drawer && <Drawer title={drawer.mode === "add" ? "New AI Memory" : "Edit AI Memory"} onClose={() => setDrawer(null)} onSave={() => saveMemory(md)}>
         <Field label="Memory Summary"><Tex value={md.memory_summary} onChange={v => setMD(p => ({ ...p, memory_summary: v }))} placeholder="What does the AI remember?" /></Field>
@@ -2948,7 +2820,6 @@ const AIMemoriesView = ({ db, setDB }) => {
     </div>
   );
 };
-
 /* ────────────────────────────────────────────────────────
    STRATEGIES VIEW
 ──────────────────────────────────────────────────────── */
@@ -3550,8 +3421,7 @@ export default function App() {
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB}/>,
-    ai_memories:  <AIMemoriesView db={db} setDB={setDB}/>,
-    ai_memories:  <AIMemoriesView db={db} setDB={setDB}/>,
+    ai_memories: <AIMemoriesView db={db} setDB={setDB}/>,
     strategies:   <StrategiesView db={db} setDB={setDB}/>,
     instructions: <InstructionsView db={db} setDB={setDB}/>,
     payments:      <PaymentsView db={db} setDB={setDB}/>,
