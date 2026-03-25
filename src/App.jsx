@@ -433,7 +433,7 @@ const NAV = [
   {id:"invoices",icon:FileText,label:"Invoices",parent:"_fin"},
   {id:"payments",icon:CreditCard,label:"Payments",parent:"_fin"},
   {divider:true},
-  {id:"ai_memories",icon:Sparkles,label:"AI Memories"},  {id:"email",icon:Mail,label:"Email Lab"},
+  {id:"email",icon:Mail,label:"Email Lab"},
   {divider:true},
   {id:"ai_memories",icon:Sparkles,label:"AI Memories"},
   {id:"strategies",icon:Target,label:"Strategies"},
@@ -2775,10 +2775,11 @@ const AIMemoriesView = ({ db, setDB }) => {
         return (
           <div key={m.id} className="card row-hover" style={{ padding: 16, borderLeft: "3px solid " + typeColor(m.memory_type) }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 14 }}>{systemIcon(m.ai_system)}</span>
                 <Tag label={m.memory_type} color={typeColor(m.memory_type)} />
                 <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>{m.ai_system}</span>
+                {m.created_at && <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginLeft: 4 }}><Clock size={9} style={{ marginRight: 3, verticalAlign: "middle" }}/>{new Date(m.created_at).toLocaleString()}</span>}
               </div>
               <RowActions onEdit={() => { setMD({ ...m, companyId: String(m.companyId || ""), contactId: String(m.contactId || ""), dealId: String(m.dealId || ""), projectId: String(m.projectId || ""), strategyId: String(m.strategyId || "") }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: m.id, label: m.memory_summary.substring(0, 40) + "…" })} />
             </div>
@@ -2793,7 +2794,6 @@ const AIMemoriesView = ({ db, setDB }) => {
                 ))}
               </div>
             )}
-            {m.created_at && <div className="mono" style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 6 }}>{new Date(m.created_at).toLocaleString()}</div>}
           </div>
         );
       })}
@@ -2807,14 +2807,14 @@ const AIMemoriesView = ({ db, setDB }) => {
         </div>
         <Field label="Source / Context"><Inp value={md.source_context} onChange={v => setMD(p => ({ ...p, source_context: v }))} placeholder="Where did this memory come from?" /></Field>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Contact"><Sel value={md.contactId} onChange={v => setMD(p => ({ ...p, contactId: v }))} options={[{ value: "", label: "None" }, ...contacts.map(c => ({ value: String(c.id), label: c.name }))]} /></Field>
-          <Field label="Company"><Sel value={md.companyId} onChange={v => setMD(p => ({ ...p, companyId: v }))} options={[{ value: "", label: "None" }, ...companies.map(c => ({ value: String(c.id), label: c.name }))]} /></Field>
+          <Field label="Contact"><SearchSelect value={md.contactId} onChange={v => setMD(p => ({ ...p, contactId: v }))} options={contacts.map(c => ({ value: String(c.id), label: c.name }))} placeholder="Search contacts..." /></Field>
+          <Field label="Company"><SearchSelect value={md.companyId} onChange={v => setMD(p => ({ ...p, companyId: v }))} options={companies.map(c => ({ value: String(c.id), label: c.name }))} placeholder="Search companies..." /></Field>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Deal"><Sel value={md.dealId} onChange={v => setMD(p => ({ ...p, dealId: v }))} options={[{ value: "", label: "None" }, ...deals.map(d => ({ value: String(d.id), label: d.name }))]} /></Field>
-          <Field label="Project"><Sel value={md.projectId} onChange={v => setMD(p => ({ ...p, projectId: v }))} options={[{ value: "", label: "None" }, ...projects.map(p => ({ value: String(p.id), label: p.name }))]} /></Field>
+          <Field label="Deal"><SearchSelect value={md.dealId} onChange={v => setMD(p => ({ ...p, dealId: v }))} options={deals.map(d => ({ value: String(d.id), label: d.name }))} placeholder="Search deals..." /></Field>
+          <Field label="Project"><SearchSelect value={md.projectId} onChange={v => setMD(p => ({ ...p, projectId: v }))} options={projects.map(p => ({ value: String(p.id), label: p.name }))} placeholder="Search projects..." /></Field>
         </div>
-        <Field label="Strategy"><Sel value={md.strategyId} onChange={v => setMD(p => ({ ...p, strategyId: v }))} options={[{ value: "", label: "None" }, ...strategies.map(s => ({ value: String(s.id), label: s.name }))]} /></Field>
+        <Field label="Strategy"><SearchSelect value={md.strategyId} onChange={v => setMD(p => ({ ...p, strategyId: v }))} options={strategies.map(s => ({ value: String(s.id), label: s.name }))} placeholder="Search strategies..." /></Field>
       </Drawer>}
       {confirm && <ConfirmDelete label={confirm.label} onConfirm={() => delMemory(confirm.id)} onCancel={() => setConfirm(null)} />}
     </div>
