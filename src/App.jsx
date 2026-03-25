@@ -3293,7 +3293,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","strategies","instructions","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","strategies","ai_memories","instructions","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
