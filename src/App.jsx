@@ -1359,6 +1359,28 @@ const MarketingView = ({ db, setDB }) => {
           <Field label="Leads"><Inp type="number" value={d.leads} onChange={v=>setD(p=>({...p,leads:v}))}/></Field>
           <Field label="Impressions"><Inp type="number" value={d.opens} onChange={v=>setD(p=>({...p,opens:v}))}/></Field>
           <Field label="Conversions"><Inp type="number" value={d.conversions} onChange={v=>setD(p=>({...p,conversions:v}))}/></Field>
+        {drawer==="edit"&&d.id&&(()=>{
+          const leads = (db.contacts||[]).filter(c=>c.campaignId===d.id);
+          return leads.length > 0 ? (
+            <div style={{ marginTop:18, borderTop:"1px solid var(--border)", paddingTop:14 }}>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ASSOCIATED LEADS — {leads.length}</div>
+              {leads.map(c=>(
+                <div key={c.id} className="card-el" style={{ padding:"10px 12px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer" }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600 }}>{c.name}</div>
+                    <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{c.co}{c.role?(" · "+c.role):""}</div>
+                  </div>
+                  <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                    <span className="tag" style={{ background:c.status==="prospect"?"var(--blue-dim)":c.status==="client"?"var(--green-dim)":"var(--amber-dim)", color:c.status==="prospect"?"var(--blue)":c.status==="client"?"var(--green)":"var(--amber)" }}>{c.status}</span>
+                    <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Score: {c.score}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:16, fontStyle:"italic" }}>No leads associated with this campaign yet.</div>
+          );
+        })()}
         </div>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
