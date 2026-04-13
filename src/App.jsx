@@ -583,6 +583,33 @@ const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sweepRunn
         )}
       </div>
 
+      {/* AI Nudges — latest orchestrator sweep */}
+      {(()=>{
+        const latestSweep = (db.agentLogs||[]).find(l=>l.agent==="Orchestrator"&&l.type==="sweep");
+        if(!latestSweep) return null;
+        const lines = latestSweep.message.split(/\n+/).filter(l=>l.trim());
+        return (
+          <div className="card" style={{ padding:20, borderLeft:"4px solid var(--amber)", background:"linear-gradient(135deg, rgba(245,158,11,0.04), transparent)" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <Zap size={14} color="var(--amber)"/>
+                <span style={{ fontFamily:"var(--font-d)", fontSize:14, fontWeight:700 }}>Today's AI Nudges</span>
+              </div>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{latestSweep.ts}</span>
+                <button className="btn btn-sm" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={11} className="spin"/>:<RefreshCw size={11}/>}</button>
+              </div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              {lines.map((line,i)=>{
+                const isBold = /^(\d+\.|TOP|DEAL|STRATEGIC|SMART|NUDGE|PRIORITY)/i.test(line.trim());
+                return <div key={i} style={{ fontSize:13, lineHeight:1.6, fontWeight:isBold?600:400, color:isBold?"var(--text)":"var(--text-sec)", paddingLeft:isBold?0:8 }}>{line}</div>;
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Metrics */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:12 }}>
         <MetricCard icon={TrendingUp} label="YTD Revenue" value={fmt(paid)} sub={`${fmt(goal.target_value)} target · ${goalPct}%`} color="--blue" trend={12}/>
@@ -1343,7 +1370,7 @@ const MarketingView = ({ db, setDB }) => {
    OPERATIONS — Projects + RELATIONAL TASKS with Filters
 ──────────────────────────────────────────────────────── */
 const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"", links:[], strategyId:"" });
-const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" });
+const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none", reschedule_count:0 });
 
 /* ────────────────────────────────────────────────────────
    TASKS VIEW (standalone)
@@ -1408,7 +1435,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
   const saveTask = (d) => {
     const rec = {...d, projectId:parseInt(d.projectId)||null, contactId:parseInt(d.contactId)||null, companyId:parseInt(d.companyId)||null, dealId:parseInt(d.dealId)||null};
     if(drawer.mode==="add") setDB(db=>({...db,tasks:[...db.tasks,{...rec,id:nextId(db.tasks)}]}));
-    else setDB(db=>({...db,tasks:db.tasks.map(x=>x.id===rec.id?rec:x)}));
+    else setDB(db=>{const old=db.tasks.find(x=>x.id===rec.id);let updated={...rec};if(old&&old.due!==rec.due&&rec.due){updated.reschedule_count=(old.reschedule_count||0)+1;if(updated.reschedule_count>=3){updated.priority="low";updated.notes=(updated.notes?updated.notes+"\n":"")+"\u26a0\ufe0f Auto-downgraded: due date changed "+updated.reschedule_count+" times \u2014 may not be critical.";}}return{...db,tasks:db.tasks.map(x=>x.id===rec.id?updated:x)};});
     setDrawer(null);
   };
   const delTask = (id) => { setDB(db=>({...db,tasks:db.tasks.filter(x=>x.id!==id)})); setConfirm(null); };
