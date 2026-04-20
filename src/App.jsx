@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
-import {
-  Brain, Users, Megaphone, Briefcase, DollarSign, Mic, Mail,
+import {Brain, Users, Megaphone, Briefcase, DollarSign, Mic, Mail,
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
   FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash,
   MessageSquare, Send, Paperclip, Loader2, Copy,
   Linkedin, ExternalLink, Filter, SortAsc, ChevronDown, CreditCard, Globe, Newspaper,
-  Star, ArrowRightCircle, Activity, Award, Building2, BookOpen
-} from "lucide-react";
+  Star, ArrowRightCircle, Activity, Award, Building2, BookOpen, ChevronUp, Upload} from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 /* ── STYLES ── */
@@ -3191,253 +3189,244 @@ const blankMemory = () => ({ subject:"", ai_system:"claude", memory_summary:"", 
 const AIMemoriesView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
-  const [md, setMD] = useState(blankMemory());
+  const [md, setMd] = useState({});
   const [filterType, setFilterType] = useState("all");
   const [filterSystem, setFilterSystem] = useState("all");
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState(null);
-  const [copiedId, setCopiedId]     = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
-  const memories = (db.ai_memories || []);
-  const contacts = (db.contacts || []);
-  const companies = (db.companies || []);
-  const deals = (db.deals || []);
-  const projects = (db.projects || []);
-  const strategies = (db.strategies || []);
+  const typeColors = { general:"var(--blue)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--green)", decision:"var(--red)", relationship:"var(--pink)", insight:"var(--teal)" };
+  const systemIcons = { claude:"\u2728", chatgpt:"\ud83e\udd16", gemini:"\ud83d\udc8e", copilot:"\u2708\ufe0f", other:"\ud83d\udccc" };
+  const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
+  const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
 
-  const filtered = memories.filter(m => {
+  const items = (db.ai_memories||[]).filter(m => {
     if (filterType !== "all" && m.memory_type !== filterType) return false;
     if (filterSystem !== "all" && m.ai_system !== filterSystem) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      const hay = [(m.subject||""), (m.memory_summary||""), (m.source_context||"")].join(" ").toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
+    if (search) { const s = search.toLowerCase(); return (m.subject||"").toLowerCase().includes(s) || (m.memory_summary||"").toLowerCase().includes(s) || (m.source_context||"").toLowerCase().includes(s); }
     return true;
-  }).sort((a, b) => (b.id || 0) - (a.id || 0));
+  }).sort((a,b) => (b.id||0)-(a.id||0));
 
-  const saveMemory = (d) => {
-    const rec = { ...d, companyId:parseInt(d.companyId)||null, contactId:parseInt(d.contactId)||null, dealId:parseInt(d.dealId)||null, projectId:parseInt(d.projectId)||null, strategyId:parseInt(d.strategyId)||null };
-    if (drawer.mode === "add") setDB(db => ({ ...db, ai_memories: [...(db.ai_memories || []), { ...rec, id: nextId(db.ai_memories || []), created_at: new Date().toISOString() }] }));
-    else setDB(db => ({ ...db, ai_memories: (db.ai_memories || []).map(x => x.id === rec.id ? rec : x) }));
+  const save = () => {
+    if (!md.subject) return;
+    setDB(prev => {
+      const mem = prev.ai_memories || [];
+      if (drawer === "add") {
+        const id = Math.max(0, ...mem.map(x=>x.id||0)) + 1;
+        return { ...prev, ai_memories: [{ ...md, id, created_at: new Date().toISOString(), files: md.files||[] }, ...mem] };
+      }
+      return { ...prev, ai_memories: mem.map(x => x.id === md.id ? { ...md } : x) };
+    });
     setDrawer(null);
   };
-  const delMemory = (id) => { setDB(db => ({ ...db, ai_memories: (db.ai_memories || []).filter(x => x.id !== id) })); setConfirm(null); };
 
-  const typeColor = (t) => ({ general:"var(--text-sec)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--blue)", decision:"var(--green)", relationship:"var(--red)", insight:"var(--purple)" }[t] || "var(--text-sec)");
-  const systemIcon = (s) => ({ claude:"🟣", chatgpt:"🟢", gemini:"🔵", copilot:"⚪", other:"⚙️" }[s] || "⚙️");
-
-  const linkedName = (id, arr, fallback="—") => { const r = arr.find(x => x.id === id); return r ? (r.name || r.title || fallback) : null; };
-
-  const copySummary = async (m) => {
-    const text = m.memory_summary || "";
+  const handleFileUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    setUploading(true);
     try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Fallback: hidden textarea + execCommand
-      const ta = document.createElement("textarea");
-      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-      document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); } catch {}
-      document.body.removeChild(ta);
-    }
-    setCopiedId(m.id);
-    setTimeout(() => setCopiedId(c => (c === m.id ? null : c)), 1400);
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const { data, error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) { console.error('Upload error:', error); continue; }
+        const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
+      }
+      setMd(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
+    } catch(err) { console.error('Upload failed:', err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const openEdit = (m) => {
-    setMD({
-      ...m,
-      subject:    m.subject    || "",
-      companyId:  String(m.companyId  || ""),
-      contactId:  String(m.contactId  || ""),
-      dealId:     String(m.dealId     || ""),
-      projectId:  String(m.projectId  || ""),
-      strategyId: String(m.strategyId || ""),
-    });
-    setDrawer({ mode: "edit" });
+  const removeFile = async (fileObj) => {
+    await supabase.storage.from('memory-files').remove([fileObj.path]);
+    setMd(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
   };
 
-  // Layout: Subject | Type | System | Date | Actions
-  const GRID = "minmax(0,1fr) 110px 110px 120px 120px";
+  const copyToClipboard = (text, id) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
+  };
 
   return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, maxWidth: 1100 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div className="display" style={{ fontSize: 18, fontWeight: 700 }}>AI Memories</div>
-        <button className="btn btn-blue" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => { setMD(blankMemory()); setDrawer({ mode: "add" }); }}><Plus size={12} />Memory</button>
-      </div>
-
-      {/* Stats bar */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {[{ label: "Total", value: memories.length, color: "var(--blue)" },
-          ...AI_SYSTEMS.filter(s => memories.some(m => m.ai_system === s)).map(s => ({ label: s.charAt(0).toUpperCase() + s.slice(1), value: memories.filter(m => m.ai_system === s).length, color: "var(--purple)" }))
-        ].map((s, i) => (
-          <div key={i} style={{ padding: "8px 14px", background: "var(--bg-el)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}>
-            <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{s.label}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>{s.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="filter-bar">
-        <div style={{ position: "relative", flex: 1, maxWidth: 260 }}>
-          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)" }} />
-          <input className="input" placeholder="Search memories…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 30, fontSize: 12, padding: "6px 10px 6px 30px" }} />
+    <div style={{ padding:24 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <Brain size={18} color="var(--purple)"/>
+          <span style={{ fontFamily:"var(--font-d)", fontSize:18, fontWeight:700 }}>AI Memories</span>
+          <span className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginLeft:4 }}>{items.length}</span>
         </div>
-        <select className="filter-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
-          <option value="all">All types</option>
-          {MEMORY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select className="filter-select" value={filterSystem} onChange={e => setFilterSystem(e.target.value)}>
-          <option value="all">All AI systems</option>
-          {AI_SYSTEMS.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+        <button className="btn btn-primary" onClick={() => { setMd({ subject:"", memory_summary:"", ai_system:"claude", memory_type:"general", source_context:"", companyId:null, contactId:null, dealId:null, projectId:null, strategyId:null, files:[] }); setDrawer("add"); }}><Plus size={13}/> New Memory</button>
       </div>
 
-      {/* Empty state */}
-      {filtered.length === 0 && <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
-        {memories.length === 0 ? "No AI memories yet. Add one to start tracking what your AI systems know." : "No memories match your filters."}
-      </div>}
+      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ position:"relative", flex:1, minWidth:200 }}>
+          <Search size={13} style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:"var(--text-dim)" }}/>
+          <input className="input" placeholder="Search memories..." value={search} onChange={e=>setSearch(e.target.value)} style={{ paddingLeft:32, width:"100%" }}/>
+        </div>
+        <select className="input" value={filterType} onChange={e=>setFilterType(e.target.value)} style={{ width:140 }}>
+          <option value="all">All Types</option>
+          {MEMORY_TYPES.map(t=><option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+        </select>
+        <select className="input" value={filterSystem} onChange={e=>setFilterSystem(e.target.value)} style={{ width:140 }}>
+          <option value="all">All Systems</option>
+          {AI_SYSTEMS.map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+        </select>
+      </div>
 
-      {/* Table */}
-      {filtered.length > 0 && (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          {/* Header row */}
-          <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-el)", fontFamily: "var(--font-m)", fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: 0.6 }}>
-            <div>Subject</div>
-            <div>Type</div>
-            <div>System</div>
-            <div>Created</div>
-            <div style={{ textAlign: "right" }}>Actions</div>
-          </div>
-
-          {/* Rows */}
-          {filtered.map(m => {
-            const isOpen = expandedId === m.id;
-            const subject = (m.subject && m.subject.trim()) || (m.memory_summary ? m.memory_summary.slice(0, 80) : "(no subject)");
-            const links = [
-              linkedName(m.contactId, contacts)   && { icon: Users,     label: linkedName(m.contactId, contacts) },
-              linkedName(m.companyId, companies)  && { icon: Building2, label: linkedName(m.companyId, companies) },
-              linkedName(m.dealId, deals)         && { icon: Target,    label: linkedName(m.dealId, deals) },
-              linkedName(m.projectId, projects)   && { icon: Briefcase, label: linkedName(m.projectId, projects) },
-              linkedName(m.strategyId, strategies) && { icon: Target,   label: linkedName(m.strategyId, strategies, "Strategy") },
-            ].filter(Boolean);
-
-            return (
-              <div key={m.id}>
-                {/* Collapsed row */}
-                <div
-                  onClick={() => setExpandedId(isOpen ? null : m.id)}
-                  style={{
-                    display: "grid", gridTemplateColumns: GRID, gap: 10,
-                    padding: "10px 16px", alignItems: "center", cursor: "pointer",
-                    borderBottom: "1px solid var(--border)",
-                    borderLeft: "3px solid " + typeColor(m.memory_type),
-                    background: isOpen ? "var(--bg-el)" : "transparent",
-                    transition: "background .12s",
-                  }}
-                  onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                  onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = "transparent"; }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    <ChevronRight size={12} style={{ verticalAlign: "middle", marginRight: 6, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s", color: "var(--text-dim)" }}/>
-                    {subject}
-                  </div>
-                  <div><Tag label={m.memory_type} color={typeColor(m.memory_type)} /></div>
-                  <div style={{ fontSize: 12, color: "var(--text-sec)" }}>
-                    <span style={{ marginRight: 4 }}>{systemIcon(m.ai_system)}</span>{m.ai_system}
-                  </div>
-                  <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>
-                    {m.created_at ? new Date(m.created_at).toLocaleDateString() : "—"}
-                  </div>
-                  <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", alignItems: "center" }}>
-                    <button
-                      className="btn-icon"
-                      title={copiedId === m.id ? "Copied!" : "Copy summary"}
-                      onClick={e => { e.stopPropagation(); copySummary(m); }}
-                      style={{ color: copiedId === m.id ? "var(--green)" : "var(--text-sec)" }}
-                    >
-                      {copiedId === m.id ? <Check size={13}/> : <Copy size={13}/>}
-                    </button>
-                    <button className="btn-icon" title="Edit" onClick={e => { e.stopPropagation(); openEdit(m); }}>
-                      <Pencil size={13} color="var(--text-sec)"/>
-                    </button>
-                    <button className="btn-icon delete" title="Delete" onClick={e => { e.stopPropagation(); setConfirm({ id: m.id, label: (subject).substring(0, 40) + "…" }); }}>
-                      <Trash2 size={13} color="var(--text-sec)"/>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded detail */}
-                {isOpen && (
-                  <div style={{ padding: "14px 20px 18px", background: "var(--bg-el)", borderBottom: "1px solid var(--border)" }}>
-                    <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 4, letterSpacing: 0.5 }}>MEMORY SUMMARY</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 12 }}>
-                      {m.memory_summary || <em style={{ color: "var(--text-dim)" }}>(empty)</em>}
-                    </div>
-                    {m.source_context && (
-                      <>
-                        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 4, letterSpacing: 0.5 }}>SOURCE / CONTEXT</div>
-                        <div style={{ fontSize: 12, color: "var(--text-sec)", fontStyle: "italic", marginBottom: 12 }}>{m.source_context}</div>
-                      </>
-                    )}
-                    {links.length > 0 && (
-                      <>
-                        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 4, letterSpacing: 0.5 }}>LINKED</div>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-                          {links.map((lnk, i) => (
-                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }}>
-                              <lnk.icon size={11} color="var(--text-sec)" /><span style={{ color: "var(--text-sec)" }}>{lnk.label}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {m.created_at && (
-                      <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>
-                        <Clock size={9} style={{ marginRight: 4, verticalAlign: "middle" }}/>
-                        Captured {new Date(m.created_at).toLocaleString()}
+      {items.length === 0 ? (
+        <div className="card" style={{ padding:40, textAlign:"center" }}>
+          <Brain size={32} color="var(--text-dim)" style={{ marginBottom:12 }}/>
+          <div style={{ fontSize:14, color:"var(--text-sec)" }}>No memories found</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:4 }}>Create your first AI memory to get started</div>
+        </div>
+      ) : (
+        <div className="card" style={{ overflow:"hidden" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <thead>
+              <tr style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-sec)" }}>
+                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px" }}>Title</th>
+                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>Type</th>
+                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>System</th>
+                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:90 }}>Date</th>
+                <th style={{ textAlign:"center", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(m => (
+                <React.Fragment key={m.id}>
+                  <tr style={{ borderBottom: expandedId===m.id ? "none" : "1px solid var(--border)", cursor:"pointer", transition:"background 0.15s" }} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-sec)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <td style={{ padding:"12px 14px" }} onClick={()=>setExpandedId(expandedId===m.id?null:m.id)}>
+                      <div style={{ fontWeight:600, fontSize:13, lineHeight:1.4 }}>{m.subject || "Untitled Memory"}</div>
+                      {(m.files||[]).length > 0 && <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", display:"flex", alignItems:"center", gap:3, marginTop:2 }}><Paperclip size={10}/> {(m.files||[]).length} file{(m.files||[]).length>1?"s":""}</span>}
+                    </td>
+                    <td style={{ padding:"12px 14px" }}>
+                      <span style={{ fontSize:11, padding:"2px 8px", borderRadius:10, background: (typeColors[m.memory_type]||"var(--text-dim)")+"20", color: typeColors[m.memory_type]||"var(--text-dim)", fontWeight:500 }}>{m.memory_type}</span>
+                    </td>
+                    <td style={{ padding:"12px 14px" }}>
+                      <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{systemIcons[m.ai_system]||""} {m.ai_system}</span>
+                    </td>
+                    <td style={{ padding:"12px 14px" }}>
+                      <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{m.created_at ? new Date(m.created_at).toLocaleDateString() : "\u2014"}</span>
+                    </td>
+                    <td style={{ padding:"12px 14px", textAlign:"center" }}>
+                      <div style={{ display:"flex", gap:4, justifyContent:"center" }}>
+                        <button className="btn btn-sm" title="Expand / Collapse" onClick={(e)=>{e.stopPropagation();setExpandedId(expandedId===m.id?null:m.id)}} style={{ padding:"4px 6px" }}>
+                          {expandedId===m.id ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+                        </button>
+                        <button className="btn btn-sm" title="Copy prompt / summary" onClick={(e)=>{e.stopPropagation();copyToClipboard(m.memory_summary||"",m.id)}} style={{ padding:"4px 6px", color: copiedId===m.id?"var(--green)":"inherit" }}>
+                          {copiedId===m.id ? <Check size={13}/> : <Copy size={13}/>}
+                        </button>
+                        <button className="btn btn-sm" title="Edit" onClick={(e)=>{e.stopPropagation();setMd({...m});setDrawer("edit")}} style={{ padding:"4px 6px" }}>
+                          <Pencil size={13}/>
+                        </button>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                    </td>
+                  </tr>
+                  {expandedId===m.id && (
+                    <tr style={{ borderBottom:"1px solid var(--border)" }}>
+                      <td colSpan={5} style={{ padding:"0 14px 14px 14px", background:"var(--bg-sec)" }}>
+                        <div style={{ padding:14, borderRadius:8, background:"var(--bg)", border:"1px solid var(--border)", marginTop:4 }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                            <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", textTransform:"uppercase", letterSpacing:"0.5px" }}>Summary / Prompt</span>
+                            <button className="btn btn-sm" onClick={()=>copyToClipboard(m.memory_summary||"",m.id)} style={{ fontSize:10, padding:"2px 8px", gap:4 }}>
+                              {copiedId===m.id ? <><Check size={10}/> Copied</> : <><Copy size={10}/> Copy</>}
+                            </button>
+                          </div>
+                          <div style={{ fontSize:13, lineHeight:1.7, whiteSpace:"pre-wrap", color:"var(--text)" }}>{m.memory_summary || "No summary"}</div>
+                          {m.source_context && <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:10, paddingTop:8, borderTop:"1px solid var(--border)" }}>Source: {m.source_context}</div>}
+                          {(m.files||[]).length > 0 && (
+                            <div style={{ marginTop:10, paddingTop:8, borderTop:"1px solid var(--border)" }}>
+                              <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginBottom:6, textTransform:"uppercase" }}>Attached Files</div>
+                              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                                {(m.files||[]).map((f,i) => (
+                                  <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:4, padding:"4px 10px", borderRadius:6, background:"var(--bg-sec)", border:"1px solid var(--border)", fontSize:11, color:"var(--blue)", textDecoration:"none" }}>
+                                    <FileText size={12}/> {f.name}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Drawer */}
-      {drawer && <Drawer title={drawer.mode === "add" ? "New AI Memory" : "Edit AI Memory"} onClose={() => setDrawer(null)} onSave={() => saveMemory(md)}>
-        <Field label="Subject"><Inp value={md.subject} onChange={v => setMD(p => ({ ...p, subject: v }))} placeholder="Short label — e.g. 'Prefers meetings on Tuesdays'" /></Field>
-        <Field label="Memory Summary"><Tex value={md.memory_summary} onChange={v => setMD(p => ({ ...p, memory_summary: v }))} placeholder="What does the AI remember?" /></Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="AI System"><Sel value={md.ai_system} onChange={v => setMD(p => ({ ...p, ai_system: v }))} options={AI_SYSTEMS} /></Field>
-          <Field label="Memory Type"><Sel value={md.memory_type} onChange={v => setMD(p => ({ ...p, memory_type: v }))} options={MEMORY_TYPES} /></Field>
+      {confirm!==null && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }} onClick={()=>setConfirm(null)}>
+          <div className="card" style={{ padding:24, maxWidth:380 }} onClick={e=>e.stopPropagation()}>
+            <div style={{ fontSize:14, fontWeight:600, marginBottom:12 }}>Delete this memory?</div>
+            <div style={{ fontSize:13, color:"var(--text-sec)", marginBottom:20 }}>This action cannot be undone.</div>
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+              <button className="btn" onClick={()=>setConfirm(null)}>Cancel</button>
+              <button className="btn" style={{ background:"var(--red)", color:"#fff" }} onClick={()=>{setDB(p=>({...p,ai_memories:(p.ai_memories||[]).filter(x=>x.id!==confirm)}));setConfirm(null)}}>Delete</button>
+            </div>
+          </div>
         </div>
-        <Field label="Source / Context"><Inp value={md.source_context} onChange={v => setMD(p => ({ ...p, source_context: v }))} placeholder="Where did this memory come from?" /></Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Contact"><SearchSelect value={md.contactId} onChange={v => setMD(p => ({ ...p, contactId: v }))} options={contacts.map(c => ({ value: String(c.id), label: c.name }))} placeholder="Search contacts..." /></Field>
-          <Field label="Company"><SearchSelect value={md.companyId} onChange={v => setMD(p => ({ ...p, companyId: v }))} options={companies.map(c => ({ value: String(c.id), label: c.name }))} placeholder="Search companies..." /></Field>
+      )}
+
+      {drawer && <Drawer title={drawer==="add"?"New AI Memory":"Edit AI Memory"} onClose={()=>setDrawer(null)} onSave={save}>
+        <Field label="Subject"><Inp value={md.subject||""} onChange={v=>setMd(p=>({...p,subject:v}))} placeholder="e.g. Brand voice guidelines"/></Field>
+        <Field label="Memory Summary / Prompt">
+          <textarea className="input" rows={6} value={md.memory_summary||""} onChange={e=>setMd(p=>({...p,memory_summary:e.target.value}))} placeholder="The AI detail, prompt, or context to remember..." style={{ width:"100%", resize:"vertical", fontFamily:"inherit", fontSize:13, lineHeight:1.6 }}/>
+        </Field>
+        <Field label="AI System"><Sel value={md.ai_system||"claude"} onChange={v=>setMd(p=>({...p,ai_system:v}))} options={AI_SYSTEMS}/></Field>
+        <Field label="Memory Type"><Sel value={md.memory_type||"general"} onChange={v=>setMd(p=>({...p,memory_type:v}))} options={MEMORY_TYPES}/></Field>
+        <Field label="Source / Context"><Inp value={md.source_context||""} onChange={v=>setMd(p=>({...p,source_context:v}))} placeholder="Where this memory came from"/></Field>
+        <Field label="Contact"><Sel value={md.contactId||""} onChange={v=>setMd(p=>({...p,contactId:v||null}))} options={[{value:"",label:"None"},...(db.contacts||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
+        <Field label="Company"><Sel value={md.companyId||""} onChange={v=>setMd(p=>({...p,companyId:v||null}))} options={[{value:"",label:"None"},...(db.companies||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
+        <Field label="Deal"><Sel value={md.dealId||""} onChange={v=>setMd(p=>({...p,dealId:v||null}))} options={[{value:"",label:"None"},...(db.deals||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
+        <Field label="Project"><Sel value={md.projectId||""} onChange={v=>setMd(p=>({...p,projectId:v||null}))} options={[{value:"",label:"None"},...(db.projects||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
+        <Field label="Strategy"><Sel value={md.strategyId||""} onChange={v=>setMd(p=>({...p,strategyId:v||null}))} options={[{value:"",label:"None"},...(db.strategies||[]).map(c=>({value:c.id,label:c.name||c.title}))]}/></Field>
+
+        <div style={{ marginTop:14, borderTop:"1px solid var(--border)", paddingTop:14 }}>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8, textTransform:"uppercase" }}>Attached Files</div>
+          {(md.files||[]).length > 0 && (
+            <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:10 }}>
+              {(md.files||[]).map((f,i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 10px", borderRadius:6, background:"var(--bg-sec)", border:"1px solid var(--border)" }}>
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--blue)", textDecoration:"none", overflow:"hidden" }}>
+                    <FileText size={13}/> <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</span>
+                    <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", flexShrink:0 }}>{f.size ? '('+formatSize(f.size)+')' : ''}</span>
+                  </a>
+                  <button className="btn btn-sm" style={{ padding:"2px 6px", color:"var(--red)" }} onClick={()=>removeFile(f)} title="Remove file"><X size={12}/></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={handleFileUpload}/>
+          <button className="btn btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{ fontSize:12, gap:6 }}>
+            {uploading ? <><Loader size={12} className="spin"/> Uploading...</> : <><Upload size={12}/> Upload Files</>}
+          </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Deal"><SearchSelect value={md.dealId} onChange={v => setMD(p => ({ ...p, dealId: v }))} options={deals.map(d => ({ value: String(d.id), label: d.name }))} placeholder="Search deals..." /></Field>
-          <Field label="Project"><SearchSelect value={md.projectId} onChange={v => setMD(p => ({ ...p, projectId: v }))} options={projects.map(p => ({ value: String(p.id), label: p.name }))} placeholder="Search projects..." /></Field>
-        </div>
-        <Field label="Strategy"><SearchSelect value={md.strategyId} onChange={v => setMD(p => ({ ...p, strategyId: v }))} options={strategies.map(s => ({ value: String(s.id), label: s.name }))} placeholder="Search strategies..." /></Field>
+
+        {drawer==="edit" && (
+          <div style={{ marginTop:16, paddingTop:12, borderTop:"1px solid var(--border)" }}>
+            <button className="btn btn-sm" style={{ color:"var(--red)", fontSize:11 }} onClick={()=>{setDrawer(null);setConfirm(md.id)}}><Trash2 size={12}/> Delete Memory</button>
+          </div>
+        )}
       </Drawer>}
-      {confirm && <ConfirmDelete label={confirm.label} onConfirm={() => delMemory(confirm.id)} onCancel={() => setConfirm(null)} />}
     </div>
   );
-};
-/* ────────────────────────────────────────────────────────
-   STRATEGIES VIEW
-──────────────────────────────────────────────────────── */
-const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"high", links:[], notes:"" });
-
+}
 const StrategiesView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
