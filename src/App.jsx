@@ -6,7 +6,7 @@ import {
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
   FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash,
-  MessageSquare, Send, Paperclip, Loader2,
+  MessageSquare, Send, Paperclip, Loader2, Copy,
   Linkedin, ExternalLink, Filter, SortAsc, ChevronDown, CreditCard, Globe, Newspaper,
   Star, ArrowRightCircle, Activity, Award, Building2, BookOpen
 } from "lucide-react";
@@ -2523,21 +2523,22 @@ const JUDGE_SYSTEM_COMPARE = `You are a careful judge. Three AI assistants have 
 Keep it tight — no preamble, no conclusion.`;
 const JUDGE_SYSTEM_SYNTH = `You are synthesizing the best single answer from three AI candidates. Take the strongest points from each, fix mistakes, and produce ONE clean answer to the user's prompt. Do not mention the candidates — just give the merged answer.`;
 
-async function callLLMProxy({ session, provider, messages, system, model }) {
-  const token = session?.access_token || SUPA_KEY;
+async function callLLMProxy({ provider, messages, system, model }) {
+  // Always use the public anon key for the edge function call so a stale user
+  // JWT can never cause a gateway 401. Provider keys live in function secrets.
   const started = Date.now();
   try {
     const r = await fetch(LLM_PROXY_URL, {
       method: "POST",
       headers: {
         "Content-Type":  "application/json",
-        "Authorization": `Bearer ${token}`,
+        "Authorization": `Bearer ${SUPA_KEY}`,
         "apikey":        SUPA_KEY,
       },
       body: JSON.stringify({ provider, messages, system, model }),
     });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d?.error || `${provider} ${r.status}`);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d?.error || d?.message || `${provider} ${r.status}`);
     return { text: d.text || "", elapsed_ms: d.elapsed_ms ?? (Date.now() - started), error: null };
   } catch (e) {
     return { text: "", elapsed_ms: Date.now() - started, error: e.message || String(e) };
@@ -2685,7 +2686,7 @@ const MultiLLMView = ({ session }) => {
     // Fan out to all three providers in parallel
     const fanouts = await Promise.all(LLM_PROVIDERS.map(async (p) => {
       const history = buildHistory(optimistic, p.id);
-      const res = await callLLMProxy({ session, provider: p.id, messages: history });
+      const res = await callLLMProxy({ provider: p.id, messages: history });
       const row = {
         conversation_id: convId, turn_index: turn, role: "assistant",
         provider: p.id, content: res.text,
@@ -2710,7 +2711,7 @@ const MultiLLMView = ({ session }) => {
       const judgeProvider = judge === "synthesize" ? "anthropic" : judge;
       const judgeSystem   = judge === "synthesize" ? JUDGE_SYSTEM_SYNTH : JUDGE_SYSTEM_COMPARE;
       const res = await callLLMProxy({
-        session, provider: judgeProvider,
+        provider: judgeProvider,
         messages: [{ role: "user", content: judgePrompt }],
         system: judgeSystem,
       });
@@ -3185,7 +3186,7 @@ const PaymentsView = ({ db, setDB }) => {
 ──────────────────────────────────────────────────────── */
 const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
 const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
-const blankMemory = () => ({ ai_system:"claude", memory_summary:"", memory_type:"general", source_context:"", companyId:"", contactId:"", dealId:"", projectId:"", strategyId:"" });
+const blankMemory = () => ({ subject:"", ai_system:"claude", memory_summary:"", memory_type:"general", source_context:"", companyId:"", contactId:"", dealId:"", projectId:"", strategyId:"" });
 
 const AIMemoriesView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
@@ -3194,6 +3195,8 @@ const AIMemoriesView = ({ db, setDB }) => {
   const [filterType, setFilterType] = useState("all");
   const [filterSystem, setFilterSystem] = useState("all");
   const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [copiedId, setCopiedId]     = useState(null);
 
   const memories = (db.ai_memories || []);
   const contacts = (db.contacts || []);
@@ -3205,7 +3208,11 @@ const AIMemoriesView = ({ db, setDB }) => {
   const filtered = memories.filter(m => {
     if (filterType !== "all" && m.memory_type !== filterType) return false;
     if (filterSystem !== "all" && m.ai_system !== filterSystem) return false;
-    if (search && !m.memory_summary.toLowerCase().includes(search.toLowerCase()) && !(m.source_context||"").toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = [(m.subject||""), (m.memory_summary||""), (m.source_context||"")].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   }).sort((a, b) => (b.id || 0) - (a.id || 0));
 
@@ -3222,8 +3229,40 @@ const AIMemoriesView = ({ db, setDB }) => {
 
   const linkedName = (id, arr, fallback="—") => { const r = arr.find(x => x.id === id); return r ? (r.name || r.title || fallback) : null; };
 
+  const copySummary = async (m) => {
+    const text = m.memory_summary || "";
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback: hidden textarea + execCommand
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      document.body.removeChild(ta);
+    }
+    setCopiedId(m.id);
+    setTimeout(() => setCopiedId(c => (c === m.id ? null : c)), 1400);
+  };
+
+  const openEdit = (m) => {
+    setMD({
+      ...m,
+      subject:    m.subject    || "",
+      companyId:  String(m.companyId  || ""),
+      contactId:  String(m.contactId  || ""),
+      dealId:     String(m.dealId     || ""),
+      projectId:  String(m.projectId  || ""),
+      strategyId: String(m.strategyId || ""),
+    });
+    setDrawer({ mode: "edit" });
+  };
+
+  // Layout: Subject | Type | System | Date | Actions
+  const GRID = "minmax(0,1fr) 110px 110px 120px 120px";
+
   return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, maxWidth: 900 }}>
+    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, maxWidth: 1100 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div className="display" style={{ fontSize: 18, fontWeight: 700 }}>AI Memories</div>
         <button className="btn btn-blue" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => { setMD(blankMemory()); setDrawer({ mode: "add" }); }}><Plus size={12} />Memory</button>
@@ -3258,48 +3297,122 @@ const AIMemoriesView = ({ db, setDB }) => {
         <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
       </div>
 
-      {/* Memory cards */}
+      {/* Empty state */}
       {filtered.length === 0 && <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
         {memories.length === 0 ? "No AI memories yet. Add one to start tracking what your AI systems know." : "No memories match your filters."}
       </div>}
 
-      {filtered.map(m => {
-        const links = [
-          linkedName(m.contactId, contacts) && { icon: Users, label: linkedName(m.contactId, contacts) },
-          linkedName(m.companyId, companies) && { icon: Building2, label: linkedName(m.companyId, companies) },
-          linkedName(m.dealId, deals) && { icon: Target, label: linkedName(m.dealId, deals) },
-          linkedName(m.projectId, projects) && { icon: Briefcase, label: linkedName(m.projectId, projects) },
-          linkedName(m.strategyId, strategies) && { icon: Target, label: linkedName(m.strategyId, strategies, "Strategy") },
-        ].filter(Boolean);
-
-        return (
-          <div key={m.id} className="card row-hover" style={{ padding: 16, borderLeft: "3px solid " + typeColor(m.memory_type) }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 14 }}>{systemIcon(m.ai_system)}</span>
-                <Tag label={m.memory_type} color={typeColor(m.memory_type)} />
-                <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>{m.ai_system}</span>
-                {m.created_at && <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginLeft: 4 }}><Clock size={9} style={{ marginRight: 3, verticalAlign: "middle" }}/>{new Date(m.created_at).toLocaleString()}</span>}
-              </div>
-              <RowActions onEdit={() => { setMD({ ...m, companyId: String(m.companyId || ""), contactId: String(m.contactId || ""), dealId: String(m.dealId || ""), projectId: String(m.projectId || ""), strategyId: String(m.strategyId || "") }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: m.id, label: m.memory_summary.substring(0, 40) + "…" })} />
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>{m.memory_summary}</div>
-            {m.source_context && <div style={{ fontSize: 11, color: "var(--text-sec)", fontStyle: "italic", marginBottom: 6 }}>Source: {m.source_context}</div>}
-            {links.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-                {links.map((lnk, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", background: "var(--bg-el)", borderRadius: 4, fontSize: 10 }}>
-                    <lnk.icon size={10} color="var(--text-sec)" /><span style={{ color: "var(--text-sec)" }}>{lnk.label}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+      {/* Table */}
+      {filtered.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          {/* Header row */}
+          <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--bg-el)", fontFamily: "var(--font-m)", fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+            <div>Subject</div>
+            <div>Type</div>
+            <div>System</div>
+            <div>Created</div>
+            <div style={{ textAlign: "right" }}>Actions</div>
           </div>
-        );
-      })}
+
+          {/* Rows */}
+          {filtered.map(m => {
+            const isOpen = expandedId === m.id;
+            const subject = (m.subject && m.subject.trim()) || (m.memory_summary ? m.memory_summary.slice(0, 80) : "(no subject)");
+            const links = [
+              linkedName(m.contactId, contacts)   && { icon: Users,     label: linkedName(m.contactId, contacts) },
+              linkedName(m.companyId, companies)  && { icon: Building2, label: linkedName(m.companyId, companies) },
+              linkedName(m.dealId, deals)         && { icon: Target,    label: linkedName(m.dealId, deals) },
+              linkedName(m.projectId, projects)   && { icon: Briefcase, label: linkedName(m.projectId, projects) },
+              linkedName(m.strategyId, strategies) && { icon: Target,   label: linkedName(m.strategyId, strategies, "Strategy") },
+            ].filter(Boolean);
+
+            return (
+              <div key={m.id}>
+                {/* Collapsed row */}
+                <div
+                  onClick={() => setExpandedId(isOpen ? null : m.id)}
+                  style={{
+                    display: "grid", gridTemplateColumns: GRID, gap: 10,
+                    padding: "10px 16px", alignItems: "center", cursor: "pointer",
+                    borderBottom: "1px solid var(--border)",
+                    borderLeft: "3px solid " + typeColor(m.memory_type),
+                    background: isOpen ? "var(--bg-el)" : "transparent",
+                    transition: "background .12s",
+                  }}
+                  onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                  onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = "transparent"; }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <ChevronRight size={12} style={{ verticalAlign: "middle", marginRight: 6, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s", color: "var(--text-dim)" }}/>
+                    {subject}
+                  </div>
+                  <div><Tag label={m.memory_type} color={typeColor(m.memory_type)} /></div>
+                  <div style={{ fontSize: 12, color: "var(--text-sec)" }}>
+                    <span style={{ marginRight: 4 }}>{systemIcon(m.ai_system)}</span>{m.ai_system}
+                  </div>
+                  <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>
+                    {m.created_at ? new Date(m.created_at).toLocaleDateString() : "—"}
+                  </div>
+                  <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", alignItems: "center" }}>
+                    <button
+                      className="btn-icon"
+                      title={copiedId === m.id ? "Copied!" : "Copy summary"}
+                      onClick={e => { e.stopPropagation(); copySummary(m); }}
+                      style={{ color: copiedId === m.id ? "var(--green)" : "var(--text-sec)" }}
+                    >
+                      {copiedId === m.id ? <Check size={13}/> : <Copy size={13}/>}
+                    </button>
+                    <button className="btn-icon" title="Edit" onClick={e => { e.stopPropagation(); openEdit(m); }}>
+                      <Pencil size={13} color="var(--text-sec)"/>
+                    </button>
+                    <button className="btn-icon delete" title="Delete" onClick={e => { e.stopPropagation(); setConfirm({ id: m.id, label: (subject).substring(0, 40) + "…" }); }}>
+                      <Trash2 size={13} color="var(--text-sec)"/>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded detail */}
+                {isOpen && (
+                  <div style={{ padding: "14px 20px 18px", background: "var(--bg-el)", borderBottom: "1px solid var(--border)" }}>
+                    <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 4, letterSpacing: 0.5 }}>MEMORY SUMMARY</div>
+                    <div style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 12 }}>
+                      {m.memory_summary || <em style={{ color: "var(--text-dim)" }}>(empty)</em>}
+                    </div>
+                    {m.source_context && (
+                      <>
+                        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 4, letterSpacing: 0.5 }}>SOURCE / CONTEXT</div>
+                        <div style={{ fontSize: 12, color: "var(--text-sec)", fontStyle: "italic", marginBottom: 12 }}>{m.source_context}</div>
+                      </>
+                    )}
+                    {links.length > 0 && (
+                      <>
+                        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 4, letterSpacing: 0.5 }}>LINKED</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                          {links.map((lnk, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 4, fontSize: 11 }}>
+                              <lnk.icon size={11} color="var(--text-sec)" /><span style={{ color: "var(--text-sec)" }}>{lnk.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {m.created_at && (
+                      <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                        <Clock size={9} style={{ marginRight: 4, verticalAlign: "middle" }}/>
+                        Captured {new Date(m.created_at).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Drawer */}
       {drawer && <Drawer title={drawer.mode === "add" ? "New AI Memory" : "Edit AI Memory"} onClose={() => setDrawer(null)} onSave={() => saveMemory(md)}>
+        <Field label="Subject"><Inp value={md.subject} onChange={v => setMD(p => ({ ...p, subject: v }))} placeholder="Short label — e.g. 'Prefers meetings on Tuesdays'" /></Field>
         <Field label="Memory Summary"><Tex value={md.memory_summary} onChange={v => setMD(p => ({ ...p, memory_summary: v }))} placeholder="What does the AI remember?" /></Field>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <Field label="AI System"><Sel value={md.ai_system} onChange={v => setMD(p => ({ ...p, ai_system: v }))} options={AI_SYSTEMS} /></Field>
