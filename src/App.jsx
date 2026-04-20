@@ -1,4 +1,4 @@
-import {useState, useEffect, useRef, useMemo, Fragment} from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {Brain, Users, Megaphone, Briefcase, DollarSign, Mic, Mail,
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
