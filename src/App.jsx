@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import {useState, useEffect, useRef, useMemo, Fragment} from "react";
 import { createClient } from "@supabase/supabase-js";
 import {Brain, Users, Megaphone, Briefcase, DollarSign, Mic, Mail,
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
@@ -3306,7 +3306,7 @@ const AIMemoriesView = ({ db, setDB }) => {
             </thead>
             <tbody>
               {items.map(m => (
-                <React.Fragment key={m.id}>
+                <Fragment key={m.id}>
                   <tr style={{ borderBottom: expandedId===m.id ? "none" : "1px solid var(--border)", cursor:"pointer", transition:"background 0.15s" }} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-sec)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     <td style={{ padding:"12px 14px" }} onClick={()=>setExpandedId(expandedId===m.id?null:m.id)}>
                       <div style={{ fontWeight:600, fontSize:13, lineHeight:1.4 }}>{m.subject || "Untitled Memory"}</div>
@@ -3363,7 +3363,7 @@ const AIMemoriesView = ({ db, setDB }) => {
                       </td>
                     </tr>
                   )}
-                </React.Fragment>
+                </Fragment>
               ))}
             </tbody>
           </table>
