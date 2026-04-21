@@ -1391,7 +1391,7 @@ const MarketingView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    OPERATIONS — Projects + RELATIONAL TASKS with Filters
 ──────────────────────────────────────────────────────── */
-const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"", links:[], strategyId:"" });
+const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"", links:[], files:[], strategyId:"" });
 const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none", reschedule_count:0 });
 
 /* ────────────────────────────────────────────────────────
@@ -1571,20 +1571,54 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiProposals, setAiProposals] = useState(null);
   const [selectedProposals, setSelectedProposals] = useState({});
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if(focus?.type==="project" && focus.id) {
       const p = db.projects.find(p=>p.id===focus.id);
-      if(p) { setPD({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:p.links||[]}); setDrawer({mode:"edit",type:"project"}); }
+      if(p) { setPD({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:p.links||[], files:p.files||[]}); setDrawer({mode:"edit",type:"project"}); }
       setFocus(null);
     }
   }, [focus]);
 
   const saveProject = (d) => {
-    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null, strategyId:parseInt(d.strategyId)||null, links:d.links||[]};
+    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null, strategyId:parseInt(d.strategyId)||null, links:d.links||[], files:d.files||[]};
     if(drawer.mode==="add") setDB(db=>({...db,projects:[...db.projects,{...rec,id:nextId(db.projects)}]}));
     else setDB(db=>({...db,projects:db.projects.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
+  };
+
+  const handleProjectFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = 'projects/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const { error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) { console.error('Upload error:', error); continue; }
+        const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
+      }
+      setPD(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
+    } catch (err) { console.error('Upload failed:', err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeProjectFile = async (fileObj) => {
+    if (fileObj.path) await supabase.storage.from('memory-files').remove([fileObj.path]);
+    setPD(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
   };
   const delProject = (id) => { setDB(db=>({...db,projects:db.projects.filter(x=>x.id!==id)})); setConfirm(null); };
   const toggleTask = (id) => setDB(db=>({...db,tasks:db.tasks.map(t=>t.id===id?{...t,done:!t.done,status:t.done?"todo":"done"}:t)}));
@@ -1643,11 +1677,12 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
                 <div>
                   <div style={{ fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{p.name} <span style={{ fontSize:9, padding:"1px 6px", borderRadius:8, background: (p.type||"client")==="strategic"?"var(--purple-dim)":"var(--blue-dim)", color:(p.type||"client")==="strategic"?"var(--purple)":"var(--blue)", fontWeight:500 }}>{(p.type||"client")}</span></div>
                   <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
+                  {(p.files||[]).length > 0 && <div className="mono" style={{fontSize:9,color:"var(--text-dim)",marginTop:1,display:"flex",alignItems:"center",gap:3}}><Paperclip size={9}/> {(p.files||[]).length} file{(p.files||[]).length>1?"s":""}</div>}
                   {p.strategyId && (db.strategies||[]).find(s=>s.id===p.strategyId) && <div className="mono" style={{fontSize:9,color:"var(--purple)",marginTop:1}}>Strategy: {(db.strategies||[]).find(s=>s.id===p.strategyId)?.name}</div>}
                 </div>
                 <div style={{ display:"flex", gap:6, alignItems:"center" }} onClick={e=>e.stopPropagation()}>
                   <Tag label={p.priority}/><Tag label={p.status}/>
-                  <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[]});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
+                  <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[],files:p.files||[]});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
                 </div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:12 }}>
@@ -1664,6 +1699,13 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
                   <div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginBottom:6}}>LINKS</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                     {(p.links||[]).map((lnk,li)=>(<a key={li} href={lnk.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,fontSize:11,color:"var(--blue)",textDecoration:"none",cursor:"pointer"}} title={lnk.desc||lnk.url}><ExternalLink size={11}/>{lnk.label||lnk.url}</a>))}
+                  </div>
+                </div>}
+                {/* PROJECT FILES */}
+                {(p.files||[]).length > 0 && <div style={{marginBottom:14}}>
+                  <div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginBottom:6}}>FILES</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {(p.files||[]).map((f,fi)=>(<a key={fi} href={f.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,fontSize:11,color:"var(--blue)",textDecoration:"none",cursor:"pointer"}} title={f.name}><FileText size={11}/>{f.name}</a>))}
                   </div>
                 </div>}
                                 <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>PROJECT TASKS</div>
@@ -1741,6 +1783,26 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
             </div>
             <button type="button" onClick={()=>setPD(p=>({...p,links:(p.links||[]).filter((_,i)=>i!==li)}))} style={{background:"none",border:"none",color:"var(--red)",cursor:"pointer",padding:4,marginTop:2}}><X size={14}/></button>
           </div>))}
+        </div>
+        <div style={{marginTop:14,borderTop:"1px solid var(--border)",paddingTop:14}}>
+          <div className="mono" style={{fontSize:11,color:"var(--text-sec)",marginBottom:8,textTransform:"uppercase"}}>Attached Files</div>
+          {(pd.files||[]).length > 0 && (
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+              {(pd.files||[]).map((f,fi)=>(
+                <div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 10px",borderRadius:6,background:"var(--bg-sec)",border:"1px solid var(--border)"}}>
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"var(--blue)",textDecoration:"none",overflow:"hidden"}}>
+                    <FileText size={13}/> <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+                    <span className="mono" style={{fontSize:10,color:"var(--text-dim)",flexShrink:0}}>{f.size?'('+formatFileSize(f.size)+')':''}</span>
+                  </a>
+                  <button className="btn btn-sm" style={{padding:"2px 6px",color:"var(--red)"}} onClick={()=>removeProjectFile(f)} title="Remove file"><X size={12}/></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={handleProjectFileUpload}/>
+          <button className="btn btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{fontSize:12,gap:6}}>
+            {uploading ? <><Loader size={12} className="spin"/> Uploading...</> : <><Upload size={12}/> Upload Files</>}
+          </button>
         </div>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delProject(confirm.id)} onCancel={()=>setConfirm(null)}/>}
@@ -3427,24 +3489,58 @@ const AIMemoriesView = ({ db, setDB }) => {
     </div>
   );
 }
-const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"medium", notes:"", links:[] });
+const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"medium", notes:"", links:[], files:[] });
 const StrategiesView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [sd, setSD] = useState(blankStrategy());
   const [expandedId, setExpandedId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const strategies = (db.strategies || []);
   const goals = (db.goals || []);
   const instructions = (db.instructions || []).filter(i => i.active);
 
   const saveStrategy = (d) => {
-    const rec = { ...d, goalId: parseInt(d.goalId) || null, links: d.links || [] };
+    const rec = { ...d, goalId: parseInt(d.goalId) || null, links: d.links || [], files: d.files || [] };
     if (drawer.mode === "add") setDB(db => ({ ...db, strategies: [...(db.strategies || []), { ...rec, id: nextId(db.strategies || []) }] }));
     else setDB(db => ({ ...db, strategies: (db.strategies || []).map(x => x.id === rec.id ? rec : x) }));
     setDrawer(null);
   };
   const delStrategy = (id) => { setDB(db => ({ ...db, strategies: (db.strategies || []).filter(x => x.id !== id) })); setConfirm(null); };
+
+  const handleStrategyFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = 'strategies/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const { error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) { console.error('Upload error:', error); continue; }
+        const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
+      }
+      setSD(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
+    } catch (err) { console.error('Upload failed:', err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeStrategyFile = async (fileObj) => {
+    if (fileObj.path) await supabase.storage.from('memory-files').remove([fileObj.path]);
+    setSD(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
+  };
+
+  const formatStrategyFileSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
+  };
 
   const statusColor = (s) => ({ active: "var(--green)", completed: "var(--blue)", paused: "var(--amber)", cancelled: "var(--text-dim)" }[s] || "var(--text-sec)");
 
@@ -3490,11 +3586,11 @@ const StrategiesView = ({ db, setDB }) => {
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{s.name} <Tag label={s.priority} /></div>
                   {goal && <div className="mono" style={{ fontSize: 10, color: "var(--purple)", marginTop: 2 }}>Goal: {goal.name}</div>}
-                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 2 }}>{linkedProjects.length} linked project{linkedProjects.length !== 1 ? "s" : ""}</div>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 2 }}>{linkedProjects.length} linked project{linkedProjects.length !== 1 ? "s" : ""}{(s.files||[]).length > 0 && <> · <Paperclip size={9} style={{verticalAlign:"middle"}}/> {(s.files||[]).length} file{(s.files||[]).length>1?"s":""}</>}</div>
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
                   <Tag label={s.status} />
-                  <RowActions onEdit={() => { setSD({ ...s, goalId: String(s.goalId || ""), links: s.links || [] }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: s.id, label: s.name })} />
+                  <RowActions onEdit={() => { setSD({ ...s, goalId: String(s.goalId || ""), links: s.links || [], files: s.files || [] }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: s.id, label: s.name })} />
                 </div>
               </div>
               {s.description && <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>{s.description}</div>}
@@ -3507,6 +3603,14 @@ const StrategiesView = ({ db, setDB }) => {
                 <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>LINKS</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {(s.links || []).map((lnk, li) => (<a key={li} href={lnk.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--blue)", textDecoration: "none" }} title={lnk.desc || lnk.url}><ExternalLink size={11} />{lnk.label || lnk.url}</a>))}
+                </div>
+              </div>}
+
+              {/* Strategy Files */}
+              {(s.files || []).length > 0 && <div style={{ marginBottom: 14 }}>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>FILES</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {(s.files || []).map((f, fi) => (<a key={fi} href={f.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--blue)", textDecoration: "none" }} title={f.name}><FileText size={11} />{f.name}</a>))}
                 </div>
               </div>}
 
@@ -3551,6 +3655,26 @@ const StrategiesView = ({ db, setDB }) => {
             </div>
             <button type="button" onClick={() => setSD(p => ({ ...p, links: (p.links || []).filter((_, i) => i !== li) }))} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", padding: 4, marginTop: 2 }}><X size={14} /></button>
           </div>))}
+        </div>
+        <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+          <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 8, textTransform: "uppercase" }}>Attached Files</div>
+          {(sd.files || []).length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+              {(sd.files || []).map((f, fi) => (
+                <div key={fi} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 6, background: "var(--bg-sec)", border: "1px solid var(--border)" }}>
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--blue)", textDecoration: "none", overflow: "hidden" }}>
+                    <FileText size={13} /> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{f.size ? '(' + formatStrategyFileSize(f.size) + ')' : ''}</span>
+                  </a>
+                  <button className="btn btn-sm" style={{ padding: "2px 6px", color: "var(--red)" }} onClick={() => removeStrategyFile(f)} title="Remove file"><X size={12} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input ref={fileInputRef} type="file" multiple style={{ display: "none" }} onChange={handleStrategyFileUpload} />
+          <button className="btn btn-sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} style={{ fontSize: 12, gap: 6 }}>
+            {uploading ? <><Loader size={12} className="spin" /> Uploading...</> : <><Upload size={12} /> Upload Files</>}
+          </button>
         </div>
       </Drawer>}
       {confirm && <ConfirmDelete label={confirm.label} onConfirm={() => delStrategy(confirm.id)} onCancel={() => setConfirm(null)} />}
