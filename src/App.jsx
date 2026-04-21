@@ -3427,6 +3427,7 @@ const AIMemoriesView = ({ db, setDB }) => {
     </div>
   );
 }
+const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"medium", notes:"", links:[] });
 const StrategiesView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
