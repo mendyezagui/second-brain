@@ -140,7 +140,6 @@ const DB_TABLES = [
   ["contacts",              "contacts"],
   ["payments",              "payments"],
   ["payment_allocations",   "payment_allocations"],
-  ["instructions",          "instructions"],
   ["deals",       "deals"],
   ["tasks",       "tasks"],
   ["projects",    "projects"],
@@ -438,7 +437,7 @@ const NAV = [
   {id:"multi_llm",icon:MessageSquare,label:"AI Playground"},
   {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
-  {id:"instructions",icon:BookOpen,label:"Instructions"},
+  {id:"voitra_gate",icon:Mic,label:"Voitra Agent Control"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
@@ -817,7 +816,6 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
       });
       const data = await res.json();
       const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
-    const instrList = (db.instructions || []).filter(i => i.active).map(i => `[${i.title}]: ${i.body}`).join('\n');
       let signals = [];
       try { const m = text.match(/\[[\s\S]*\]/); if (m) signals = JSON.parse(m[0]); } catch { signals = []; }
       let synthesis = signals.length > 0
@@ -1630,7 +1628,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
     try {
       const existingTasks = db.tasks.filter(t=>t.projectId===projectId).map(t=>`- ${t.title} (${t.status}, ${t.priority})`).join("\n");
       const system = `You are a project task planner. Given a project context and user instructions, generate actionable tasks. Return ONLY valid JSON: { "tasks": [{ "title": "...", "priority": "high|medium|low", "category": "follow_up|outreach|admin|research|meeting_prep|deliverable", "due": "YYYY-MM-DD or null", "notes": "..." }] }`;
-      const user = `Project: ${proj.name}\nClient: ${proj.client}\nProgress: ${proj.progress}%\nDue: ${proj.dueDate}\nExisting tasks:\n${existingTasks||"(none)"}\n\nUser request: ${aiInput}\n\n\n\nActive Instructions (follow these directives when generating tasks):\n${(db.instructions||[]).filter(i=>i.active).map(i=>i.title+": "+i.body).join("\n")||"None set"}\n\nGenerate 3-6 concrete tasks. Today is ${today()}.`;
+      const user = `Project: ${proj.name}\nClient: ${proj.client}\nProgress: ${proj.progress}%\nDue: ${proj.dueDate}\nExisting tasks:\n${existingTasks||"(none)"}\n\nUser request: ${aiInput}\n\nGenerate 3-6 concrete tasks. Today is ${today()}.`;
       const response = await callClaude(system, user, 1200);
       let parsed;
       try { parsed = JSON.parse(response); } catch {
@@ -2068,10 +2066,9 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
         projects: db.projects.map(p=>({name:p.name,client:p.client,type:p.type||"client",status:p.status,progress:p.progress,priority:p.priority,dueDate:p.dueDate})),
         tasks: openTasks.map(t=>({title:t.title,due:t.due,priority:t.priority,category:t.category,contactId:t.contactId})),
         invoices: db.invoices.filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
-        metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, pipelineCoverage, openTasks:openTasks.length, decayedContacts:decayedContacts.length },
-      instructions: (db.instructions || []).filter(i => i.active).map(i => ({ title: i.title, body: i.body }))};
+        metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, pipelineCoverage, openTasks:openTasks.length, decayedContacts:decayedContacts.length }};
       const msg = await callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. IMPORTANT: The snapshot includes an instructions array containing the user's active directives. These MUST guide your analysis. Projects have a "type" field: "client" (revenue-generating work) or "strategic" (partnerships, marketing, internal tools). Strategic projects have priority levels (critical/high/medium/low). HIGH-PRIORITY STRATEGIC projects should be weighted alongside client deliverables when generating priorities. Use goals, instructions, and strategic project priorities to shape your daily recommendations. Be specific — name names and cite numbers.`,
+        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. Projects have a "type" field: "client" (revenue-generating work) or "strategic" (partnerships, marketing, internal tools). Strategic projects have priority levels (critical/high/medium/low). HIGH-PRIORITY STRATEGIC projects should be weighted alongside client deliverables when generating priorities. Use goals and strategic project priorities to shape your daily recommendations. Be specific — name names and cite numbers.`,
         `Live snapshot \u2014 ${today()}:\n${JSON.stringify(snap,null,2)}\n\nGenerate a DAILY ACTION PLAN with these sections:\n1. TOP PRIORITY: The single most critical action today (revenue, deadline, or relationship at stake)\n2. DEAL MOVES: Specific next steps for deals closest to closing or with highest revenue potential\n3. STRATEGIC PLAYS: Actions to advance high-priority strategic projects and partnerships\n4. SMART NUDGES: Flag any stale deals (no activity 7+ days), contacts not touched in 14+ days, upcoming deadlines this week, or at-risk relationships\n\nBe specific \u2014 name people, dollar amounts, and exact actions. Max 8 sentences total.`,
         500
       );
@@ -2253,8 +2250,7 @@ const VoiceView = ({ db, setDB, autoRecord }) => {
     const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} — $${d.value} — stage:${d.stage} (prob:${d.probability}%)`).join("\n");
     const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} (${p.type||"client"}) — status:${p.status} priority:${p.priority||"medium"} (progress:${p.progress}%)`).join("\n");
     const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} — due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
-    const instrList = (db.instructions || []).filter(i => i.active).map(i => `[${i.title}]: ${i.body}`).join('\n');
-    return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}\n\nACTIVE INSTRUCTIONS (directives to follow):\n${instrList || 'None set'}`;
+    return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}`;
   };
 
   /* Describe an operation in human-readable form */
@@ -2555,7 +2551,7 @@ const EmailView = ({ db, setDB }) => {
 /* ════════════════════════════════════════════════════════════════
    MULTI-LLM VIEW  — fan-out to Anthropic, OpenAI, Google Gemini
    Paste this block into src/App.jsx anywhere after `supabase` is
-   defined (a natural home is just above the `InstructionsView`
+   defined (a natural home is just above the `VoitraGateView`
    declaration, around line ~2490).
    Also wire it up in three places:
      1. lucide-react import  → add: MessageSquare, Send, Paperclip, Loader2
@@ -3002,141 +2998,151 @@ const MultiLLMView = ({ session }) => {
   );
 };
 
-const InstructionsView = ({ db, setDB }) => {
-  const [drawer, setDrawer] = useState(null);
-  const [confirm, setConfirm] = useState(null);
-  const [ed, setEd] = useState({ title:"", body:"", active:true });
-  const items = (db.instructions || []).sort((a,b) => a.sort_order - b.sort_order);
-  const activeCount = items.filter(i => i.active).length;
+const VOITRA_GATE_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/voitra-gate";
+const VOITRA_ADMIN_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/voitra-admin";
+const VOITRA_ADMIN_TOKEN = "vt-mendy-shomer-9f3k2m";
 
-  const save = () => {
-    const rec = { ...ed, sort_order: ed.sort_order ?? items.length };
-    if (drawer === "new") {
-      const id = Math.max(0, ...items.map(i=>i.id)) + 1;
-      setDB(p => ({ ...p, instructions: [...(p.instructions||[]), { ...rec, id }] }));
-    } else {
-      setDB(p => ({ ...p, instructions: (p.instructions||[]).map(x => x.id === drawer ? { ...x, ...rec } : x) }));
+const VoitraGateView = () => {
+  const [state, setState] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const refresh = async () => {
+    try {
+      setErr(null);
+      const r = await fetch(VOITRA_GATE_URL + "?_=" + Date.now());
+      const d = await r.json();
+      setState(d);
+    } catch (e) {
+      setErr("Couldn't reach gate: " + (e?.message || e));
+    } finally {
+      setLoading(false);
     }
-    setDrawer(null);
   };
 
-  const del = (id) => {
-    setDB(p => ({ ...p, instructions: (p.instructions||[]).filter(x => x.id !== id) }));
-    setConfirm(null);
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const act = async (action) => {
+    setPending(action);
+    try {
+      await fetch(VOITRA_ADMIN_URL + "?t=" + encodeURIComponent(VOITRA_ADMIN_TOKEN) + "&do=" + action);
+      await refresh();
+    } catch (e) {
+      setErr("Action failed: " + (e?.message || e));
+    }
+    setPending(null);
   };
 
-  const toggle = (id) => {
-    setDB(p => ({ ...p, instructions: (p.instructions||[]).map(x => x.id === id ? { ...x, active: !x.active } : x) }));
+  const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+    timeZone: "America/Los_Angeles"
+  }) + " PT" : null;
+
+  const reasonLabel = {
+    auto_open: "Open — following the schedule",
+    auto_nightly: "Closed for the nightly window (11pm–6am PT)",
+    auto_shabbat: "Closed for Shabbat",
+    manual_on: "Forced ON (manual override)",
+    manual_off: "Paused manually",
   };
 
-  const moveUp = (idx) => {
-    if (idx === 0) return;
-    const arr = [...items];
-    [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
-    const reordered = arr.map((x,i) => ({ ...x, sort_order: i }));
-    setDB(p => ({ ...p, instructions: reordered }));
-  };
+  const enabled = state?.enabled;
+  const statusColor = enabled ? "var(--green)" : "var(--red)";
+  const statusBg = enabled ? "var(--green-dim)" : "var(--red-dim)";
 
-  const moveDown = (idx) => {
-    if (idx === items.length - 1) return;
-    const arr = [...items];
-    [arr[idx], arr[idx+1]] = [arr[idx+1], arr[idx]];
-    const reordered = arr.map((x,i) => ({ ...x, sort_order: i }));
-    setDB(p => ({ ...p, instructions: reordered }));
-  };
+  const pauseActions = [
+    { do: "pause-30",      label: "Pause 30 minutes" },
+    { do: "pause-60",      label: "Pause 1 hour" },
+    { do: "pause-240",     label: "Pause 4 hours" },
+    { do: "pause-morning", label: "Pause until 6am tomorrow" },
+  ];
+  const resumeActions = [
+    { do: "resume",   label: "Resume auto schedule",            flavor: "go" },
+    { do: "force-on", label: "Force ON (override Shabbat too)", flavor: "go-muted" },
+  ];
+
+  const buttonStyle = (flavor) => ({
+    display: "block", width: "100%", textAlign: "left",
+    padding: "12px 16px", marginBottom: 8,
+    border: "1px solid",
+    borderColor: flavor === "go"       ? "rgba(5,150,105,0.4)"
+              : flavor === "go-muted"  ? "rgba(5,150,105,0.25)"
+              :                          "rgba(220,38,38,0.4)",
+    background:  flavor === "go"       ? "rgba(5,150,105,0.08)"
+              : flavor === "go-muted"  ? "rgba(5,150,105,0.05)"
+              :                          "rgba(220,38,38,0.08)",
+    color: "var(--text)",
+    borderRadius: 8,
+    fontSize: 14, fontWeight: 600,
+    cursor: pending ? "default" : "pointer",
+    opacity: pending ? 0.55 : 1,
+    transition: "background 0.15s",
+  });
 
   return (
-    <div style={{ maxWidth:900, margin:"0 auto" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
-          <h2 style={{ margin:0 }}>Instructions</h2>
-          <p style={{ margin:"4px 0 0", color:"var(--text-dim)", fontSize:13 }}>Directives your Second Brain follows when generating tasks and priorities</p>
+          <h2 style={{ margin: 0 }}>Voitra Agent Control</h2>
+          <p style={{ margin: "4px 0 0", color: "var(--text-dim)", fontSize: 13 }}>
+            Pause or resume the demo agents on voitra.ai/verticals
+          </p>
         </div>
-        <button onClick={() => { setEd({ title:"", body:"", active:true }); setDrawer("new"); }}
-          style={{ background:"var(--blue)", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:"pointer", display:"flex", alignItems:"center", gap:6, fontSize:14 }}>
-          <Plus size={16}/> New Instruction
+        <button onClick={refresh} disabled={loading}
+          style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "var(--text-sec)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+          <RefreshCw size={14}/>{loading ? "Loading…" : "Refresh"}
         </button>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:24 }}>
-        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
-          <div style={{ fontSize:28, fontWeight:700 }}>{items.length}</div>
-          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Total Instructions</div>
-        </div>
-        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
-          <div style={{ fontSize:28, fontWeight:700, color:"var(--green)" }}>{activeCount}</div>
-          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Active</div>
-        </div>
-        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
-          <div style={{ fontSize:28, fontWeight:700, color:"var(--text-dim)" }}>{items.length - activeCount}</div>
-          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Paused</div>
-        </div>
-      </div>
+      {err && <div style={{ background: "var(--red-dim)", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8, padding: 12, marginBottom: 16, color: "var(--red)", fontSize: 13 }}>
+        {err}
+      </div>}
 
-      {items.length === 0 && <p style={{ textAlign:"center", color:"var(--text-dim)", padding:40 }}>No instructions yet. Add your first directive to guide your Second Brain.</p>}
-
-      <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-        {items.map((inst, idx) => (
-          <div key={inst.id} style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)", opacity: inst.active ? 1 : 0.5 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                  <BookOpen size={16} style={{ color:"var(--blue)" }}/>
-                  <h3 style={{ margin:0, fontSize:16 }}>{inst.title || "Untitled"}</h3>
-                  {!inst.active && <span style={{ fontSize:11, background:"var(--bg-el)", padding:"2px 8px", borderRadius:8, color:"var(--text-dim)" }}>Paused</span>}
-                </div>
-                <p style={{ margin:0, color:"var(--text-sec)", fontSize:13, whiteSpace:"pre-wrap", maxHeight:80, overflow:"hidden" }}>{inst.body}</p>
-              </div>
-              <div style={{ display:"flex", gap:4, marginLeft:12, flexShrink:0 }}>
-                <button onClick={() => moveUp(idx)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--text-dim)" }} title="Move up"><ArrowUp size={14}/></button>
-                <button onClick={() => moveDown(idx)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--text-dim)" }} title="Move down"><ArrowDown size={14}/></button>
-                <button onClick={() => toggle(inst.id)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color: inst.active ? "var(--green)" : "var(--text-dim)" }} title={inst.active ? "Pause" : "Activate"}>{inst.active ? <Eye size={14}/> : <MicOff size={14}/>}</button>
-                <button onClick={() => { setEd({ title:inst.title, body:inst.body, active:inst.active, sort_order:inst.sort_order }); setDrawer(inst.id); }} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--blue)" }} title="Edit"><Pencil size={14}/></button>
-                <button onClick={() => setConfirm(inst.id)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--red)" }} title="Delete"><Trash2 size={14}/></button>
-              </div>
-            </div>
+      {!state ? <div style={{ color: "var(--text-dim)", fontSize: 13, padding: 32, textAlign: "center" }}>Loading status…</div> :
+        <div style={{ padding: 22, borderRadius: 12, background: statusBg, border: "1px solid " + statusColor, marginBottom: 22 }}>
+          <div style={{ display: "inline-block", padding: "4px 10px", borderRadius: 999, background: statusColor, color: "#fff", fontWeight: 700, fontSize: 11, letterSpacing: ".04em" }}>
+            {enabled ? "AGENTS LIVE" : "AGENTS OFF"}
           </div>
+          <div style={{ marginTop: 10, fontSize: 17, fontWeight: 600, color: "var(--text)" }}>
+            {reasonLabel[state.reason] || state.reason}
+          </div>
+          {state.until && <div style={{ marginTop: 6, color: "var(--text-sec)", fontSize: 13 }}>
+            Until: {fmtTime(state.until)}
+          </div>}
+        </div>
+      }
+
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 14 }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-sec)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".06em" }}>
+          Pause for a while
+        </h3>
+        {pauseActions.map(a => (
+          <button key={a.do} onClick={() => act(a.do)} disabled={!!pending} style={buttonStyle("pause")}>
+            {pending === a.do ? "Saving…" : a.label}
+          </button>
         ))}
       </div>
 
-      {drawer && <>
-        <div onClick={() => setDrawer(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:100 }}/>
-        <div style={{ position:"fixed", top:0, right:0, width:500, height:"100vh", background:"var(--bg-card)", zIndex:101, boxShadow:"-2px 0 20px rgba(0,0,0,0.15)", display:"flex", flexDirection:"column" }}>
-          <div style={{ padding:"20px 24px", borderBottom:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <h3 style={{ margin:0 }}>{drawer === "new" ? "New Instruction" : "Edit Instruction"}</h3>
-            <button onClick={() => setDrawer(null)} style={{ background:"none", border:"none", cursor:"pointer" }}><X size={18}/></button>
-          </div>
-          <div style={{ padding:24, flex:1, overflowY:"auto", display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <label style={{ fontSize:13, fontWeight:600, marginBottom:4, display:"block" }}>Title</label>
-              <input value={ed.title} onChange={e => setEd(p => ({...p, title:e.target.value}))} placeholder="e.g. Healthcare Billing Model" style={{ width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", fontSize:14, background:"var(--bg-el)" }}/>
-            </div>
-            <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
-              <label style={{ fontSize:13, fontWeight:600, marginBottom:4, display:"block" }}>Instructions</label>
-              <textarea value={ed.body} onChange={e => setEd(p => ({...p, body:e.target.value}))} placeholder="Write the rules, context, and directives here..." style={{ flex:1, minHeight:300, padding:"10px 12px", borderRadius:8, border:"1px solid var(--border)", fontSize:14, background:"var(--bg-el)", resize:"vertical", fontFamily:"var(--font-b)" }}/>
-            </div>
-            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:14, cursor:"pointer" }}>
-              <input type="checkbox" checked={ed.active} onChange={e => setEd(p => ({...p, active:e.target.checked}))}/> Active
-            </label>
-          </div>
-          <div style={{ padding:"16px 24px", borderTop:"1px solid var(--border)", display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <button onClick={() => setDrawer(null)} style={{ padding:"8px 20px", borderRadius:8, border:"1px solid var(--border)", background:"var(--bg-el)", cursor:"pointer" }}>Cancel</button>
-            <button onClick={save} style={{ padding:"8px 20px", borderRadius:8, border:"none", background:"var(--blue)", color:"#fff", cursor:"pointer" }}>Save</button>
-          </div>
-        </div>
-      </>}
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 14 }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-sec)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".06em" }}>
+          Resume
+        </h3>
+        {resumeActions.map(a => (
+          <button key={a.do} onClick={() => act(a.do)} disabled={!!pending} style={buttonStyle(a.flavor)}>
+            {pending === a.do ? "Saving…" : a.label}
+          </button>
+        ))}
+      </div>
 
-      {confirm && <>
-        <div onClick={() => setConfirm(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:100 }}/>
-        <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", background:"var(--bg-card)", borderRadius:12, padding:24, zIndex:101, width:360, boxShadow:"0 8px 32px rgba(0,0,0,0.2)" }}>
-          <h3 style={{ margin:"0 0 8px" }}>Delete Instruction?</h3>
-          <p style={{ color:"var(--text-dim)", margin:"0 0 20px", fontSize:14 }}>This cannot be undone.</p>
-          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <button onClick={() => setConfirm(null)} style={{ padding:"8px 20px", borderRadius:8, border:"1px solid var(--border)", background:"var(--bg-el)", cursor:"pointer" }}>Cancel</button>
-            <button onClick={() => del(confirm)} style={{ padding:"8px 20px", borderRadius:8, border:"none", background:"var(--red)", color:"#fff", cursor:"pointer" }}>Delete</button>
-          </div>
-        </div>
-      </>}
+      <p style={{ color: "var(--text-dim)", fontSize: 12, textAlign: "center", marginTop: 24 }}>
+        Auto schedule: closed Friday sundown → Saturday Havdalah, plus 11pm–6am every night. Times in America/Los_Angeles.
+      </p>
     </div>
   );
 };
@@ -3500,7 +3506,6 @@ const StrategiesView = ({ db, setDB }) => {
 
   const strategies = (db.strategies || []);
   const goals = (db.goals || []);
-  const instructions = (db.instructions || []).filter(i => i.active);
 
   const saveStrategy = (d) => {
     const rec = { ...d, goalId: parseInt(d.goalId) || null, links: d.links || [], files: d.files || [] };
@@ -3563,14 +3568,6 @@ const StrategiesView = ({ db, setDB }) => {
             </div>);
           })}
         </div>
-      </div>}
-
-      {/* Active Instructions */}
-      {instructions.length > 0 && <div className="card" style={{ padding: 14 }}>
-        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8 }}>ACTIVE INSTRUCTIONS</div>
-        {instructions.map(inst => (<div key={inst.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-          <span style={{ fontWeight: 600 }}>{inst.title}</span>: <span style={{ color: "var(--text-sec)" }}>{inst.body}</span>
-        </div>))}
       </div>}
 
       {/* Strategies list */}
@@ -4020,7 +4017,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","strategies","ai_memories","multi_llm","instructions","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
@@ -4043,10 +4040,9 @@ export default function App() {
         tasks: (db.tasks||[]).filter(t=>!t.done).map(t=>({title:t.title,due:t.due,priority:t.priority})),
         contacts: (db.contacts||[]).filter(c=>c.status==="at-risk"||c.score<30).map(c=>({name:c.name,co:c.co,status:c.status,score:c.score})),
         invoices: (db.invoices||[]).filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
-        instructions: (db.instructions||[]).filter(i=>i.active).map(i=>({title:i.title,body:i.body})),
       };
       const msg = await callClaude(
-        "You are Mendy Ezagui's proactive daily strategist. Projects are typed client/strategic with priorities high/medium/low. Follow active instructions. Be specific with names, amounts, dates.",
+        "You are Mendy Ezagui's proactive daily strategist. Projects are typed client/strategic with priorities high/medium/low. Be specific with names, amounts, dates.",
         "Today is "+today+". Snapshot: "+JSON.stringify(snap)+"\nGenerate Daily Action Plan: TOP PRIORITIES (1-2 urgent items), DEAL MOVES (actions ranked by revenue+urgency), STRATEGIC PLAYS (advance high-priority strategic project), SMART NUDGES (follow-ups, cold relationships, deadlines, billing). Max 8 sentences.",
         800
       );
@@ -4151,7 +4147,7 @@ export default function App() {
     ai_memories: <AIMemoriesView db={db} setDB={setDB}/>,
     multi_llm:   <MultiLLMView session={session}/>,
     strategies:   <StrategiesView db={db} setDB={setDB}/>,
-    instructions: <InstructionsView db={db} setDB={setDB}/>,
+    voitra_gate:  <VoitraGateView/>,
     payments:      <PaymentsView db={db} setDB={setDB}/>,
     projects:     <ProjectsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     calendar:     <CalendarView db={db} setDB={setDB}/>,
