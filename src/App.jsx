@@ -3044,6 +3044,11 @@ const VoitraGateView = () => {
     timeZone: "America/Los_Angeles"
   }) + " PT" : null;
 
+  const fmtHour = (h) => {
+    const h12 = ((h + 11) % 12) + 1;
+    return h12 + (h < 12 ? "am" : "pm");
+  };
+
   const reasonLabel = {
     auto_open: "Open — following the schedule",
     auto_nightly: "Closed for the nightly window (11pm–6am PT)",
@@ -3118,6 +3123,35 @@ const VoitraGateView = () => {
         </div>
       }
 
+      {state && <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 14 }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-sec)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".06em" }}>
+          Automated schedule
+        </h3>
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 14px", fontSize: 13.5, color: "var(--text)", alignItems: "baseline" }}>
+          <div style={{ color: "var(--text-sec)" }}>This Shabbat</div>
+          <div>
+            {state.shabbat?.start && state.shabbat?.end ? (
+              <>
+                <span style={{ fontWeight: 600 }}>{fmtTime(state.shabbat.start)}</span>
+                <span style={{ color: "var(--text-sec)" }}> → </span>
+                <span style={{ fontWeight: 600 }}>{fmtTime(state.shabbat.end)}</span>
+              </>
+            ) : <span style={{ color: "var(--text-dim)" }}>(times unavailable — Hebcal unreachable)</span>}
+          </div>
+          <div style={{ color: "var(--text-sec)" }}>Every night</div>
+          <div>
+            <span style={{ fontWeight: 600 }}>{fmtHour(state.nightly?.start_hour ?? 23)}</span>
+            <span style={{ color: "var(--text-sec)" }}> → </span>
+            <span style={{ fontWeight: 600 }}>{fmtHour(state.nightly?.end_hour ?? 6)} next day</span>
+          </div>
+          <div style={{ color: "var(--text-sec)" }}>Timezone</div>
+          <div style={{ fontWeight: 600 }}>{state.tz || "America/Los_Angeles"}</div>
+        </div>
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 12, lineHeight: 1.55 }}>
+          Shabbat times pull live from Hebcal each week (Los Angeles, geonameid 5368361, candle-lighting 18 min before sunset, default Havdalah). Once Saturday's Havdalah passes, the schedule rolls forward to next Friday automatically — no manual update needed. Cached up to 6 hours.
+        </div>
+      </div>}
+
       <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 14 }}>
         <h3 style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-sec)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".06em" }}>
           Pause for a while
@@ -3140,9 +3174,6 @@ const VoitraGateView = () => {
         ))}
       </div>
 
-      <p style={{ color: "var(--text-dim)", fontSize: 12, textAlign: "center", marginTop: 24 }}>
-        Auto schedule: closed Friday sundown → Saturday Havdalah, plus 11pm–6am every night. Times in America/Los_Angeles.
-      </p>
     </div>
   );
 };
