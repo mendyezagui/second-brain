@@ -176,6 +176,23 @@ create table if not exists events (
   source        text default 'manual'
 );
 
+-- DOCUMENTS
+create table if not exists documents (
+  id            int4 primary key,
+  title         text default '',
+  description   text default '',
+  kind          text default 'file',
+  url           text default '',
+  file_name     text default '',
+  file_type     text default '',
+  file_size     int8 default 0,
+  storage_path  text default '',
+  associations  jsonb default '[]'::jsonb,
+  created_at    text default '',
+  modified_by   text,
+  modified_at   timestamptz default now()
+);
+
 -- ============================================================
 
 -- INSTRUCTIONS
@@ -225,6 +242,7 @@ alter table voicenotes   enable row level security;
 alter table company_news enable row level security;
 alter table goals        enable row level security;
 alter table events       enable row level security;
+alter table documents    enable row level security;
 
 alter table instructions enable row level security;
 alter table payments enable row level security;
@@ -242,6 +260,7 @@ create policy "auth_all" on voicenotes   for all using (auth.role() = 'authentic
 create policy "auth_all" on company_news for all using (auth.role() = 'authenticated');
 create policy "auth_all" on goals        for all using (auth.role() = 'authenticated');
 create policy "auth_all" on events       for all using (auth.role() = 'authenticated');
+create policy "auth_all" on documents    for all using (auth.role() = 'authenticated');
 create policy "auth_all" on instructions for all using (auth.role() = 'authenticated');
 create policy "auth_all" on payments for all using (auth.role() = 'authenticated');
 create policy "auth_all" on payment_allocations for all using (auth.role() = 'authenticated');
