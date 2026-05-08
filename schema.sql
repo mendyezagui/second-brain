@@ -181,7 +181,7 @@ create table if not exists documents (
   id            int4 primary key,
   title         text default '',
   description   text default '',
-  kind          text default 'file',
+  kind          text default 'attachment',
   url           text default '',
   file_name     text default '',
   file_type     text default '',
