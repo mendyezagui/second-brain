@@ -126,7 +126,8 @@ const initDB = () => ({
   companyNews: [],
   goals: [{ id:1, name:"Annual Revenue Target", target_value:800000, current_value:0, unit:"$", period:"annual", start_date:"2026-01-01", end_date:"2026-12-31", status:"active", notes:"" }],
   events: [],
-    ai_memories: [],
+  documents: [],
+  ai_memories: [],
 });
 
 /* ── SUPABASE CLIENT ── */
@@ -151,6 +152,7 @@ const DB_TABLES = [
   ["companyNews", "company_news"],
   ["goals",       "goals"],
   ["events",      "events"],
+  ["documents",   "documents"],
   ["strategies",  "strategies"],
   ["ai_memories",  "ai_memories"],
 ];
@@ -212,6 +214,18 @@ const revenueData = [
 const CONTACT_CATEGORIES = ["customer_lead","partner_lead","customer","partner","vendor"];
 const TASK_STATUSES = ["todo","in_progress","waiting","done","cancelled"];
 const TASK_CATEGORIES = ["follow_up","outreach","admin","research","meeting_prep","deliverable"];
+const DOCUMENT_ENTITY_TYPES = [
+  { type:"contact", key:"contacts", label:"Contact", name:r=>r.name },
+  { type:"company", key:"companies", label:"Company", name:r=>r.name },
+  { type:"project", key:"projects", label:"Project", name:r=>r.name },
+  { type:"task", key:"tasks", label:"Task", name:r=>r.title },
+  { type:"campaign", key:"campaigns", label:"Campaign", name:r=>r.name },
+  { type:"deal", key:"deals", label:"Deal", name:r=>r.name },
+  { type:"invoice", key:"invoices", label:"Invoice", name:r=>r.number || r.client },
+  { type:"payment", key:"payments", label:"Payment", name:r=>`${r.date || "Payment"} · ${fmt(r.amount || 0)}` },
+  { type:"strategy", key:"strategies", label:"Strategy", name:r=>r.name },
+  { type:"ai_memory", key:"ai_memories", label:"AI Memory", name:r=>r.subject || r.memory_summary },
+];
 const daysBetween = (a,b) => Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
 const today = () => new Date().toISOString().split("T")[0];
 
@@ -340,6 +354,160 @@ const SearchSelect = ({ value, onChange, options, placeholder }) => {
     </div>
   );
 };
+
+const docAssociationKey = (a) => `${a.type}:${a.id}`;
+const normalizeDocId = (id) => Number(id) || id;
+const docHasAssociation = (doc, type, id) => (doc.associations || []).some(a => a.type === type && String(a.id) === String(id));
+const getDocEntityConfig = (type) => DOCUMENT_ENTITY_TYPES.find(e => e.type === type);
+const getDocEntityLabel = (db, assoc) => {
+  const cfg = getDocEntityConfig(assoc.type);
+  const rec = cfg ? (db[cfg.key] || []).find(r => String(r.id) === String(assoc.id)) : null;
+  return rec ? `${cfg.label}: ${cfg.name(rec) || "Untitled"}` : `${cfg?.label || assoc.type}: ${assoc.id}`;
+};
+const formatDocSize = (bytes) => {
+  if (!bytes) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1048576).toFixed(1) + " MB";
+};
+const blankDocument = (associations=[]) => ({
+  title:"",
+  description:"",
+  kind:"file",
+  url:"",
+  file_name:"",
+  file_type:"",
+  file_size:0,
+  storage_path:"",
+  associations,
+  created_at:new Date().toISOString(),
+});
+const buildDocOptions = (db) => DOCUMENT_ENTITY_TYPES.map(cfg => ({
+  ...cfg,
+  options:(db[cfg.key] || []).map(r => ({ value:String(r.id), label:cfg.name(r) || "Untitled" }))
+}));
+
+const DocumentAssociationEditor = ({ db, value, onChange }) => {
+  const options = buildDocOptions(db);
+  const addAssociation = (type, id) => {
+    if (!id) return;
+    const next = [...(value || []), { type, id:normalizeDocId(id) }];
+    const unique = Array.from(new Map(next.map(a => [docAssociationKey(a), a])).values());
+    onChange(unique);
+  };
+  const removeAssociation = (assoc) => onChange((value || []).filter(a => docAssociationKey(a) !== docAssociationKey(assoc)));
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+        {(value || []).map(a => (
+          <span key={docAssociationKey(a)} className="tag" style={{ color:"var(--blue)", background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.18)" }}>
+            {getDocEntityLabel(db, a)}
+            <button type="button" onClick={() => removeAssociation(a)} style={{ border:"none", background:"transparent", color:"inherit", cursor:"pointer", padding:0, display:"flex" }}><X size={11}/></button>
+          </span>
+        ))}
+        {(value || []).length === 0 && <span className="mono" style={{ fontSize:11, color:"var(--text-dim)" }}>No associations yet</span>}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        {options.map(cfg => (
+          <SearchSelect
+            key={cfg.type}
+            value=""
+            onChange={id => addAssociation(cfg.type, id)}
+            options={cfg.options}
+            placeholder={`Add ${cfg.label.toLowerCase()}...`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AssociatedDocumentsPanel = ({ db, setDB, entityType, entityId, title="Documents" }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [doc, setDoc] = useState(blankDocument([{ type:entityType, id:entityId }]));
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+  const docs = (db.documents || []).filter(d => docHasAssociation(d, entityType, entityId)).sort((a,b) => (b.id || 0) - (a.id || 0));
+  const openNew = () => { setDoc(blankDocument([{ type:entityType, id:entityId }])); setDrawer("add"); };
+  const openEdit = (d) => { setDoc({ ...d, associations:d.associations || [] }); setDrawer("edit"); };
+  const saveDoc = () => {
+    if (!doc.title && !doc.file_name && !doc.url) return;
+    const rec = { ...doc, title:doc.title || doc.file_name || "Untitled document", associations:doc.associations || [] };
+    setDB(prev => drawer === "add"
+      ? { ...prev, documents:[{ ...rec, id:nextId(prev.documents || []) }, ...(prev.documents || [])] }
+      : { ...prev, documents:(prev.documents || []).map(d => d.id === rec.id ? rec : d) }
+    );
+    setDrawer(null);
+  };
+  const uploadForEntity = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
+        const path = `documents/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+        const { error } = await supabase.storage.from("memory-files").upload(path, file);
+        if (error) { console.error("Upload error:", error); continue; }
+        const { data: urlData } = supabase.storage.from("memory-files").getPublicUrl(path);
+        uploaded.push({
+          ...blankDocument([{ type:entityType, id:entityId }]),
+          id:0,
+          title:file.name,
+          file_name:file.name,
+          file_type:file.type,
+          file_size:file.size,
+          storage_path:path,
+          url:urlData.publicUrl,
+          kind:"file",
+        });
+      }
+      if (uploaded.length) {
+        setDB(prev => {
+          let id = nextId(prev.documents || []);
+          return { ...prev, documents:[...uploaded.map(d => ({ ...d, id:id++ })), ...(prev.documents || [])] };
+        });
+      }
+    } catch (err) { console.error("Document upload failed:", err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+  return (
+    <div className="card-el" style={{ padding:14, marginTop:16 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+        <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{title.toUpperCase()} ({docs.length})</div>
+        <div style={{ display:"flex", gap:6 }}>
+          <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={uploadForEntity}/>
+          <button className="btn btn-ghost" style={{ fontSize:11, padding:"4px 8px" }} disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+            {uploading ? <><Loader size={11} className="spin"/>Uploading</> : <><Upload size={11}/>Add File</>}
+          </button>
+          <button className="btn btn-blue" style={{ fontSize:11, padding:"4px 8px" }} onClick={openNew}><Plus size={11}/>New Document</button>
+        </div>
+      </div>
+      {docs.length === 0 ? <div className="mono" style={{ fontSize:11, color:"var(--text-dim)" }}>No documents linked yet.</div> : (
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {docs.map(d => (
+            <div key={d.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", border:"1px solid var(--border)", borderRadius:8, background:"var(--bg)" }}>
+              <FileText size={13} color="var(--blue)"/>
+              <div style={{ flex:1, minWidth:0 }}>
+                <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontSize:12, fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{(d.associations || []).length} association{(d.associations || []).length === 1 ? "" : "s"}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
+              </div>
+              <button className="btn-icon" title="Edit associations" onClick={() => openEdit(d)}><Pencil size={13}/></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {drawer && <Drawer title={drawer === "add" ? "New Document" : "Edit Document"} onClose={() => setDrawer(null)} onSave={saveDoc}>
+        <Field label="Title"><Inp value={doc.title || ""} onChange={v => setDoc(p => ({ ...p, title:v }))} placeholder="Document title"/></Field>
+        <Field label="Description"><Tex value={doc.description || ""} onChange={v => setDoc(p => ({ ...p, description:v }))} placeholder="What this document is for"/></Field>
+        <Field label="Document URL"><Inp value={doc.url || ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind }))} placeholder="https://..."/></Field>
+        <Field label="Associations"><DocumentAssociationEditor db={db} value={doc.associations || []} onChange={v => setDoc(p => ({ ...p, associations:v }))}/></Field>
+      </Drawer>}
+    </div>
+  );
+};
 const RowActions = ({ onEdit, onDelete }) => (
   <div className="row-actions" style={{ display:"flex", gap:2, opacity:0, transition:"opacity .15s" }}>
     <button className="btn-icon" title="Edit" onClick={e=>{e.stopPropagation();onEdit();}}><Pencil size={13} color="var(--text-sec)"/></button>
@@ -425,6 +593,7 @@ const NAV = [
   {id:"companies",icon:Building2,label:"Companies"},
     {id:"marketing",icon:Megaphone,label:"Marketing"},
   {id:"projects",icon:Briefcase,label:"Projects"},
+  {id:"documents",icon:FileText,label:"Documents"},
   {id:"calendar",icon:Calendar,label:"Calendar"},
     {id:"_fin",icon:DollarSign,label:"Financials",group:true,children:["deals","invoices","payments"]},
   {id:"deals",icon:Target,label:"Deals",parent:"_fin"},
@@ -476,7 +645,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -1015,6 +1184,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               </div>
             )}
 
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="contact" entityId={contact.id}/>
             <ActivityTimeline events={db.events} entityType="contact" entityId={contact.id}/>
           </div>
         ) : (
@@ -1156,6 +1326,7 @@ const CompaniesView = ({ db, setDB, focus, setFocus }) => {
               {companyNews.slice(0,5).map(n=><div key={n.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, borderLeft:"2px solid var(--blue)" }}><div style={{ fontSize:12, fontWeight:600 }}>{n.headline}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{n.published_date} · Score: {n.relevance_score}/10</div>{n.summary&&<p style={{ fontSize:11, color:"var(--text-sec)", marginTop:3 }}>{n.summary}</p>}</div>)}
             </div>}
 
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="company" entityId={company.id}/>
             <ActivityTimeline events={db.events} entityType="company" entityId={company.id}/>
           </div>
         ) : (
@@ -1302,6 +1473,7 @@ const DealsView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Close Date"><Inp type="date" value={d.closeDate} onChange={v=>setD(p=>({...p,closeDate:v}))}/></Field>
         </div>
         <Field label="Notes"><Tex value={d.notes} onChange={v=>setD(p=>({...p,notes:v}))}/></Field>
+        {drawer === "edit" && d.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="deal" entityId={d.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1379,6 +1551,7 @@ const MarketingView = ({ db, setDB }) => {
             <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:16, fontStyle:"italic" }}>No leads associated with this campaign yet.</div>
           );
         })()}
+        {drawer==="edit"&&d.id&&<div style={{ gridColumn:"1 / -1" }}><AssociatedDocumentsPanel db={db} setDB={setDB} entityType="campaign" entityId={d.id}/></div>}
         </div>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
@@ -1551,6 +1724,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","orchestrator","news_engine","gmail_scan","ai_sweep"]}/></Field>
         </div>
         <Field label="Notes"><Tex value={td.notes} onChange={v=>setTD(p=>({...p,notes:v}))}/></Field>
+        {drawer.mode === "edit" && td.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="task" entityId={td.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delTask(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1706,6 +1880,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
                     {(p.files||[]).map((f,fi)=>(<a key={fi} href={f.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,fontSize:11,color:"var(--blue)",textDecoration:"none",cursor:"pointer"}} title={f.name}><FileText size={11}/>{f.name}</a>))}
                   </div>
                 </div>}
+                <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="project" entityId={p.id}/>
                                 <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>PROJECT TASKS</div>
                 {pTasks.length > 0 ? pTasks.map(t => (
                   <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
@@ -1967,6 +2142,7 @@ const BillingView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Due Date"><Inp type="date" value={d.due} onChange={v=>setD(p=>({...p,due:v}))}/></Field>
         </div>
         <Field label="Notes"><Tex value={d.notes} onChange={v=>setD(p=>({...p,notes:v}))}/></Field>
+        {drawer === "edit" && d.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="invoice" entityId={d.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -3244,6 +3420,7 @@ const PaymentsView = ({ db, setDB }) => {
           </div>
           <label>Reference #<input value={pd.reference} onChange={e=>setPD({...pd,reference:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
           <label>Notes<textarea value={pd.notes} onChange={e=>setPD({...pd,notes:e.target.value})} rows={2} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4,resize:"vertical"}} /></label>
+          {drawer.mode==="edit"&&pd.id&&<AssociatedDocumentsPanel db={db} setDB={setDB} entityType="payment" entityId={pd.id}/>}
           <div style={{borderTop:"1px solid var(--border)",paddingTop:"0.75rem",marginTop:"0.25rem"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.5rem"}}>
               <strong style={{fontSize:"0.9rem"}}>Apply to Invoices</strong>
@@ -3276,6 +3453,129 @@ const PaymentsView = ({ db, setDB }) => {
       </div>
     </div>}
   </div>);
+};
+
+/* ────────────────────────────────────────────────────────
+   DOCUMENTS VIEW
+──────────────────────────────────────────────────────── */
+const DocumentsView = ({ db, setDB }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [doc, setDoc] = useState(blankDocument());
+  const [query, setQuery] = useState("");
+  const [filterType, setFilterType] = useState("all");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const docs = (db.documents || []).filter(d => {
+    const q = query.toLowerCase();
+    const matchesSearch = !q || [d.title, d.file_name, d.description, d.url].some(v => (v || "").toLowerCase().includes(q))
+      || (d.associations || []).some(a => getDocEntityLabel(db, a).toLowerCase().includes(q));
+    const matchesType = filterType === "all" || (d.associations || []).some(a => a.type === filterType);
+    return matchesSearch && matchesType;
+  }).sort((a,b) => (b.id || 0) - (a.id || 0));
+
+  const saveDoc = () => {
+    if (!doc.title && !doc.file_name && !doc.url) return;
+    const rec = { ...doc, title:doc.title || doc.file_name || "Untitled document", associations:doc.associations || [] };
+    setDB(prev => drawer === "add"
+      ? { ...prev, documents:[{ ...rec, id:nextId(prev.documents || []) }, ...(prev.documents || [])] }
+      : { ...prev, documents:(prev.documents || []).map(d => d.id === rec.id ? rec : d) }
+    );
+    setDrawer(null);
+  };
+  const delDoc = async (d) => {
+    if (d.storage_path) await supabase.storage.from("memory-files").remove([d.storage_path]);
+    setDB(prev => ({ ...prev, documents:(prev.documents || []).filter(x => x.id !== d.id) }));
+    setDrawer(null);
+  };
+  const uploadDocs = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
+        const path = `documents/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+        const { error } = await supabase.storage.from("memory-files").upload(path, file);
+        if (error) { console.error("Upload error:", error); continue; }
+        const { data: urlData } = supabase.storage.from("memory-files").getPublicUrl(path);
+        uploaded.push({ ...blankDocument(), title:file.name, file_name:file.name, file_type:file.type, file_size:file.size, storage_path:path, url:urlData.publicUrl, kind:"file" });
+      }
+      if (uploaded.length) setDB(prev => { let id = nextId(prev.documents || []); return { ...prev, documents:[...uploaded.map(d => ({ ...d, id:id++ })), ...(prev.documents || [])] }; });
+    } catch (err) { console.error("Document upload failed:", err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  return (
+    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div>
+          <div className="display" style={{ fontSize:18, fontWeight:700 }}>Documents</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>{(db.documents || []).length} shared repository item{(db.documents || []).length === 1 ? "" : "s"}</div>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={uploadDocs}/>
+          <button className="btn btn-ghost" disabled={uploading} onClick={() => fileInputRef.current?.click()}>{uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Upload size={13}/>Upload</>}</button>
+          <button className="btn btn-blue" onClick={() => { setDoc(blankDocument()); setDrawer("add"); }}><Plus size={13}/>New Document</button>
+        </div>
+      </div>
+      <div className="card" style={{ padding:"10px 14px" }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+          <div style={{ position:"relative", flex:1, minWidth:220 }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:9 }}/>
+            <input className="input" placeholder="Search documents and associations..." value={query} onChange={e => setQuery(e.target.value)} style={{ paddingLeft:30 }}/>
+          </div>
+          <select className="filter-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
+            <option value="all">All associations</option>
+            {DOCUMENT_ENTITY_TYPES.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
+          </select>
+          <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{docs.length} shown</span>
+        </div>
+      </div>
+      {docs.length === 0 ? (
+        <div className="card" style={{ padding:42, textAlign:"center" }}>
+          <FileText size={34} color="var(--text-dim)" style={{ marginBottom:12 }}/>
+          <div style={{ fontSize:14, color:"var(--text-sec)" }}>No documents found</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:4 }}>Upload or create a document, then associate it anywhere in the system.</div>
+        </div>
+      ) : (
+        <div className="card" style={{ overflow:"hidden" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <tbody>
+              {docs.map(d => (
+                <tr key={d.id} className="row-hover" style={{ borderBottom:"1px solid var(--border)" }}>
+                  <td style={{ padding:"12px 14px" }}>
+                    <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
+                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{d.file_name || d.kind || "document"}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
+                    {d.description && <div style={{ fontSize:12, color:"var(--text-sec)", marginTop:5, lineHeight:1.4 }}>{d.description}</div>}
+                  </td>
+                  <td style={{ padding:"12px 14px" }}>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+                      {(d.associations || []).length === 0 ? <span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>Unassociated</span> : (d.associations || []).map(a => (
+                        <span key={docAssociationKey(a)} className="tag" style={{ color:"var(--purple)", background:"var(--purple-dim)", border:"1px solid rgba(124,58,237,0.16)" }}>{getDocEntityLabel(db, a)}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td style={{ padding:"12px 14px", textAlign:"right", width:70 }}>
+                    <button className="btn-icon" title="Edit document" onClick={() => { setDoc({ ...d, associations:d.associations || [] }); setDrawer("edit"); }}><Pencil size={13}/></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {drawer && <Drawer title={drawer === "add" ? "New Document" : "Edit Document"} onClose={() => setDrawer(null)} onSave={saveDoc}>
+        <Field label="Title"><Inp value={doc.title || ""} onChange={v => setDoc(p => ({ ...p, title:v }))} placeholder="Document title"/></Field>
+        <Field label="Description"><Tex value={doc.description || ""} onChange={v => setDoc(p => ({ ...p, description:v }))} placeholder="Purpose, contents, or notes"/></Field>
+        <Field label="Document URL"><Inp value={doc.url || ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind }))} placeholder="https://..."/></Field>
+        <Field label="Associations"><DocumentAssociationEditor db={db} value={doc.associations || []} onChange={v => setDoc(p => ({ ...p, associations:v }))}/></Field>
+        {drawer === "edit" && <button className="btn btn-danger" style={{ marginTop:14 }} onClick={() => delDoc(doc)}><Trash2 size={13}/>Delete Document</button>}
+      </Drawer>}
+    </div>
+  );
 };
 
 /* ────────────────────────────────────────────────────────
@@ -3458,6 +3758,7 @@ const AIMemoriesView = ({ db, setDB }) => {
                               </div>
                             </div>
                           )}
+                          <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="ai_memory" entityId={m.id}/>
                         </div>
                       </td>
                     </tr>
@@ -3643,6 +3944,7 @@ const StrategiesView = ({ db, setDB }) => {
               </div>}
 
               {/* Linked Projects */}
+              <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="strategy" entityId={s.id}/>
               <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>LINKED PROJECTS</div>
               {linkedProjects.length > 0 ? linkedProjects.map(p => (
                 <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
@@ -4048,7 +4350,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","calendar","voice","email","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
@@ -4175,6 +4477,7 @@ export default function App() {
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB}/>,
+    documents:   <DocumentsView db={db} setDB={setDB}/>,
     ai_memories: <AIMemoriesView db={db} setDB={setDB}/>,
     multi_llm:   <MultiLLMView session={session}/>,
     strategies:   <StrategiesView db={db} setDB={setDB}/>,
