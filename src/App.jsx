@@ -370,10 +370,31 @@ const formatDocSize = (bytes) => {
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
   return (bytes / 1048576).toFixed(1) + " MB";
 };
+const getDocKindLabel = (doc) => {
+  if (doc.file_name || doc.storage_path || doc.kind === "attachment" || doc.kind === "file") return "Attachment";
+  if (doc.url || doc.kind === "link") return "Link";
+  return "Document";
+};
+const uploadDocumentFile = async (file) => {
+  const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
+  const path = `documents/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const { error } = await supabase.storage.from("memory-files").upload(path, file);
+  if (error) throw error;
+  const { data: urlData } = supabase.storage.from("memory-files").getPublicUrl(path);
+  return {
+    title:file.name,
+    file_name:file.name,
+    file_type:file.type || "application/octet-stream",
+    file_size:file.size,
+    storage_path:path,
+    url:urlData.publicUrl,
+    kind:"attachment",
+  };
+};
 const blankDocument = (associations=[]) => ({
   title:"",
   description:"",
-  kind:"file",
+  kind:"attachment",
   url:"",
   file_name:"",
   file_type:"",
@@ -427,12 +448,13 @@ const AssociatedDocumentsPanel = ({ db, setDB, entityType, entityId, title="Docu
   const [doc, setDoc] = useState(blankDocument([{ type:entityType, id:entityId }]));
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const drawerFileInputRef = useRef(null);
   const docs = (db.documents || []).filter(d => docHasAssociation(d, entityType, entityId)).sort((a,b) => (b.id || 0) - (a.id || 0));
   const openNew = () => { setDoc(blankDocument([{ type:entityType, id:entityId }])); setDrawer("add"); };
   const openEdit = (d) => { setDoc({ ...d, associations:d.associations || [] }); setDrawer("edit"); };
   const saveDoc = () => {
     if (!doc.title && !doc.file_name && !doc.url) return;
-    const rec = { ...doc, title:doc.title || doc.file_name || "Untitled document", associations:doc.associations || [] };
+    const rec = { ...doc, title:doc.title || doc.file_name || (doc.kind === "link" ? doc.url : "Untitled document"), associations:doc.associations || [] };
     setDB(prev => drawer === "add"
       ? { ...prev, documents:[{ ...rec, id:nextId(prev.documents || []) }, ...(prev.documents || [])] }
       : { ...prev, documents:(prev.documents || []).map(d => d.id === rec.id ? rec : d) }
@@ -446,22 +468,9 @@ const AssociatedDocumentsPanel = ({ db, setDB, entityType, entityId, title="Docu
     try {
       const uploaded = [];
       for (const file of files) {
-        const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
-        const path = `documents/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
-        const { error } = await supabase.storage.from("memory-files").upload(path, file);
-        if (error) { console.error("Upload error:", error); continue; }
-        const { data: urlData } = supabase.storage.from("memory-files").getPublicUrl(path);
-        uploaded.push({
-          ...blankDocument([{ type:entityType, id:entityId }]),
-          id:0,
-          title:file.name,
-          file_name:file.name,
-          file_type:file.type,
-          file_size:file.size,
-          storage_path:path,
-          url:urlData.publicUrl,
-          kind:"file",
-        });
+        try {
+          uploaded.push({ ...blankDocument([{ type:entityType, id:entityId }]), id:0, ...(await uploadDocumentFile(file)) });
+        } catch (error) { console.error("Upload error:", error); }
       }
       if (uploaded.length) {
         setDB(prev => {
@@ -472,6 +481,17 @@ const AssociatedDocumentsPanel = ({ db, setDB, entityType, entityId, title="Docu
     } catch (err) { console.error("Document upload failed:", err); }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+  const attachFileToDraft = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadDocumentFile(file);
+      setDoc(p => ({ ...p, ...uploaded, title:p.title || uploaded.title }));
+    } catch (err) { console.error("Document upload failed:", err); }
+    setUploading(false);
+    if (drawerFileInputRef.current) drawerFileInputRef.current.value = "";
   };
   return (
     <div className="card-el" style={{ padding:14, marginTop:16 }}>
@@ -489,10 +509,10 @@ const AssociatedDocumentsPanel = ({ db, setDB, entityType, entityId, title="Docu
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
           {docs.map(d => (
             <div key={d.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", border:"1px solid var(--border)", borderRadius:8, background:"var(--bg)" }}>
-              <FileText size={13} color="var(--blue)"/>
+              {(d.file_name || d.storage_path) ? <Paperclip size={13} color="var(--blue)"/> : <ExternalLink size={13} color="var(--blue)"/>}
               <div style={{ flex:1, minWidth:0 }}>
                 <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontSize:12, fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
-                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{(d.associations || []).length} association{(d.associations || []).length === 1 ? "" : "s"}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{getDocKindLabel(d)} · {(d.associations || []).length} association{(d.associations || []).length === 1 ? "" : "s"}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
               </div>
               <button className="btn-icon" title="Edit associations" onClick={() => openEdit(d)}><Pencil size={13}/></button>
             </div>
@@ -502,7 +522,19 @@ const AssociatedDocumentsPanel = ({ db, setDB, entityType, entityId, title="Docu
       {drawer && <Drawer title={drawer === "add" ? "New Document" : "Edit Document"} onClose={() => setDrawer(null)} onSave={saveDoc}>
         <Field label="Title"><Inp value={doc.title || ""} onChange={v => setDoc(p => ({ ...p, title:v }))} placeholder="Document title"/></Field>
         <Field label="Description"><Tex value={doc.description || ""} onChange={v => setDoc(p => ({ ...p, description:v }))} placeholder="What this document is for"/></Field>
-        <Field label="Document URL"><Inp value={doc.url || ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind }))} placeholder="https://..."/></Field>
+        <Field label="Attachment">
+          <input ref={drawerFileInputRef} type="file" style={{ display:"none" }} onChange={attachFileToDraft}/>
+          <button type="button" className="btn btn-ghost" disabled={uploading} onClick={() => drawerFileInputRef.current?.click()}>
+            {uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Paperclip size={13}/>Upload attachment</>}
+          </button>
+          <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:6 }}>PDF, image, markdown, HTML, ZIP, Office files, text, CSV, and other file types.</div>
+          {doc.file_name && <div className="card-el" style={{ padding:"8px 10px", marginTop:8, display:"flex", alignItems:"center", gap:8 }}>
+            <Paperclip size={13} color="var(--blue)"/>
+            <span style={{ flex:1, fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{doc.file_name}</span>
+            <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{formatDocSize(doc.file_size)}</span>
+          </div>}
+        </Field>
+        <Field label="Link"><Inp value={doc.kind === "link" || !doc.file_name ? (doc.url || "") : ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind, file_name:v ? "" : p.file_name, file_type:v ? "" : p.file_type, file_size:v ? 0 : p.file_size, storage_path:v ? "" : p.storage_path }))} placeholder="https://..."/></Field>
         <Field label="Associations"><DocumentAssociationEditor db={db} value={doc.associations || []} onChange={v => setDoc(p => ({ ...p, associations:v }))}/></Field>
       </Drawer>}
     </div>
@@ -3465,6 +3497,7 @@ const DocumentsView = ({ db, setDB }) => {
   const [filterType, setFilterType] = useState("all");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const drawerFileInputRef = useRef(null);
 
   const docs = (db.documents || []).filter(d => {
     const q = query.toLowerCase();
@@ -3476,7 +3509,7 @@ const DocumentsView = ({ db, setDB }) => {
 
   const saveDoc = () => {
     if (!doc.title && !doc.file_name && !doc.url) return;
-    const rec = { ...doc, title:doc.title || doc.file_name || "Untitled document", associations:doc.associations || [] };
+    const rec = { ...doc, title:doc.title || doc.file_name || (doc.kind === "link" ? doc.url : "Untitled document"), associations:doc.associations || [] };
     setDB(prev => drawer === "add"
       ? { ...prev, documents:[{ ...rec, id:nextId(prev.documents || []) }, ...(prev.documents || [])] }
       : { ...prev, documents:(prev.documents || []).map(d => d.id === rec.id ? rec : d) }
@@ -3495,17 +3528,25 @@ const DocumentsView = ({ db, setDB }) => {
     try {
       const uploaded = [];
       for (const file of files) {
-        const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
-        const path = `documents/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
-        const { error } = await supabase.storage.from("memory-files").upload(path, file);
-        if (error) { console.error("Upload error:", error); continue; }
-        const { data: urlData } = supabase.storage.from("memory-files").getPublicUrl(path);
-        uploaded.push({ ...blankDocument(), title:file.name, file_name:file.name, file_type:file.type, file_size:file.size, storage_path:path, url:urlData.publicUrl, kind:"file" });
+        try {
+          uploaded.push({ ...blankDocument(), ...(await uploadDocumentFile(file)) });
+        } catch (error) { console.error("Upload error:", error); }
       }
       if (uploaded.length) setDB(prev => { let id = nextId(prev.documents || []); return { ...prev, documents:[...uploaded.map(d => ({ ...d, id:id++ })), ...(prev.documents || [])] }; });
     } catch (err) { console.error("Document upload failed:", err); }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+  const attachFileToDraft = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadDocumentFile(file);
+      setDoc(p => ({ ...p, ...uploaded, title:p.title || uploaded.title }));
+    } catch (err) { console.error("Document upload failed:", err); }
+    setUploading(false);
+    if (drawerFileInputRef.current) drawerFileInputRef.current.value = "";
   };
 
   return (
@@ -3517,7 +3558,7 @@ const DocumentsView = ({ db, setDB }) => {
         </div>
         <div style={{ display:"flex", gap:8 }}>
           <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={uploadDocs}/>
-          <button className="btn btn-ghost" disabled={uploading} onClick={() => fileInputRef.current?.click()}>{uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Upload size={13}/>Upload</>}</button>
+          <button className="btn btn-ghost" disabled={uploading} onClick={() => fileInputRef.current?.click()}>{uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Upload size={13}/>Upload Attachments</>}</button>
           <button className="btn btn-blue" onClick={() => { setDoc(blankDocument()); setDrawer("add"); }}><Plus size={13}/>New Document</button>
         </div>
       </div>
@@ -3539,6 +3580,7 @@ const DocumentsView = ({ db, setDB }) => {
           <FileText size={34} color="var(--text-dim)" style={{ marginBottom:12 }}/>
           <div style={{ fontSize:14, color:"var(--text-sec)" }}>No documents found</div>
           <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:4 }}>Upload or create a document, then associate it anywhere in the system.</div>
+          <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:8 }}>Supports attachments like PDF, images, markdown, HTML, ZIP, Office files, text, CSV, and links.</div>
         </div>
       ) : (
         <div className="card" style={{ overflow:"hidden" }}>
@@ -3547,8 +3589,11 @@ const DocumentsView = ({ db, setDB }) => {
               {docs.map(d => (
                 <tr key={d.id} className="row-hover" style={{ borderBottom:"1px solid var(--border)" }}>
                   <td style={{ padding:"12px 14px" }}>
-                    <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
-                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{d.file_name || d.kind || "document"}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      {(d.file_name || d.storage_path) ? <Paperclip size={14} color="var(--blue)"/> : <ExternalLink size={14} color="var(--blue)"/>}
+                      <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
+                    </div>
+                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{getDocKindLabel(d)}{d.file_name ? ` · ${d.file_name}` : ""}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
                     {d.description && <div style={{ fontSize:12, color:"var(--text-sec)", marginTop:5, lineHeight:1.4 }}>{d.description}</div>}
                   </td>
                   <td style={{ padding:"12px 14px" }}>
@@ -3570,7 +3615,19 @@ const DocumentsView = ({ db, setDB }) => {
       {drawer && <Drawer title={drawer === "add" ? "New Document" : "Edit Document"} onClose={() => setDrawer(null)} onSave={saveDoc}>
         <Field label="Title"><Inp value={doc.title || ""} onChange={v => setDoc(p => ({ ...p, title:v }))} placeholder="Document title"/></Field>
         <Field label="Description"><Tex value={doc.description || ""} onChange={v => setDoc(p => ({ ...p, description:v }))} placeholder="Purpose, contents, or notes"/></Field>
-        <Field label="Document URL"><Inp value={doc.url || ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind }))} placeholder="https://..."/></Field>
+        <Field label="Attachment">
+          <input ref={drawerFileInputRef} type="file" style={{ display:"none" }} onChange={attachFileToDraft}/>
+          <button type="button" className="btn btn-ghost" disabled={uploading} onClick={() => drawerFileInputRef.current?.click()}>
+            {uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Paperclip size={13}/>Upload attachment</>}
+          </button>
+          <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:6 }}>PDF, image, markdown, HTML, ZIP, Office files, text, CSV, and other file types.</div>
+          {doc.file_name && <div className="card-el" style={{ padding:"8px 10px", marginTop:8, display:"flex", alignItems:"center", gap:8 }}>
+            <Paperclip size={13} color="var(--blue)"/>
+            <span style={{ flex:1, fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{doc.file_name}</span>
+            <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{formatDocSize(doc.file_size)}</span>
+          </div>}
+        </Field>
+        <Field label="Link"><Inp value={doc.kind === "link" || !doc.file_name ? (doc.url || "") : ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind, file_name:v ? "" : p.file_name, file_type:v ? "" : p.file_type, file_size:v ? 0 : p.file_size, storage_path:v ? "" : p.storage_path }))} placeholder="https://..."/></Field>
         <Field label="Associations"><DocumentAssociationEditor db={db} value={doc.associations || []} onChange={v => setDoc(p => ({ ...p, associations:v }))}/></Field>
         {drawer === "edit" && <button className="btn btn-danger" style={{ marginTop:14 }} onClick={() => delDoc(doc)}><Trash2 size={13}/>Delete Document</button>}
       </Drawer>}
