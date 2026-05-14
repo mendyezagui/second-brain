@@ -328,13 +328,23 @@ const SearchSelect = ({ value, onChange, options, placeholder }) => {
   const [open, setOpen] = useState(false);
   const selected = options.find(o => String(o.value) === String(value));
   const filtered = q ? options.filter(o => o.label.toLowerCase().includes(q.toLowerCase())) : options;
+  const hasValue = !open && selected;
   return (
     <div style={{ position:"relative" }}>
       <input className="input" value={open ? q : (selected?.label || "")} placeholder={placeholder || "Search…"}
         onFocus={() => { setOpen(true); setQ(""); }}
         onChange={e => { setQ(e.target.value); setOpen(true); }}
-        style={{ fontSize:13 }}
+        style={{ fontSize:13, paddingRight: hasValue ? 28 : undefined }}
       />
+      {hasValue && (
+        <button
+          type="button"
+          title="Clear"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => { onChange(""); setQ(""); setOpen(false); }}
+          style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", width:18, height:18, borderRadius:4, border:"none", background:"transparent", cursor:"pointer", color:"var(--text-sec)", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}
+        ><X size={12}/></button>
+      )}
       {open && (
         <>
           <div style={{ position:"fixed", inset:0, zIndex:998 }} onClick={() => setOpen(false)}/>
@@ -352,6 +362,27 @@ const SearchSelect = ({ value, onChange, options, placeholder }) => {
         </>
       )}
     </div>
+  );
+};
+
+const ENTITY_NAV = {
+  contact: { view:"crm",       focusType:"contact" },
+  company: { view:"companies", focusType:"company" },
+  deal:    { view:"deals",     focusType:"deal"    },
+  project: { view:"projects",  focusType:"project" },
+  task:    { view:"tasks",     focusType:"task"    },
+  invoice: { view:"invoices",  focusType:"invoice" },
+};
+const EntityLink = ({ type, id, navigate, children, className, style, title }) => {
+  const cfg = ENTITY_NAV[type];
+  if (!id || !navigate || !cfg) return <span className={className} style={style}>{children}</span>;
+  return (
+    <span
+      className={className}
+      title={title || "Open"}
+      onClick={(e) => { e.stopPropagation(); navigate(cfg.view, { type: cfg.focusType, id }); }}
+      style={{ ...style, cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted", textDecorationColor:"var(--border-hi)", textUnderlineOffset:2 }}
+    >{children}</span>
   );
 };
 
@@ -930,7 +961,7 @@ const ContactForm = ({ data, onChange, companies, contacts, campaigns, setDB, db
   );
 };
 
-const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
+const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -1176,7 +1207,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>OPEN TASKS ({contactTasks.length})</div>
               {contactTasks.map(t=>(
                 <div key={t.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", gap:8, alignItems:"center" }}>
-                  <div style={{ flex:1 }}><div style={{ fontSize:12, fontWeight:500 }}>{t.title}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due} · {t.category}</div></div>
+                  <div style={{ flex:1 }}><div style={{ fontSize:12, fontWeight:500 }}><EntityLink type="task" id={t.id} navigate={navigate}>{t.title}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due} · {t.category}</div></div>
                   <Tag label={t.priority}/>
                 </div>
               ))}
@@ -1187,7 +1218,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>DEALS</div>
               {contactDeals.map(d=>(
                 <div key={d.id} className="card-el" style={{ padding:14, marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div><div style={{ fontSize:13, fontWeight:600 }}>{d.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>Close {d.closeDate} · {d.probability}%</div></div>
+                  <div><div style={{ fontSize:13, fontWeight:600 }}><EntityLink type="deal" id={d.id} navigate={navigate}>{d.name}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>Close {d.closeDate} · {d.probability}%</div></div>
                   <div style={{ textAlign:"right" }}><div style={{ fontSize:15, fontWeight:700, color:"var(--blue)", fontFamily:"var(--font-d)" }}>{fmt(d.value)}</div><Tag label={d.stage}/></div>
                 </div>
               ))}
@@ -1198,7 +1229,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>SOURCE</div>
               <div style={{ display:"flex", gap:12, fontSize:12, flexWrap:"wrap" }}>
                 {contact.source && <span>Channel: <strong>{contact.source.replace(/_/g," ")}</strong></span>}
-                {contact.referredBy && <span>Referred by: <strong>{(db.contacts.find(c=>c.id===contact.referredBy))?.name || "Unknown"}</strong></span>}
+                {contact.referredBy && <span>Referred by: <strong><EntityLink type="contact" id={contact.referredBy} navigate={navigate}>{(db.contacts.find(c=>c.id===contact.referredBy))?.name || "Unknown"}</EntityLink></strong></span>}
                 {contact.campaignId && <span>Campaign: <strong>{(db.campaigns.find(c=>c.id===contact.campaignId))?.name || "Unknown"}</strong></span>}
               </div>
             </div>}
@@ -1252,7 +1283,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
 ──────────────────────────────────────────────────────── */
 const blankCompany = () => ({ name:"", industry:"", website:"", linkedin_url:"", news_keywords:"", status:"prospect", notes:"", created_at:today() });
 
-const CompaniesView = ({ db, setDB, focus, setFocus }) => {
+const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -1347,11 +1378,11 @@ const CompaniesView = ({ db, setDB, focus, setFocus }) => {
             {company.notes && <div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{company.notes}</p></div>}
 
             {companyContacts.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>PEOPLE ({companyContacts.length})</div>
-              {companyContacts.map(c=><div key={c.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}><div><div style={{ fontSize:13, fontWeight:500 }}>{c.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{c.role} · {c.category?.replace(/_/g," ")}</div></div><div style={{ display:"flex", gap:6 }}><Tag label={c.status}/><ScoreBadge score={c.score}/></div></div>)}
+              {companyContacts.map(c=><div key={c.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}><div><div style={{ fontSize:13, fontWeight:500 }}><EntityLink type="contact" id={c.id} navigate={navigate}>{c.name}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{c.role} · {c.category?.replace(/_/g," ")}</div></div><div style={{ display:"flex", gap:6 }}><Tag label={c.status}/><ScoreBadge score={c.score}/></div></div>)}
             </div>}
 
             {companyDeals.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>DEALS ({companyDeals.length})</div>
-              {companyDeals.map(d=><div key={d.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between" }}><div><div style={{ fontSize:13, fontWeight:500 }}>{d.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{d.probability}% · Close {d.closeDate}</div></div><div style={{ textAlign:"right" }}><div style={{ fontFamily:"var(--font-d)", fontWeight:700, color:"var(--blue)" }}>{fmt(d.value)}</div><Tag label={d.stage}/></div></div>)}
+              {companyDeals.map(d=><div key={d.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between" }}><div><div style={{ fontSize:13, fontWeight:500 }}><EntityLink type="deal" id={d.id} navigate={navigate}>{d.name}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{d.probability}% · Close {d.closeDate}</div></div><div style={{ textAlign:"right" }}><div style={{ fontFamily:"var(--font-d)", fontWeight:700, color:"var(--blue)" }}>{fmt(d.value)}</div><Tag label={d.stage}/></div></div>)}
             </div>}
 
             {companyNews.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}><Newspaper size={11}/> NEWS</div>
@@ -1390,7 +1421,7 @@ const CompaniesView = ({ db, setDB, focus, setFocus }) => {
 ──────────────────────────────────────────────────────── */
 const blankDeal = () => ({ name:"", contactId:"", companyId:"", value:0, stage:"discovery", probability:50, closeDate:"", notes:"" });
 
-const DealsView = ({ db, setDB, focus, setFocus }) => {
+const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankDeal());
@@ -1483,7 +1514,7 @@ const DealsView = ({ db, setDB, focus, setFocus }) => {
               <div style={{ width:10, height:10, borderRadius:"50%", background:stageColor[deal.stage]||"var(--text-sec)", flexShrink:0 }}/>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{deal.name}</div>
-                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{contact?.name||"—"} · Close {deal.closeDate} · {deal.probability}%</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{contact ? <EntityLink type="contact" id={contact.id} navigate={navigate}>{contact.name}</EntityLink> : "—"} · Close {deal.closeDate} · {deal.probability}%</div>
               </div>
               <div style={{ textAlign:"right", flexShrink:0 }}>
                 <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700, color:"var(--blue)" }}>{fmt(deal.value)}</div>
@@ -1600,7 +1631,7 @@ const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", d
 /* ────────────────────────────────────────────────────────
    TASKS VIEW (standalone)
 ──────────────────────────────────────────────────────── */
-const TasksView = ({ db, setDB, focus, setFocus }) => {
+const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [td, setTD] = useState(blankTask());
@@ -1611,7 +1642,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
   const [fCategory, setFCategory] = useState("all");
   const [fSource, setFSource] = useState("mine"); // mine = user-created, agent = auto-generated, all = everything
   const [searchQ, setSearchQ] = useState(""); // free-text search across title, contact, company, project
-  const [sortBy, setSortBy] = useState("priority"); // priority, due
+  const [sortBy, setSortBy] = useState("due"); // priority, due
   const [groupBy, setGroupBy] = useState("none"); // none, project, company, person, status
 
   useEffect(() => {
@@ -1734,9 +1765,9 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
                         <Tag label={t.priority}/>
                         <Tag label={t.category?.replace(/_/g," ")||"task"} color="var(--purple)"/>
                         {t.status && t.status !== "todo" && t.status !== "done" && <Tag label={t.status.replace(/_/g," ")}/>}
-                        {contact&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>👤 {contact.name}</span>}
-                        {company&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>🏢 {company.name}</span>}
-                        {project&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>📁 {project.name}</span>}
+                        {contact&&<EntityLink type="contact" id={contact.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>👤 {contact.name}</EntityLink>}
+                        {company&&<EntityLink type="company" id={company.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>🏢 {company.name}</EntityLink>}
+                        {project&&<EntityLink type="project" id={project.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>📁 {project.name}</EntityLink>}
                         {t.source!=="manual"&&<span className="mono" style={{ fontSize:9, color:"var(--text-dim)", background:"var(--bg-el)", padding:"1px 4px", borderRadius:3 }}>{t.source}</span>}
                       </div>
                     </div>
@@ -1774,7 +1805,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
 /* ────────────────────────────────────────────────────────
    PROJECTS VIEW (with AI Agent)
 ──────────────────────────────────────────────────────── */
-const ProjectsView = ({ db, setDB, focus, setFocus }) => {
+const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [pd, setPD] = useState(blankProject());
@@ -1888,7 +1919,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
                 <div>
                   <div style={{ fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{p.name} <span style={{ fontSize:9, padding:"1px 6px", borderRadius:8, background: (p.type||"client")==="strategic"?"var(--purple-dim)":"var(--blue-dim)", color:(p.type||"client")==="strategic"?"var(--purple)":"var(--blue)", fontWeight:500 }}>{(p.type||"client")}</span></div>
-                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
+                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.companyId ? <EntityLink type="company" id={p.companyId} navigate={navigate}>{p.client}</EntityLink> : p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
                   {(p.files||[]).length > 0 && <div className="mono" style={{fontSize:9,color:"var(--text-dim)",marginTop:1,display:"flex",alignItems:"center",gap:3}}><Paperclip size={9}/> {(p.files||[]).length} file{(p.files||[]).length>1?"s":""}</div>}
                   {p.strategyId && (db.strategies||[]).find(s=>s.id===p.strategyId) && <div className="mono" style={{fontSize:9,color:"var(--purple)",marginTop:1}}>Strategy: {(db.strategies||[]).find(s=>s.id===p.strategyId)?.name}</div>}
                 </div>
@@ -1925,7 +1956,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
                 {pTasks.length > 0 ? pTasks.map(t => (
                   <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
                     <button onClick={()=>toggleTask(t.id)} style={{ width:16, height:16, borderRadius:3, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>{t.done&&<Check size={9} color="#fff"/>}</button>
-                    <span style={{ fontSize:12, flex:1, textDecoration:t.done?"line-through":"none", opacity:t.done?0.5:1 }}>{t.title}</span>
+                    <EntityLink type="task" id={t.id} navigate={navigate} style={{ fontSize:12, flex:1, textDecoration:t.done?"line-through":"none", opacity:t.done?0.5:1 }}>{t.title}</EntityLink>
                     <Tag label={t.priority}/><span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{t.due||""}</span>
                   </div>
                 )) : <div style={{ fontSize:12, color:"var(--text-dim)", padding:"8px 0" }}>No tasks yet — use the AI agent below to generate some.</div>}
@@ -2126,7 +2157,7 @@ const CalendarView = ({ db, setDB }) => {
 ──────────────────────────────────────────────────────── */
 const blankInvoice = () => ({ number:"", client:"", amount:0, status:"draft", issued:"", due:"", notes:"" });
 
-const BillingView = ({ db, setDB, focus, setFocus }) => {
+const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankInvoice());
@@ -2164,7 +2195,7 @@ const BillingView = ({ db, setDB, focus, setFocus }) => {
         {db.invoices.map(inv=>(
           <div key={inv.id} className="card row-hover" style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
             <div style={{ flex:1 }}>
-              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}><span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{inv.number}</span><span style={{ fontSize:13, fontWeight:600 }}>{inv.client}</span></div>
+              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}><span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{inv.number}</span><span style={{ fontSize:13, fontWeight:600 }}>{inv.contactId ? <EntityLink type="contact" id={inv.contactId} navigate={navigate}>{inv.client}</EntityLink> : inv.client}</span></div>
               {inv.due&&<div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due: {inv.due}</div>}
             </div>
             <div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontFamily:"var(--font-d)", fontSize:15, fontWeight:700 }}>{fmt(inv.amount)}</div><Tag label={inv.status}/></div>
@@ -4536,11 +4567,11 @@ export default function App() {
   const VIEWS = {
     dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} setShowVoiceLab={setShowVoiceLab} />,
     orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
-    crm:          <CRMView db={db} setDB={setDB} setView={setView} focus={focus} setFocus={setFocus}/>,
-    companies:    <CompaniesView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
-    deals:        <DealsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    crm:          <CRMView db={db} setDB={setDB} setView={setView} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    companies:    <CompaniesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     marketing:    <MarketingView db={db} setDB={setDB}/>,
-    tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB}/>,
     documents:   <DocumentsView db={db} setDB={setDB}/>,
     ai_memories: <AIMemoriesView db={db} setDB={setDB}/>,
@@ -4548,9 +4579,9 @@ export default function App() {
     strategies:   <StrategiesView db={db} setDB={setDB}/>,
     voitra_gate:  <VoitraGateView/>,
     payments:      <PaymentsView db={db} setDB={setDB}/>,
-    projects:     <ProjectsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     calendar:     <CalendarView db={db} setDB={setDB}/>,
-    invoices:      <BillingView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
     email:        <EmailView db={db} setDB={setDB}/>,
     admin:        <AdminView session={session}/>,
