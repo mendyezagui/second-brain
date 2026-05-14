@@ -1033,7 +1033,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
     if (alreadyExists) { alert(`${signal.contact.name} is already in CRM.`); return; }
     const catMap = {"existing-customer":"customer","lead":"customer_lead","partner":"partner_lead","vendor":"vendor"};
     const newContact = { id:nextId(db.contacts), name:signal.contact.name||"Unknown", co:signal.contact.company||"", role:signal.contact.role||"", email:signal.contact.email||"", phone:signal.contact.phone||"", status:signal.contactType==="existing-customer"?"client":"prospect", score:signal.contactType==="existing-customer"?80:signal.contactType==="lead"?55:signal.contactType==="partner"?70:50, tags:[signal.contactType], lastTouch:today(), notes:signal.accountContext||"", category:catMap[signal.contactType]||"customer_lead", companyId:null };
-    const newTask = { id:nextId(db.tasks), title:signal.taskTitle||`Follow up with ${signal.contact.name}`, projectId:null, contactId:newContact.id, companyId:null, dealId:null, due:signal.taskDueDate||new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:signal.taskPriority||"medium", assignedTo:"CRM Agent", notes:signal.taskGuidance||"", status:"todo", category:"follow_up", source:"gmail_scan", recurrence:"none" };
+    const newTask = { id:nextId(db.tasks), title:signal.taskTitle||`Follow up with ${signal.contact.name}`, projectId:null, contactId:newContact.id, companyId:null, dealId:null, due:signal.taskDueDate||new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:signal.taskPriority||"medium", assignedTo:"CRM Agent", notes:signal.taskGuidance||"", status:"todo", category:"follow_up", source:"agent:gmail_scan", recurrence:"none" };
     setDB(d => ({...d, contacts:[...d.contacts,newContact], tasks:[...d.tasks,newTask], agentLogs:[{id:nextId(d.agentLogs), agent:"CRM Agent", type:"activity", message:`[IMPORTED] ${signal.contact.name} (${signal.contact.company})`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:signal.taskPriority||"medium"}, ...d.agentLogs]}));
     setGmailState(s => ({...s, signals:s.signals.map(sg=>sg===signal?{...sg,imported:true}:sg)}));
   };
@@ -1431,7 +1431,7 @@ const DealsView = ({ db, setDB, focus, setFocus }) => {
           if (rec.stage === "lost") {
             // Create re-engage task for 90 days
             const reengageDate = new Date(Date.now() + 90*86400000).toISOString().split("T")[0];
-            next = {...next, tasks:[...next.tasks, {id:nextId(next.tasks), title:`Re-engage: ${contact?.name||rec.name} (90 days post-loss)`, projectId:null, contactId:rec.contactId, companyId:rec.companyId, dealId:rec.id, due:reengageDate, done:false, priority:"medium", assignedTo:"CRM Agent", notes:`Deal "${rec.name}" was lost. Schedule re-engagement.`, status:"todo", category:"outreach", source:"orchestrator", recurrence:"none"}]};
+            next = {...next, tasks:[...next.tasks, {id:nextId(next.tasks), title:`Re-engage: ${contact?.name||rec.name} (90 days post-loss)`, projectId:null, contactId:rec.contactId, companyId:rec.companyId, dealId:rec.id, due:reengageDate, done:false, priority:"medium", assignedTo:"CRM Agent", notes:`Deal "${rec.name}" was lost. Schedule re-engagement.`, status:"todo", category:"outreach", source:"agent:orchestrator", recurrence:"none"}]};
             next = {...next, agentLogs:[{id:nextId(next.agentLogs), agent:"CRM Agent", type:"risk", message:`Deal lost: "${rec.name}". Re-engage task created for ${reengageDate}.`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:"medium"}, ...next.agentLogs]};
           }
         }
@@ -1609,6 +1609,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
   const [fStatus, setFStatus] = useState("open"); // open = not done/cancelled
   const [fPriority, setFPriority] = useState("all");
   const [fCategory, setFCategory] = useState("all");
+  const [fSource, setFSource] = useState("mine"); // mine = user-created, agent = auto-generated, all = everything
   const [searchQ, setSearchQ] = useState(""); // free-text search across title, contact, company, project
   const [sortBy, setSortBy] = useState("priority"); // priority, due
   const [groupBy, setGroupBy] = useState("none"); // none, project, company, person, status
@@ -1623,6 +1624,8 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
     else if (fStatus !== "all") tasks = tasks.filter(t => t.status === fStatus);
     if (fPriority !== "all") tasks = tasks.filter(t => t.priority === fPriority);
     if (fCategory !== "all") tasks = tasks.filter(t => t.category === fCategory);
+    if (fSource === "mine") tasks = tasks.filter(t => !(t.source||"").startsWith("agent:"));
+    else if (fSource === "agent") tasks = tasks.filter(t => (t.source||"").startsWith("agent:"));
     if (searchQ.trim()) {
       const q = searchQ.toLowerCase();
       tasks = tasks.filter(t => {
@@ -1640,7 +1643,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
       return 0;
     });
     return tasks;
-  }, [db.tasks, fStatus, fPriority, fCategory, searchQ, sortBy, db.contacts, db.companies, db.projects]);
+  }, [db.tasks, fStatus, fPriority, fCategory, fSource, searchQ, sortBy, db.contacts, db.companies, db.projects]);
 
   const grouped = useMemo(() => {
     if (groupBy === "none") return [{ label:null, tasks:filteredTasks }];
@@ -1693,6 +1696,11 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
               <select className="filter-select" value={fCategory} onChange={e=>setFCategory(e.target.value)}>
                 <option value="all">Any Category</option>
                 {TASK_CATEGORIES.map(c=><option key={c} value={c}>{c.replace(/_/g," ")}</option>)}
+              </select>
+              <select className="filter-select" value={fSource} onChange={e=>setFSource(e.target.value)}>
+                <option value="mine">Mine</option>
+                <option value="agent">Agent</option>
+                <option value="all">All Sources</option>
               </select>
               <select className="filter-select" value={sortBy} onChange={e=>setSortBy(e.target.value)}>
                 <option value="priority">Sort: Urgency</option><option value="due">Sort: Due Date</option>
@@ -1753,7 +1761,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Project"><SearchSelect value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search projects…"/></Field>
           <Field label="Deal"><SearchSelect value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search deals…"/></Field>
           <Field label="Assigned To"><Inp value={td.assignedTo} onChange={v=>setTD(p=>({...p,assignedTo:v}))}/></Field>
-          <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","orchestrator","news_engine","gmail_scan","ai_sweep"]}/></Field>
+          <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","user:voice","agent:orchestrator","agent:news_engine","agent:gmail_scan","agent:ai_sweep","agent:signal-engine","agent:claude_assist"]}/></Field>
         </div>
         <Field label="Notes"><Tex value={td.notes} onChange={v=>setTD(p=>({...p,notes:v}))}/></Field>
         {drawer.mode === "edit" && td.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="task" entityId={td.id}/>}
@@ -1856,7 +1864,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
       const companyId = proj?.companyId || null;
       setDB(db => {
         let id = nextId(db.tasks);
-        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:expandedId, companyId, source:"ai_sweep"}))]};
+        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:expandedId, companyId, source:"agent:ai_sweep"}))]};
       });
     }
     setAiProposals(null); setAiInput(""); setSelectedProposals({});
@@ -2234,12 +2242,12 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
   const dailyPriorities = allPriorities.filter(p => !dismissed[p.key]);
 
   const convertToTask = (p) => {
-    const newTask = { id:nextId(db.tasks), title:p.taskTitle, due:today(), done:false, priority:p.taskPriority||"medium", status:"done", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Completed from Orchestrator priority on ${today()}.`, source:"orchestrator", recurrence:"none" };
+    const newTask = { id:nextId(db.tasks), title:p.taskTitle, due:today(), done:false, priority:p.taskPriority||"medium", status:"done", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Completed from Orchestrator priority on ${today()}.`, source:"agent:orchestrator", recurrence:"none" };
     setDB(d=>({...d, tasks:[...d.tasks, newTask]}));
     setDismissed(d=>({...d,[p.key]:true}));
   };
   const snoozeItem = (p, newDate) => {
-    const newTask = { id:nextId(db.tasks), title:p.taskTitle||p.label, due:newDate, done:false, priority:p.taskPriority||"medium", status:"todo", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Snoozed from Orchestrator priority. Original: ${p.label}`, source:"orchestrator", recurrence:"none" };
+    const newTask = { id:nextId(db.tasks), title:p.taskTitle||p.label, due:newDate, done:false, priority:p.taskPriority||"medium", status:"todo", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Snoozed from Orchestrator priority. Original: ${p.label}`, source:"agent:orchestrator", recurrence:"none" };
     setDB(d=>({...d, tasks:[...d.tasks, newTask]}));
     setDismissed(d=>({...d,[p.key]:true}));
     setSnoozing(null);
@@ -2320,7 +2328,7 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
           if (item.relevance_score >= 7 && item.suggested_action) {
             const contact = db.contacts.find(c => c.companyId === company.id || c.co === company.name);
             const taskId = nextId([...db.tasks, ...newTasks]);
-            newTasks.push({ id:taskId, title:`News: ${item.suggested_action.substring(0,80)}`, projectId:null, contactId:contact?.id||null, companyId:company.id, dealId:null, due:new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:item.action_priority||"medium", assignedTo:"CRM Agent", notes:`News: "${item.headline}"\n${item.summary}\n\nSuggested action: ${item.suggested_action}`, status:"todo", category:"outreach", source:"news_engine", recurrence:"none" });
+            newTasks.push({ id:taskId, title:`News: ${item.suggested_action.substring(0,80)}`, projectId:null, contactId:contact?.id||null, companyId:company.id, dealId:null, due:new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:item.action_priority||"medium", assignedTo:"CRM Agent", notes:`News: "${item.headline}"\n${item.summary}\n\nSuggested action: ${item.suggested_action}`, status:"todo", category:"outreach", source:"agent:news_engine", recurrence:"none" });
           }
         });
 
@@ -2541,7 +2549,7 @@ Rules:
       for (const op of ops) {
         try {
           if (op.action === "create_task" && op.data) {
-            const t = { id: nextId(d.tasks||[]), ...op.data };
+            const t = { id: nextId(d.tasks||[]), ...op.data, source: "user:voice" };
             d.tasks = [...(d.tasks||[]), t];
             logs.push({icon:"Zap",color:"var(--amber)",text:`Created task: ${t.title}`});
           } else if (op.action === "update_contact" && op.data?.id) {
