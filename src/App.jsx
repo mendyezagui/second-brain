@@ -664,6 +664,7 @@ const NAV = [
   {id:"payments",icon:CreditCard,label:"Payments",parent:"_fin"},
   {divider:true},
   {id:"inbox",icon:Inbox,label:"Inbox"},
+  {id:"gcal",icon:Calendar,label:"Google Cal"},
   {id:"email",icon:Mail,label:"Email Lab"},
   {divider:true},
   {id:"ai_memories",icon:Sparkles,label:"AI Memories"},
@@ -709,7 +710,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"inbox",icon:Inbox,label:"Inbox"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"inbox",icon:Inbox,label:"Inbox"},{id:"gcal",icon:Calendar,label:"GCal"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -3161,6 +3162,503 @@ const InboxView = ({ session }) => {
 
 
 /* ────────────────────────────────────────────────────────
+   GCAL — Google Calendar (bi-directional)
+   Reads from public.calendar_events (written by calendar-sync).
+   Writes via calendar-action edge fn → both Google + local row.
+──────────────────────────────────────────────────────── */
+const GCAL_ACCOUNT_COLORS = ["var(--blue)","var(--purple)","var(--green)","var(--amber)","var(--red)"];
+
+const blankGCalEvent = (defaults = {}) => {
+  const now = new Date();
+  const start = new Date(now.getTime() + 60 * 60 * 1000); // +1h
+  start.setMinutes(0, 0, 0);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const toLocalInput = (d) => {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  return {
+    id:           null,
+    account_id:   defaults.account_id || "",
+    calendar_id:  defaults.calendar_id || null,
+    summary:      "",
+    description:  "",
+    location:     "",
+    all_day:      false,
+    start_time:   toLocalInput(start),
+    end_time:     toLocalInput(end),
+    google_event_id: null,
+  };
+};
+
+function gcalLocalToIsoOrDate(localStr, allDay) {
+  if (!localStr) return null;
+  if (allDay) {
+    // Strip time, return YYYY-MM-DD
+    return localStr.slice(0, 10);
+  }
+  // localStr like "2026-05-14T15:30" — interpret as local time
+  const d = new Date(localStr);
+  return d.toISOString();
+}
+
+function gcalIsoToLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function gcalDateBucketKey(d) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today.getTime() + 86400000);
+  const weekEnd = new Date(today.getTime() + 7 * 86400000);
+  if (d < today) return "Past";
+  if (d >= today && d < tomorrow) return "Today";
+  if (d >= tomorrow && d < new Date(today.getTime() + 2 * 86400000)) return "Tomorrow";
+  if (d < weekEnd) return "This week";
+  return "Later";
+}
+
+const GCalView = ({ session }) => {
+  const [accounts, setAccounts] = useState([]);
+  const [acctColors, setAcctColors] = useState({});
+  const [selectedAcct, setSelectedAcct] = useState(null);
+  const [events, setEvents] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [form, setForm] = useState(blankGCalEvent());
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirm, setConfirm] = useState(null);
+  const [error, setError] = useState(null);
+  const [actionMsg, setActionMsg] = useState(null);
+
+  const loadAccounts = async () => {
+    if (!supabase) return;
+    const { data, error: e } = await supabase
+      .from("email_accounts")
+      .select("id, address, display_name, provider, is_active")
+      .eq("is_active", true)
+      .order("address");
+    if (e) { setError(e.message); return; }
+    const list = data || [];
+    setAccounts(list);
+    const colors = {};
+    list.forEach((a, i) => { colors[a.id] = GCAL_ACCOUNT_COLORS[i % GCAL_ACCOUNT_COLORS.length]; });
+    setAcctColors(colors);
+  };
+
+  const loadEvents = async () => {
+    if (!supabase) return;
+    setLoading(true);
+    setError(null);
+    const past = new Date(Date.now() - 7 * 86400000).toISOString();
+    let q = supabase
+      .from("calendar_events")
+      .select("*")
+      .gte("start_time", past)
+      .order("start_time", { ascending: true })
+      .limit(500);
+    if (selectedAcct) q = q.eq("account_id", selectedAcct);
+    const { data, error: e } = await q;
+    if (e) { setError(e.message); setLoading(false); return; }
+    setEvents(data || []);
+    setLoading(false);
+  };
+
+  const triggerSync = async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      await fetch(`${SUPA_URL}/functions/v1/calendar-sync?primary_only=true`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" },
+      });
+    } catch (e) { setError(String(e)); }
+    await loadEvents();
+    setSyncing(false);
+  };
+
+  const openEvent = (ev) => {
+    setSelected(ev);
+    setCreatingNew(false);
+    setEditing(false);
+    setDrawerOpen(true);
+    setForm({
+      id:              ev.id,
+      account_id:      ev.account_id,
+      calendar_id:     ev.calendar_id,
+      summary:         ev.summary || "",
+      description:     ev.description || "",
+      location:        ev.location || "",
+      all_day:         !!ev.all_day,
+      start_time:      gcalIsoToLocalInput(ev.start_time),
+      end_time:        gcalIsoToLocalInput(ev.end_time),
+      google_event_id: ev.google_event_id,
+    });
+  };
+
+  const openNew = () => {
+    if (accounts.length === 0) { setError("No accounts available."); return; }
+    const defaultAcct = selectedAcct || accounts[0]?.id;
+    const acct = accounts.find(a => a.id === defaultAcct) || accounts[0];
+    setSelected(null);
+    setCreatingNew(true);
+    setEditing(true);
+    setDrawerOpen(true);
+    setForm(blankGCalEvent({ account_id: acct.id, calendar_id: acct.address }));
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setEditing(false);
+    setCreatingNew(false);
+    setSelected(null);
+  };
+
+  const callCalendarAction = async (payload) => {
+    const r = await fetch(`${SUPA_URL}/functions/v1/calendar-action`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  };
+
+  const handleSave = async () => {
+    if (!form.summary.trim()) { setError("Title is required."); return; }
+    if (!form.start_time)     { setError("Start time is required."); return; }
+    if (!form.end_time)       { setError("End time is required."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        action:      creatingNew ? "create" : "update",
+        summary:     form.summary,
+        description: form.description,
+        location:    form.location,
+        all_day:     form.all_day,
+        start:       gcalLocalToIsoOrDate(form.start_time, form.all_day),
+        end:         gcalLocalToIsoOrDate(form.end_time,   form.all_day),
+        timeZone:    Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+      if (creatingNew) {
+        payload.account_id  = form.account_id;
+        payload.calendar_id = form.calendar_id || (accounts.find(a => a.id === form.account_id)?.address);
+      } else {
+        payload.local_id = form.id;
+      }
+      const j = await callCalendarAction(payload);
+      const updatedEvent = j.event;
+      setEvents(es => {
+        if (creatingNew) return [updatedEvent, ...es].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+        return es.map(e => e.id === updatedEvent.id ? updatedEvent : e);
+      });
+      setActionMsg(creatingNew ? "Event created in Google Calendar." : "Event updated in Google Calendar.");
+      closeDrawer();
+    } catch (e) { setError(`Save failed: ${String(e.message || e)}`); }
+    setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!form.id) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await callCalendarAction({ action: "delete", local_id: form.id });
+      setEvents(es => es.filter(e => e.id !== form.id));
+      setActionMsg("Event deleted from Google Calendar.");
+      closeDrawer();
+    } catch (e) { setError(`Delete failed: ${String(e.message || e)}`); }
+    setDeleting(false);
+    setConfirm(null);
+  };
+
+  useEffect(() => { loadAccounts(); }, []);
+  useEffect(() => { loadEvents(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedAcct]);
+
+  // Group events by bucket
+  const grouped = useMemo(() => {
+    const buckets = { Today: [], Tomorrow: [], "This week": [], Later: [], Past: [] };
+    for (const ev of events) {
+      const d = new Date(ev.start_time);
+      const key = gcalDateBucketKey(d);
+      buckets[key].push(ev);
+    }
+    return buckets;
+  }, [events]);
+
+  const fmtTimeRange = (ev) => {
+    if (ev.all_day) return "All day";
+    const s = new Date(ev.start_time);
+    const e = new Date(ev.end_time);
+    const fmt = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `${fmt(s)} – ${fmt(e)}`;
+  };
+
+  const fmtDateLine = (ev) => {
+    const d = new Date(ev.start_time);
+    return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 24px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)", flexWrap: "wrap" }}>
+        <div className="display" style={{ fontSize: 18, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+          <Calendar size={18} color="var(--blue)" /> Google Calendar
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <button onClick={() => setSelectedAcct(null)} className="filter-chip"
+            style={selectedAcct === null ? { background: "var(--blue-dim)", color: "var(--blue)", borderColor: "var(--blue)" } : {}}>
+            All
+          </button>
+          {accounts.map(a => {
+            const color = acctColors[a.id];
+            const active = selectedAcct === a.id;
+            return (
+              <button key={a.id} onClick={() => setSelectedAcct(a.id)} className="filter-chip"
+                style={{ background: active ? color : "var(--bg-card)", color: active ? "#fff" : "var(--text-sec)", borderColor: active ? color : "var(--border)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: active ? "#fff" : color }} />
+                {a.address}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost" onClick={triggerSync} disabled={syncing}>
+            {syncing ? <><Loader size={13} className="spin" /> Syncing…</> : <><RefreshCw size={13} /> Sync</>}
+          </button>
+          <button className="btn btn-blue" onClick={openNew}>
+            <Plus size={13} /> New event
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ padding: "8px 24px", background: "var(--red-dim)", color: "var(--red)", fontSize: 12, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertCircle size={13} /> {error}
+          <button className="btn-icon" onClick={() => setError(null)} style={{ marginLeft: "auto" }}><X size={13} /></button>
+        </div>
+      )}
+      {actionMsg && !error && (
+        <div style={{ padding: "6px 24px", background: "var(--green-dim)", color: "var(--green)", fontSize: 12, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+          <CheckCircle size={13} /> {actionMsg}
+          <button className="btn-icon" onClick={() => setActionMsg(null)} style={{ marginLeft: "auto" }}><X size={13} /></button>
+        </div>
+      )}
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+        {loading && (
+          <div style={{ textAlign: "center", padding: 40, color: "var(--text-sec)" }}>
+            <Loader size={16} className="spin" /> Loading…
+          </div>
+        )}
+        {!loading && events.length === 0 && (
+          <div style={{ textAlign: "center", padding: 40, color: "var(--text-sec)" }}>
+            No events. Click "Sync" to pull from Google or "New event" to create one.
+          </div>
+        )}
+        {!loading && ["Today", "Tomorrow", "This week", "Later", "Past"].map(bucket => {
+          const items = grouped[bucket] || [];
+          if (items.length === 0) return null;
+          return (
+            <div key={bucket} style={{ marginBottom: 24 }}>
+              <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>
+                {bucket}{items.length > 1 ? ` · ${items.length} events` : ""}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {items.map(ev => {
+                  const color = acctColors[ev.account_id] || "var(--text-sec)";
+                  return (
+                    <div key={ev.id} className="card" onClick={() => openEvent(ev)}
+                      style={{ padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, borderLeft: `3px solid ${color}` }}>
+                      <div style={{ minWidth: 110, fontSize: 12, color: "var(--text-sec)", fontFamily: "var(--font-m)" }}>
+                        <div>{fmtDateLine(ev)}</div>
+                        <div style={{ color: "var(--text-dim)" }}>{fmtTimeRange(ev)}</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {ev.summary || "(no title)"}
+                        </div>
+                        {ev.location && (
+                          <div style={{ fontSize: 12, color: "var(--text-sec)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <Building size={10} style={{ marginRight: 4, verticalAlign: "middle" }} />{ev.location}
+                          </div>
+                        )}
+                      </div>
+                      {ev.conference_link && (
+                        <a href={ev.conference_link} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                          className="btn btn-ghost" style={{ fontSize: 11, padding: "4px 10px", textDecoration: "none" }}>
+                          <Mic size={11} /> Join
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {drawerOpen && (
+        <Fragment>
+          <div className="drawer-overlay" onClick={closeDrawer} />
+          <div className="drawer">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
+              <Calendar size={16} color="var(--blue)" />
+              <strong style={{ fontSize: 14 }}>{creatingNew ? "New event" : (editing ? "Edit event" : "Event")}</strong>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                {!editing && !creatingNew && (
+                  <button className="btn-icon" onClick={() => setEditing(true)} title="Edit"><Pencil size={14} /></button>
+                )}
+                {!creatingNew && (
+                  <button className="btn-icon delete" onClick={() => setConfirm("delete")} title="Delete"><Trash2 size={14} /></button>
+                )}
+                <button className="btn-icon" onClick={closeDrawer}><X size={14} /></button>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
+              {creatingNew && (
+                <div className="form-group">
+                  <label className="form-label">Account</label>
+                  <select className="input" value={form.account_id}
+                    onChange={e => {
+                      const acctId = e.target.value;
+                      const acct = accounts.find(a => a.id === acctId);
+                      setForm(f => ({ ...f, account_id: acctId, calendar_id: acct?.address || null }));
+                    }}>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.address}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Title</label>
+                {editing ? (
+                  <input className="input" value={form.summary} onChange={e => setForm(f => ({ ...f, summary: e.target.value }))} placeholder="Event title" />
+                ) : (
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text)" }}>{form.summary || "(no title)"}</div>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input type="checkbox" checked={form.all_day} disabled={!editing}
+                    onChange={e => setForm(f => ({ ...f, all_day: e.target.checked }))} />
+                  All day
+                </label>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div className="form-group">
+                  <label className="form-label">Start</label>
+                  {editing ? (
+                    <input className="input" type={form.all_day ? "date" : "datetime-local"}
+                      value={form.all_day ? form.start_time.slice(0, 10) : form.start_time}
+                      onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} />
+                  ) : (
+                    <div style={{ fontSize: 13, color: "var(--text-sec)" }}>
+                      {form.all_day ? form.start_time.slice(0, 10) : new Date(form.start_time).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">End</label>
+                  {editing ? (
+                    <input className="input" type={form.all_day ? "date" : "datetime-local"}
+                      value={form.all_day ? form.end_time.slice(0, 10) : form.end_time}
+                      onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} />
+                  ) : (
+                    <div style={{ fontSize: 13, color: "var(--text-sec)" }}>
+                      {form.all_day ? form.end_time.slice(0, 10) : new Date(form.end_time).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Location</label>
+                {editing ? (
+                  <input className="input" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
+                ) : (
+                  <div style={{ fontSize: 13, color: "var(--text-sec)" }}>{form.location || "—"}</div>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Description</label>
+                {editing ? (
+                  <textarea className="input" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ minHeight: 120 }} />
+                ) : (
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", whiteSpace: "pre-wrap" }}>{form.description || "—"}</div>
+                )}
+              </div>
+              {!creatingNew && selected?.conference_link && (
+                <div className="form-group">
+                  <label className="form-label">Conference link</label>
+                  <a href={selected.conference_link} target="_blank" rel="noreferrer"
+                    style={{ fontSize: 13, color: "var(--blue)", wordBreak: "break-all" }}>
+                    {selected.conference_link}
+                  </a>
+                </div>
+              )}
+              {!creatingNew && Array.isArray(selected?.attendees) && selected.attendees.length > 0 && (
+                <div className="form-group">
+                  <label className="form-label">Attendees</label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {selected.attendees.map((att, i) => (
+                      <div key={i} style={{ fontSize: 12, color: "var(--text-sec)" }}>
+                        {att.email}{att.responseStatus ? ` · ${att.responseStatus}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              {editing ? (
+                <Fragment>
+                  <button className="btn btn-ghost" onClick={() => {
+                    if (creatingNew) closeDrawer();
+                    else { setEditing(false); openEvent(selected); }
+                  }}>Cancel</button>
+                  <button className="btn btn-blue" onClick={handleSave} disabled={saving}>
+                    {saving ? <><Loader size={13} className="spin" /> Saving…</> : <><Save size={13} /> Save</>}
+                  </button>
+                </Fragment>
+              ) : (
+                <button className="btn btn-ghost" onClick={closeDrawer}>Close</button>
+              )}
+            </div>
+          </div>
+          {confirm === "delete" && (
+            <div className="confirm-overlay" onClick={() => setConfirm(null)}>
+              <div className="confirm-box" onClick={e => e.stopPropagation()}>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Delete event?</div>
+                <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 18 }}>
+                  This removes "{form.summary}" from Google Calendar and from Second Brain. It cannot be undone here (Google Trash retains it for 30 days).
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="btn btn-ghost" onClick={() => setConfirm(null)}>Cancel</button>
+                  <button className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
+                    {deleting ? <><Loader size={13} className="spin" /> Deleting…</> : <><Trash2 size={13} /> Delete</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Fragment>
+      )}
+    </div>
+  );
+};
+
+
+/* ────────────────────────────────────────────────────────
    EMAIL LAB
 ──────────────────────────────────────────────────────── */
 const EmailView = ({ db, setDB }) => {
@@ -4861,7 +5359,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","calendar","voice","email","inbox","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","calendar","voice","email","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
@@ -5000,6 +5498,7 @@ export default function App() {
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
     email:        <EmailView db={db} setDB={setDB}/>,
     inbox:        <InboxView session={session}/>,
+    gcal:         <GCalView session={session}/>,
     admin:        <AdminView session={session}/>,
   };
 
