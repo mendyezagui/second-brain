@@ -217,6 +217,7 @@ const TASK_CATEGORIES = ["follow_up","outreach","admin","research","meeting_prep
 const DOCUMENT_ENTITY_TYPES = [
   { type:"contact", key:"contacts", label:"Contact", name:r=>r.name },
   { type:"company", key:"companies", label:"Company", name:r=>r.name },
+  { type:"document", key:"documents", label:"Document", name:r=>r.title || r.file_name || r.url },
   { type:"project", key:"projects", label:"Project", name:r=>r.name },
   { type:"task", key:"tasks", label:"Task", name:r=>r.title },
   { type:"campaign", key:"campaigns", label:"Campaign", name:r=>r.name },
@@ -224,8 +225,32 @@ const DOCUMENT_ENTITY_TYPES = [
   { type:"invoice", key:"invoices", label:"Invoice", name:r=>r.number || r.client },
   { type:"payment", key:"payments", label:"Payment", name:r=>`${r.date || "Payment"} · ${fmt(r.amount || 0)}` },
   { type:"strategy", key:"strategies", label:"Strategy", name:r=>r.name },
+  { type:"goal", key:"goals", label:"Goal", name:r=>r.name },
   { type:"ai_memory", key:"ai_memories", label:"AI Memory", name:r=>r.subject || r.memory_summary },
 ];
+const RECORD_ROUTE_ALIASES = {
+  contact:"contacts", contacts:"contact",
+  company:"companies", companies:"company",
+  deal:"deals", deals:"deal",
+  document:"documents", documents:"document",
+  project:"projects", projects:"project",
+  task:"tasks", tasks:"task",
+  campaign:"campaigns", campaigns:"campaign",
+  invoice:"invoices", invoices:"invoice",
+  payment:"payments", payments:"payment",
+  strategy:"strategies", strategies:"strategy",
+  ai_memory:"ai-memories", "ai-memories":"ai_memory", ai_memories:"ai_memory",
+  goal:"goals", goals:"goal",
+};
+const recordPath = (type, id) => `#/${RECORD_ROUTE_ALIASES[type] || `${type}s`}/${id}`;
+const parseAppHash = () => {
+  const raw = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+  const [head, id] = raw.split("/");
+  const type = RECORD_ROUTE_ALIASES[head];
+  if (type && id) return { view:"record", record:{ type, id } };
+  const valid = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","mstack","ai_memories","multi_llm","voitra_gate","admin"];
+  return { view:valid.includes(head) ? head : "dashboard", record:null };
+};
 const daysBetween = (a,b) => Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
 const today = () => new Date().toISOString().split("T")[0];
 
@@ -380,19 +405,25 @@ const SearchSelect = ({ value, onChange, options, placeholder, entityType, navig
 const ENTITY_NAV = {
   contact: { view:"crm",       focusType:"contact" },
   company: { view:"companies", focusType:"company" },
+  document:{ view:"documents", focusType:"document" },
   deal:    { view:"deals",     focusType:"deal"    },
   project: { view:"projects",  focusType:"project" },
   task:    { view:"tasks",     focusType:"task"    },
   invoice: { view:"invoices",  focusType:"invoice" },
+  payment: { view:"payments",  focusType:"payment" },
+  strategy:{ view:"strategies",focusType:"strategy" },
+  ai_memory:{ view:"ai_memories", focusType:"ai_memory" },
+  goal:    { view:"goals",     focusType:"goal" },
 };
 const EntityLink = ({ type, id, navigate, children, className, style, title }) => {
-  const cfg = ENTITY_NAV[type];
-  if (!id || !navigate || !cfg) return <span className={className} style={style}>{children}</span>;
+  const cfg = ENTITY_NAV[type] || RECORD_ROUTE_ALIASES[type];
+  if (!id || !cfg) return <span className={className} style={style}>{children}</span>;
+  const openRecord = () => navigate ? navigate("record", { type, id }) : window.location.hash = recordPath(type, id);
   return (
     <span
       className={className}
       title={title || "Open"}
-      onClick={(e) => { e.stopPropagation(); navigate(cfg.view, { type: cfg.focusType, id }); }}
+      onClick={(e) => { e.stopPropagation(); openRecord(); }}
       style={{ ...style, cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted", textDecorationColor:"var(--border-hi)", textUnderlineOffset:2 }}
     >{children}</span>
   );
@@ -1126,7 +1157,7 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(c=>(
-            <div key={c.id} className="row-hover" onClick={()=>{setSel(c.id);setShowGmail(false);}}
+            <div key={c.id} className="row-hover" onClick={()=>navigate("record",{type:"contact",id:c.id})}
               style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id&&!showGmail?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div style={{ minWidth:0 }}>
                 <div style={{ display:"flex", gap:6, alignItems:"center" }}>
@@ -1349,7 +1380,7 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
           {filtered.map(c=>{
             const contactCount = db.contacts.filter(ct=>ct.companyId===c.id||ct.co===c.name).length;
             return (
-              <div key={c.id} className="row-hover" onClick={()=>setSel(c.id)}
+              <div key={c.id} className="row-hover" onClick={()=>navigate("record",{type:"company",id:c.id})}
                 style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <div>
                   <div style={{ fontSize:13, fontWeight:600 }}>{c.name}</div>
@@ -1523,7 +1554,7 @@ const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
         {db.deals.map(deal=>{
           const contact = db.contacts.find(c=>c.id===deal.contactId);
           return (
-            <div key={deal.id} className="card row-hover" style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14 }}>
+            <div key={deal.id} className="card row-hover" onClick={()=>navigate("record",{type:"deal",id:deal.id})} style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer" }}>
               <div style={{ width:10, height:10, borderRadius:"50%", background:stageColor[deal.stage]||"var(--text-sec)", flexShrink:0 }}/>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{deal.name}</div>
@@ -1767,8 +1798,8 @@ const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
                 const project = db.projects.find(p=>p.id===t.projectId);
                 const isOverdue = t.due && t.due < today() && !t.done;
                 return (
-                  <div key={t.id} className="card-el row-hover" style={{ padding:"12px 14px", display:"flex", gap:12, alignItems:"flex-start", opacity:t.done?0.55:1, marginBottom:6, borderLeft:isOverdue?"3px solid var(--red)":t.priority==="critical"?"3px solid var(--red)":undefined }}>
-                    <button onClick={()=>toggleTask(t.id)} style={{ width:18, height:18, borderRadius:4, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", marginTop:2 }}>
+                  <div key={t.id} className="card-el row-hover" onClick={()=>navigate("record",{type:"task",id:t.id})} style={{ padding:"12px 14px", display:"flex", gap:12, alignItems:"flex-start", opacity:t.done?0.55:1, marginBottom:6, borderLeft:isOverdue?"3px solid var(--red)":t.priority==="critical"?"3px solid var(--red)":undefined, cursor:"pointer" }}>
+                    <button onClick={(e)=>{e.stopPropagation();toggleTask(t.id);}} style={{ width:18, height:18, borderRadius:4, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", marginTop:2 }}>
                       {t.done&&<Check size={11} color="#fff"/>}
                     </button>
                     <div style={{ flex:1 }}>
@@ -1928,7 +1959,7 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
         const isExpanded = expandedId === p.id;
         return (
           <div key={p.id}>
-            <div className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}`, cursor:"pointer", borderRadius:isExpanded?"12px 12px 0 0":undefined }} onClick={()=>setExpandedId(isExpanded?null:p.id)}>
+            <div className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}`, cursor:"pointer", borderRadius:isExpanded?"12px 12px 0 0":undefined }} onClick={()=>navigate("record",{type:"project",id:p.id})}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
                 <div>
                   <div style={{ fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{p.name} <span style={{ fontSize:9, padding:"1px 6px", borderRadius:8, background: (p.type||"client")==="strategic"?"var(--purple-dim)":"var(--blue-dim)", color:(p.type||"client")==="strategic"?"var(--purple)":"var(--blue)", fontWeight:500 }}>{(p.type||"client")}</span></div>
@@ -1944,7 +1975,7 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
               <div style={{ display:"flex", alignItems:"center", gap:12 }}>
                 <div style={{ flex:1, height:5, background:"var(--bg-el)", borderRadius:3 }}><div style={{ height:"100%", width:`${p.progress}%`, background:p.progress<40?"var(--red)":p.progress<70?"var(--amber)":"var(--green)", borderRadius:3, transition:"width .5s" }}/></div>
                 <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{p.progress}%</span>
-                <ChevronDown size={14} color="var(--text-sec)" style={{ transform:isExpanded?"rotate(180deg)":"none", transition:"transform .2s" }}/>
+                <ChevronDown size={14} color="var(--text-sec)" onClick={(e)=>{e.stopPropagation();setExpandedId(isExpanded?null:p.id);}} style={{ transform:isExpanded?"rotate(180deg)":"none", transition:"transform .2s", cursor:"pointer" }}/>
               </div>
             </div>
 
@@ -2109,7 +2140,7 @@ const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
       </div>}
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
         {db.invoices.map(inv=>(
-          <div key={inv.id} className="card row-hover" style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
+          <div key={inv.id} className="card row-hover" onClick={()=>navigate("record",{type:"invoice",id:inv.id})} style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
             <div style={{ flex:1 }}>
               <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}><span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{inv.number}</span><span style={{ fontSize:13, fontWeight:600 }}>{inv.contactId ? <EntityLink type="contact" id={inv.contactId} navigate={navigate}>{inv.client}</EntityLink> : inv.client}</span></div>
               {inv.due&&<div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due: {inv.due}</div>}
@@ -3063,17 +3094,23 @@ const InboxView = ({ session }) => {
                       </button>
                     </div>
                     <div className="form-group">
-                      <label className="form-label">From</label>
-                      <select className="input" value={replyFromAccount} onChange={e => setReplyFromAccount(e.target.value)}>
-                        {accounts.map(a => (
-                          <option key={a.id} value={a.id}>
-                            {a.display_name ? `${a.display_name} <${a.address}>` : a.address}
-                          </option>
-                        ))}
-                      </select>
+                      <label className="form-label">From {accounts.length > 1 && <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>· {accounts.length} accounts</span>}</label>
+                      {accounts.length === 0 ? (
+                        <div className="input" style={{ color: "var(--text-dim)" }}>Loading accounts…</div>
+                      ) : (
+                        <select className="input" value={replyFromAccount || ""}
+                          onChange={e => setReplyFromAccount(e.target.value)}
+                          style={{ cursor: "pointer", appearance: "auto" }}>
+                          {accounts.map(a => (
+                            <option key={a.id} value={a.id}>
+                              {a.display_name ? `${a.display_name} (${a.address})` : a.address}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       {replyFromAccount && selected && replyFromAccount !== selected.account_id && (
                         <div style={{ fontSize: 11, color: "var(--amber)", marginTop: 4 }}>
-                          Sending from a different account — won't thread with the original conversation.
+                          Sending from a different account — won&apos;t thread with the original conversation.
                         </div>
                       )}
                     </div>
@@ -4283,7 +4320,7 @@ const VoitraGateView = () => {
 
 const PAYMENT_METHODS = ["check","wire","ach","card","cash","other"];
 const blankPayment = () => ({ amount:0, date:today(), payer:"", payer_type:"company", method:"check", reference:"", notes:"", allocations:[] });
-const PaymentsView = ({ db, setDB }) => {
+const PaymentsView = ({ db, setDB, navigate }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [pd, setPD] = useState(blankPayment());
@@ -4313,7 +4350,7 @@ const PaymentsView = ({ db, setDB }) => {
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
       {payments.length===0&&<div style={{textAlign:"center",padding:"3rem",color:"var(--text-sec)"}}>No payments recorded yet.</div>}
-      {payments.map(p=>{const allocs=getAllocs(p.id);return(<div key={p.id} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",border:"1px solid var(--border)"}}>
+      {payments.map(p=>{const allocs=getAllocs(p.id);return(<div key={p.id} onClick={()=>navigate("record",{type:"payment",id:p.id})} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",border:"1px solid var(--border)",cursor:"pointer"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.4rem"}}>
           <div style={{display:"flex",alignItems:"center",gap:"0.75rem"}}>
             <span style={{fontWeight:700,fontSize:"1.1rem",color:"var(--green)"}}>{"$"+(p.amount/100).toLocaleString()}</span>
@@ -4321,8 +4358,8 @@ const PaymentsView = ({ db, setDB }) => {
             <span style={{fontSize:"0.75rem",padding:"2px 8px",borderRadius:20,background:"var(--blue)22",color:"var(--blue)",fontWeight:600}}>{p.method}</span>
           </div>
           <div style={{display:"flex",gap:"0.5rem"}}>
-            <button onClick={()=>{setPD({...p,allocations:allocs.map(a=>({invoice_id:a.invoice_id,amount:a.amount}))});setDrawer({mode:"edit"})}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--text)"}}>Edit</button>
-            <button onClick={()=>setConfirm(p)} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--red,#e53e3e)"}}>Del</button>
+            <button onClick={(e)=>{e.stopPropagation();setPD({...p,allocations:allocs.map(a=>({invoice_id:a.invoice_id,amount:a.amount}))});setDrawer({mode:"edit"})}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--text)"}}>Edit</button>
+            <button onClick={(e)=>{e.stopPropagation();setConfirm(p)}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--red,#e53e3e)"}}>Del</button>
           </div>
         </div>
         <div style={{display:"flex",gap:"1rem",fontSize:"0.78rem",color:"var(--text-dim)",flexWrap:"wrap"}}>
@@ -4385,7 +4422,7 @@ const PaymentsView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    DOCUMENTS VIEW
 ──────────────────────────────────────────────────────── */
-const DocumentsView = ({ db, setDB }) => {
+const DocumentsView = ({ db, setDB, navigate }) => {
   const [drawer, setDrawer] = useState(null);
   const [doc, setDoc] = useState(blankDocument());
   const [query, setQuery] = useState("");
@@ -4482,11 +4519,11 @@ const DocumentsView = ({ db, setDB }) => {
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <tbody>
               {docs.map(d => (
-                <tr key={d.id} className="row-hover" style={{ borderBottom:"1px solid var(--border)" }}>
+                <tr key={d.id} className="row-hover" onClick={()=>navigate("record",{type:"document",id:d.id})} style={{ borderBottom:"1px solid var(--border)", cursor:"pointer" }}>
                   <td style={{ padding:"12px 14px" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       {(d.file_name || d.storage_path) ? <Paperclip size={14} color="var(--blue)"/> : <ExternalLink size={14} color="var(--blue)"/>}
-                      <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
+                      <span style={{ fontWeight:600, color:"var(--blue)", textDecoration:"underline", textDecorationStyle:"dotted", textUnderlineOffset:2 }}>{d.title || d.file_name || "Untitled document"}</span>
                     </div>
                     <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{getDocKindLabel(d)}{d.file_name ? ` · ${d.file_name}` : ""}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
                     {d.description && <div style={{ fontSize:12, color:"var(--text-sec)", marginTop:5, lineHeight:1.4 }}>{d.description}</div>}
@@ -4499,7 +4536,7 @@ const DocumentsView = ({ db, setDB }) => {
                     </div>
                   </td>
                   <td style={{ padding:"12px 14px", textAlign:"right", width:70 }}>
-                    <button className="btn-icon" title="Edit document" onClick={() => { setDoc({ ...d, associations:d.associations || [] }); setDrawer("edit"); }}><Pencil size={13}/></button>
+                    <button className="btn-icon" title="Edit document" onClick={(e) => { e.stopPropagation(); setDoc({ ...d, associations:d.associations || [] }); setDrawer("edit"); }}><Pencil size={13}/></button>
                   </td>
                 </tr>
               ))}
@@ -4708,7 +4745,7 @@ const MEMORY_TYPES = ["general","preference","feedback","context","decision","re
 const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
 const blankMemory = () => ({ subject:"", ai_system:"claude", memory_summary:"", memory_type:"general", source_context:"", companyId:"", contactId:"", dealId:"", projectId:"", strategyId:"" });
 
-const AIMemoriesView = ({ db, setDB }) => {
+const AIMemoriesView = ({ db, setDB, navigate }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [md, setMd] = useState({});
@@ -4829,8 +4866,8 @@ const AIMemoriesView = ({ db, setDB }) => {
             <tbody>
               {items.map(m => (
                 <Fragment key={m.id}>
-                  <tr style={{ borderBottom: expandedId===m.id ? "none" : "1px solid var(--border)", cursor:"pointer", transition:"background 0.15s" }} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-sec)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                    <td style={{ padding:"12px 14px" }} onClick={()=>setExpandedId(expandedId===m.id?null:m.id)}>
+                  <tr style={{ borderBottom: expandedId===m.id ? "none" : "1px solid var(--border)", cursor:"pointer", transition:"background 0.15s" }} onClick={()=>navigate("record",{type:"ai_memory",id:m.id})} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-sec)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <td style={{ padding:"12px 14px" }}>
                       <div style={{ fontWeight:600, fontSize:13, lineHeight:1.4 }}>{m.subject || "Untitled Memory"}</div>
                       {(m.files||[]).length > 0 && <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", display:"flex", alignItems:"center", gap:3, marginTop:2 }}><Paperclip size={10}/> {(m.files||[]).length} file{(m.files||[]).length>1?"s":""}</span>}
                     </td>
@@ -4951,7 +4988,7 @@ const AIMemoriesView = ({ db, setDB }) => {
   );
 }
 const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"medium", notes:"", links:[], files:[] });
-const StrategiesView = ({ db, setDB }) => {
+const StrategiesView = ({ db, setDB, navigate }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [sd, setSD] = useState(blankStrategy());
@@ -5033,7 +5070,7 @@ const StrategiesView = ({ db, setDB }) => {
         const isExpanded = expandedId === s.id;
         return (
           <div key={s.id}>
-            <div className="card row-hover" style={{ padding: 16, borderLeft: "3px solid " + statusColor(s.status), cursor: "pointer", borderRadius: isExpanded ? "12px 12px 0 0" : undefined }} onClick={() => setExpandedId(isExpanded ? null : s.id)}>
+            <div className="card row-hover" style={{ padding: 16, borderLeft: "3px solid " + statusColor(s.status), cursor: "pointer", borderRadius: isExpanded ? "12px 12px 0 0" : undefined }} onClick={() => navigate("record",{type:"strategy",id:s.id})}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{s.name} <Tag label={s.priority} /></div>
@@ -5046,7 +5083,7 @@ const StrategiesView = ({ db, setDB }) => {
                 </div>
               </div>
               {s.description && <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>{s.description}</div>}
-              <ChevronDown size={14} color="var(--text-sec)" style={{ transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform .2s", marginTop: 4 }} />
+              <ChevronDown size={14} color="var(--text-sec)" onClick={(e)=>{e.stopPropagation();setExpandedId(isExpanded ? null : s.id);}} style={{ transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform .2s", marginTop: 4, cursor:"pointer" }} />
             </div>
 
             {isExpanded && <div className="card-el" style={{ padding: 16, borderRadius: "0 0 12px 12px", borderTop: "1px dashed var(--border)" }}>
@@ -5072,7 +5109,7 @@ const StrategiesView = ({ db, setDB }) => {
               {linkedProjects.length > 0 ? linkedProjects.map(p => (
                 <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
                   <Briefcase size={12} color="var(--text-sec)" />
-                  <span style={{ fontSize: 12, flex: 1 }}>{p.name}</span>
+                  <EntityLink type="project" id={p.id} navigate={navigate} style={{ fontSize: 12, flex: 1 }}>{p.name}</EntityLink>
                   <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{p.client}</span>
                   <Tag label={p.status} />
                   <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{p.progress}%</span>
@@ -5138,7 +5175,7 @@ const StrategiesView = ({ db, setDB }) => {
 const GOAL_STATUSES = ["active","completed","paused","cancelled"];
 const GOAL_CATEGORIES = ["professional","personal"];
 const blankGoal = () => ({ name:"", description:"", category:"professional", status:"active", target_value:0, current_value:0, unit:"", period:"annual", start_date:today(), end_date:"", priority_order:0, notes:"" });
-const GoalsView = ({ db, setDB }) => {
+const GoalsView = ({ db, setDB, navigate }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [gd, setGD] = useState(blankGoal());
@@ -5172,7 +5209,7 @@ const GoalsView = ({ db, setDB }) => {
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
       {goals.length===0&&<div style={{textAlign:"center",padding:"3rem",color:"var(--text-sec)"}}>No goals found. Create one to get started!</div>}
-      {goals.map((g,idx)=>(<div key={g.id} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",border:"1px solid var(--border)"}}>
+      {goals.map((g,idx)=>(<div key={g.id} onClick={()=>navigate("record",{type:"goal",id:g.id})} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",border:"1px solid var(--border)",cursor:"pointer"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.5rem"}}>
           <div style={{display:"flex",alignItems:"center",gap:"0.75rem"}}>
             <div style={{display:"flex",flexDirection:"column",gap:2}}>
@@ -5184,8 +5221,8 @@ const GoalsView = ({ db, setDB }) => {
             <span style={{fontSize:"0.75rem",padding:"2px 8px",borderRadius:20,background:statusColor(g.status)+"22",color:statusColor(g.status),fontWeight:600}}>{g.status}</span>
           </div>
           <div style={{display:"flex",gap:"0.5rem"}}>
-            <button onClick={()=>{setGD({...g});setDrawer({mode:"edit"})}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--text)"}}>Edit</button>
-            <button onClick={()=>setConfirm(g)} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--red,#e53e3e)"}}>Del</button>
+            <button onClick={(e)=>{e.stopPropagation();setGD({...g});setDrawer({mode:"edit"})}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--text)"}}>Edit</button>
+            <button onClick={(e)=>{e.stopPropagation();setConfirm(g)}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--red,#e53e3e)"}}>Del</button>
           </div>
         </div>
         {g.description&&<div style={{fontSize:"0.85rem",color:"var(--text-sec)",marginBottom:"0.5rem"}}>{g.description}</div>}
@@ -5470,16 +5507,183 @@ const AdminView = ({ session }) => {
 };
 
 /* ────────────────────────────────────────────────────────
+   RECORD DETAIL ROUTER
+──────────────────────────────────────────────────────── */
+const recordListViewFor = (type) => ({
+  contact:"crm", company:"companies", deal:"deals", document:"documents", project:"projects",
+  task:"tasks", campaign:"marketing", invoice:"invoices", payment:"payments", strategy:"strategies",
+  goal:"goals", ai_memory:"ai_memories"
+}[type] || "dashboard");
+
+const recordLink = (type, id, db, navigate) => {
+  const cfg = DOCUMENT_ENTITY_TYPES.find(c => c.type === type);
+  const rec = cfg ? (db[cfg.key] || []).find(r => String(r.id) === String(id)) : null;
+  if (!rec) return null;
+  return <EntityLink type={type} id={id} navigate={navigate}>{cfg.name(rec) || `${cfg.label} #${id}`}</EntityLink>;
+};
+
+const RecordDetailView = ({ db, setDB, record, navigate }) => {
+  const type = record?.type;
+  const id = record?.id;
+  const cfg = DOCUMENT_ENTITY_TYPES.find(c => c.type === type);
+  const rec = cfg ? (db[cfg.key] || []).find(r => String(r.id) === String(id)) : null;
+
+  if (!cfg || !rec) {
+    return (
+      <div style={{ padding:32 }}>
+        <div className="card" style={{ padding:28, maxWidth:720 }}>
+          <div className="display" style={{ fontSize:20, fontWeight:800, marginBottom:8 }}>Record not found</div>
+          <p style={{ fontSize:13, color:"var(--text-sec)", lineHeight:1.6, marginBottom:16 }}>No record exists for `{type || "unknown"}` with ID `{id || "unknown"}`.</p>
+          <button className="btn btn-blue" onClick={()=>navigate(recordListViewFor(type))}>Back</button>
+        </div>
+      </div>
+    );
+  }
+
+  const title = cfg.name(rec) || `${cfg.label} #${rec.id}`;
+  const scalarEntries = Object.entries(rec).filter(([,v]) => v == null || ["string","number","boolean"].includes(typeof v));
+  const relatedDocs = (db.documents || []).filter(d => docHasAssociation(d, type, rec.id));
+  const relatedTasks = (db.tasks || []).filter(t =>
+    (type === "contact" && String(t.contactId) === String(rec.id)) ||
+    (type === "company" && String(t.companyId) === String(rec.id)) ||
+    (type === "deal" && String(t.dealId) === String(rec.id)) ||
+    (type === "project" && String(t.projectId) === String(rec.id))
+  );
+  const relatedDeals = type === "contact"
+    ? (db.deals || []).filter(d => String(d.contactId) === String(rec.id))
+    : type === "company"
+      ? (db.deals || []).filter(d => String(d.companyId) === String(rec.id) || (db.contacts || []).some(c => String(c.companyId) === String(rec.id) && String(c.id) === String(d.contactId)))
+      : [];
+  const relatedContacts = type === "company" ? (db.contacts || []).filter(c => String(c.companyId) === String(rec.id) || c.co === rec.name) : [];
+  const associatedRecords = type === "document" ? (rec.associations || []) : [];
+  const sourceUrl = recordPath(type, rec.id);
+
+  const copyUrl = () => navigator.clipboard?.writeText(window.location.origin + window.location.pathname + sourceUrl);
+
+  return (
+    <div style={{ padding:24, maxWidth:1180, margin:"0 auto" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:16, marginBottom:18 }}>
+        <div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+            <Tag label={cfg.label}/>
+            <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>ID {rec.id}</span>
+          </div>
+          <div className="display" style={{ fontSize:26, fontWeight:800, lineHeight:1.15 }}>{title}</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:8 }}>{sourceUrl}</div>
+        </div>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
+          <button className="btn btn-ghost" onClick={copyUrl}><Copy size={13}/>Copy Link</button>
+          <button className="btn btn-blue" onClick={()=>navigate(recordListViewFor(type))}>Open Module</button>
+        </div>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr) 340px", gap:18 }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+          <div className="card" style={{ padding:18 }}>
+            <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>Details</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:10 }}>
+              {scalarEntries.map(([k,v]) => (
+                <div key={k} className="card-el" style={{ padding:"10px 12px", minWidth:0 }}>
+                  <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", textTransform:"uppercase", marginBottom:4 }}>{k}</div>
+                  <div style={{ fontSize:13, lineHeight:1.5, overflowWrap:"anywhere" }}>{v == null || v === "" ? "—" : String(v)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {associatedRecords.length > 0 && (
+            <div className="card" style={{ padding:18 }}>
+              <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>Associated Records</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {associatedRecords.map(a => (
+                  <div key={docAssociationKey(a)} className="card-el" style={{ padding:"10px 12px" }}>
+                    {recordLink(a.type, a.id, db, navigate) || getDocEntityLabel(db, a)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {type !== "document" && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType={type} entityId={rec.id}/>}
+          <ActivityTimeline events={db.events || []} entityType={type} entityId={rec.id}/>
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {["contactId","companyId","dealId","projectId","invoice_id","payment_id","strategyId"].some(k => rec[k]) && (
+            <div className="card" style={{ padding:16 }}>
+              <div className="display" style={{ fontSize:14, fontWeight:700, marginBottom:10 }}>Linked Records</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8, fontSize:13 }}>
+                {rec.contactId && <div>Contact: {recordLink("contact", rec.contactId, db, navigate) || rec.contactId}</div>}
+                {rec.companyId && <div>Company: {recordLink("company", rec.companyId, db, navigate) || rec.companyId}</div>}
+                {rec.dealId && <div>Deal: {recordLink("deal", rec.dealId, db, navigate) || rec.dealId}</div>}
+                {rec.projectId && <div>Project: {recordLink("project", rec.projectId, db, navigate) || rec.projectId}</div>}
+                {rec.invoice_id && <div>Invoice: {recordLink("invoice", rec.invoice_id, db, navigate) || rec.invoice_id}</div>}
+                {rec.payment_id && <div>Payment: {recordLink("payment", rec.payment_id, db, navigate) || rec.payment_id}</div>}
+                {rec.strategyId && <div>Strategy: {recordLink("strategy", rec.strategyId, db, navigate) || rec.strategyId}</div>}
+              </div>
+            </div>
+          )}
+
+          {relatedContacts.length > 0 && (
+            <div className="card" style={{ padding:16 }}>
+              <div className="display" style={{ fontSize:14, fontWeight:700, marginBottom:10 }}>Contacts</div>
+              {relatedContacts.slice(0,8).map(c => <div key={c.id} className="card-el" style={{ padding:10, marginBottom:6 }}>{recordLink("contact", c.id, db, navigate)}</div>)}
+            </div>
+          )}
+
+          {relatedDeals.length > 0 && (
+            <div className="card" style={{ padding:16 }}>
+              <div className="display" style={{ fontSize:14, fontWeight:700, marginBottom:10 }}>Deals</div>
+              {relatedDeals.slice(0,8).map(d => <div key={d.id} className="card-el" style={{ padding:10, marginBottom:6 }}>{recordLink("deal", d.id, db, navigate)} <span className="mono" style={{ color:"var(--text-sec)", fontSize:10 }}>· {fmt(d.value || 0)}</span></div>)}
+            </div>
+          )}
+
+          {relatedTasks.length > 0 && (
+            <div className="card" style={{ padding:16 }}>
+              <div className="display" style={{ fontSize:14, fontWeight:700, marginBottom:10 }}>Tasks</div>
+              {relatedTasks.slice(0,10).map(t => <div key={t.id} className="card-el" style={{ padding:10, marginBottom:6 }}>{recordLink("task", t.id, db, navigate)} <Tag label={t.priority || "medium"}/></div>)}
+            </div>
+          )}
+
+          {relatedDocs.length > 0 && (
+            <div className="card" style={{ padding:16 }}>
+              <div className="display" style={{ fontSize:14, fontWeight:700, marginBottom:10 }}>Documents</div>
+              {relatedDocs.slice(0,8).map(d => <div key={d.id} className="card-el" style={{ padding:10, marginBottom:6 }}>{recordLink("document", d.id, db, navigate)}</div>)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","mstack","ai_memories","multi_llm","voitra_gate","admin"];
-  const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","mstack","ai_memories","multi_llm","voitra_gate","admin","record"];
+  const routeFromHash = () => {
+    const route = parseAppHash();
+    return VALID_VIEWS.includes(route.view) ? route : { view:"dashboard", record:null };
+  };
+  const initialRoute = routeFromHash();
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
-  const [view, setView] = useState(viewFromHash);
+  const [view, setView] = useState(initialRoute.view);
+  const [recordTarget, setRecordTarget] = useState(initialRoute.record);
     const [focus, setFocus] = useState(null); // {type:"task"|"contact"|"deal"|"invoice"|"project"|"company", id:number}
-  const navigate = (targetView, focusTarget) => { setView(targetView); if(focusTarget) setFocus(focusTarget); };
+  const navigate = (targetView, focusTarget) => {
+    if (targetView === "record" || focusTarget?.type) {
+      const target = targetView === "record" ? focusTarget : { type:focusTarget.type, id:focusTarget.id };
+      setRecordTarget(target);
+      setView("record");
+      window.location.hash = recordPath(target.type, target.id);
+      return;
+    }
+    setRecordTarget(null);
+    setView(targetView);
+    if(focusTarget) setFocus(focusTarget);
+  };
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(window.innerWidth < 768);
   const [autoRecord, setAutoRecord] = useState(false);
@@ -5510,9 +5714,13 @@ export default function App() {
   };
 
   // Sync view ↔ URL hash; reset autoRecord when leaving voice
-  useEffect(() => { window.location.hash = "#/" + view; if (view !== "voice") setAutoRecord(false); }, [view]);
   useEffect(() => {
-    const onHash = () => { const v = viewFromHash(); setView(v); };
+    const nextHash = view === "record" && recordTarget ? recordPath(recordTarget.type, recordTarget.id) : "#/" + view;
+    if (window.location.hash !== nextHash) window.location.hash = nextHash;
+    if (view !== "voice") setAutoRecord(false);
+  }, [view, recordTarget]);
+  useEffect(() => {
+    const onHash = () => { const r = routeFromHash(); setView(r.view); setRecordTarget(r.record); };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -5599,14 +5807,15 @@ export default function App() {
     deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     marketing:    <MarketingView db={db} setDB={setDB}/>,
     tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    goals:        <GoalsView db={db} setDB={setDB}/>,
-    documents:   <DocumentsView db={db} setDB={setDB}/>,
+    goals:        <GoalsView db={db} setDB={setDB} navigate={navigate}/>,
+    documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate}/>,
     mstack:      <MstackIntakeView db={db} setDB={setDB}/>,
-    ai_memories: <AIMemoriesView db={db} setDB={setDB}/>,
+    record:      <RecordDetailView db={db} setDB={setDB} record={recordTarget} navigate={navigate}/>,
+    ai_memories: <AIMemoriesView db={db} setDB={setDB} navigate={navigate}/>,
     multi_llm:   <MultiLLMView session={session}/>,
-    strategies:   <StrategiesView db={db} setDB={setDB}/>,
+    strategies:   <StrategiesView db={db} setDB={setDB} navigate={navigate}/>,
     voitra_gate:  <VoitraGateView/>,
-    payments:      <PaymentsView db={db} setDB={setDB}/>,
+    payments:      <PaymentsView db={db} setDB={setDB} navigate={navigate}/>,
     projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
