@@ -1,14 +1,13 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { createClient } from "@supabase/supabase-js";
-import {
-  Brain, Users, Megaphone, Briefcase, DollarSign, Mic, Mail,
+import {Brain, Users, Megaphone, Briefcase, DollarSign, Mic,
   TrendingUp, AlertCircle, CheckCircle, Clock, Plus, Zap, Target,
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
   FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash,
+  MessageSquare, Send, Paperclip, Loader2, Copy,
   Linkedin, ExternalLink, Filter, SortAsc, ChevronDown, CreditCard, Globe, Newspaper,
-  Star, ArrowRightCircle, Activity, Award, Building2, BookOpen
-} from "lucide-react";
+  Star, ArrowRightCircle, Activity, Award, Building2, BookOpen, ChevronUp, Upload} from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 /* ── STYLES ── */
@@ -127,6 +126,7 @@ const initDB = () => ({
   companyNews: [],
   goals: [{ id:1, name:"Annual Revenue Target", target_value:800000, current_value:0, unit:"$", period:"annual", start_date:"2026-01-01", end_date:"2026-12-31", status:"active", notes:"" }],
   events: [],
+  documents: [],
   ai_memories: [],
 });
 
@@ -141,7 +141,6 @@ const DB_TABLES = [
   ["contacts",              "contacts"],
   ["payments",              "payments"],
   ["payment_allocations",   "payment_allocations"],
-  ["instructions",          "instructions"],
   ["deals",       "deals"],
   ["tasks",       "tasks"],
   ["projects",    "projects"],
@@ -153,8 +152,9 @@ const DB_TABLES = [
   ["companyNews", "company_news"],
   ["goals",       "goals"],
   ["events",      "events"],
+  ["documents",   "documents"],
   ["strategies",  "strategies"],
-  ["ai_memories", "ai_memories"],
+  ["ai_memories",  "ai_memories"],
 ];
 
 const loadAllFromDB = async () => {
@@ -214,6 +214,18 @@ const revenueData = [
 const CONTACT_CATEGORIES = ["customer_lead","partner_lead","customer","partner","vendor"];
 const TASK_STATUSES = ["todo","in_progress","waiting","done","cancelled"];
 const TASK_CATEGORIES = ["follow_up","outreach","admin","research","meeting_prep","deliverable"];
+const DOCUMENT_ENTITY_TYPES = [
+  { type:"contact", key:"contacts", label:"Contact", name:r=>r.name },
+  { type:"company", key:"companies", label:"Company", name:r=>r.name },
+  { type:"project", key:"projects", label:"Project", name:r=>r.name },
+  { type:"task", key:"tasks", label:"Task", name:r=>r.title },
+  { type:"campaign", key:"campaigns", label:"Campaign", name:r=>r.name },
+  { type:"deal", key:"deals", label:"Deal", name:r=>r.name },
+  { type:"invoice", key:"invoices", label:"Invoice", name:r=>r.number || r.client },
+  { type:"payment", key:"payments", label:"Payment", name:r=>`${r.date || "Payment"} · ${fmt(r.amount || 0)}` },
+  { type:"strategy", key:"strategies", label:"Strategy", name:r=>r.name },
+  { type:"ai_memory", key:"ai_memories", label:"AI Memory", name:r=>r.subject || r.memory_summary },
+];
 const daysBetween = (a,b) => Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
 const today = () => new Date().toISOString().split("T")[0];
 
@@ -310,19 +322,41 @@ const Sel = ({ value, onChange, options }) => (
 const Tex = ({ value, onChange, placeholder }) => (
   <textarea className="input" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} />
 );
-const SearchSelect = ({ value, onChange, options, placeholder }) => {
+const SearchSelect = ({ value, onChange, options, placeholder, entityType, navigate }) => {
   // options: [{value:"1", label:"Name"}, ...]. value is the selected value string.
+  // entityType + navigate (optional): when both provided and a value is selected,
+  // the displayed label becomes a clickable EntityLink that navigates to that record.
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const selected = options.find(o => String(o.value) === String(value));
   const filtered = q ? options.filter(o => o.label.toLowerCase().includes(q.toLowerCase())) : options;
+  const hasValue = !open && selected;
+  const linkable = hasValue && entityType && navigate && ENTITY_NAV[entityType];
   return (
     <div style={{ position:"relative" }}>
-      <input className="input" value={open ? q : (selected?.label || "")} placeholder={placeholder || "Search…"}
-        onFocus={() => { setOpen(true); setQ(""); }}
-        onChange={e => { setQ(e.target.value); setOpen(true); }}
-        style={{ fontSize:13 }}
-      />
+      {linkable ? (
+        <div className="input" style={{ fontSize:13, paddingRight:28, display:"flex", alignItems:"center", minHeight:36, cursor:"pointer" }}
+             onClick={() => { setOpen(true); setQ(""); }}>
+          <EntityLink type={entityType} id={value} navigate={navigate} style={{ fontSize:13, color:"var(--blue)", flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            {selected.label}
+          </EntityLink>
+        </div>
+      ) : (
+        <input className="input" value={open ? q : (selected?.label || "")} placeholder={placeholder || "Search…"}
+          onFocus={() => { setOpen(true); setQ(""); }}
+          onChange={e => { setQ(e.target.value); setOpen(true); }}
+          style={{ fontSize:13, paddingRight: hasValue ? 28 : undefined }}
+        />
+      )}
+      {hasValue && (
+        <button
+          type="button"
+          title="Clear"
+          onMouseDown={e => e.preventDefault()}
+          onClick={(e) => { e.stopPropagation(); onChange(""); setQ(""); setOpen(false); }}
+          style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", width:18, height:18, borderRadius:4, border:"none", background:"transparent", cursor:"pointer", color:"var(--text-sec)", display:"flex", alignItems:"center", justifyContent:"center", padding:0, zIndex:2 }}
+        ><X size={12}/></button>
+      )}
       {open && (
         <>
           <div style={{ position:"fixed", inset:0, zIndex:998 }} onClick={() => setOpen(false)}/>
@@ -339,6 +373,213 @@ const SearchSelect = ({ value, onChange, options, placeholder }) => {
           </div>
         </>
       )}
+    </div>
+  );
+};
+
+const ENTITY_NAV = {
+  contact: { view:"crm",       focusType:"contact" },
+  company: { view:"companies", focusType:"company" },
+  deal:    { view:"deals",     focusType:"deal"    },
+  project: { view:"projects",  focusType:"project" },
+  task:    { view:"tasks",     focusType:"task"    },
+  invoice: { view:"invoices",  focusType:"invoice" },
+};
+const EntityLink = ({ type, id, navigate, children, className, style, title }) => {
+  const cfg = ENTITY_NAV[type];
+  if (!id || !navigate || !cfg) return <span className={className} style={style}>{children}</span>;
+  return (
+    <span
+      className={className}
+      title={title || "Open"}
+      onClick={(e) => { e.stopPropagation(); navigate(cfg.view, { type: cfg.focusType, id }); }}
+      style={{ ...style, cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted", textDecorationColor:"var(--border-hi)", textUnderlineOffset:2 }}
+    >{children}</span>
+  );
+};
+
+const docAssociationKey = (a) => `${a.type}:${a.id}`;
+const normalizeDocId = (id) => Number(id) || id;
+const docHasAssociation = (doc, type, id) => (doc.associations || []).some(a => a.type === type && String(a.id) === String(id));
+const getDocEntityConfig = (type) => DOCUMENT_ENTITY_TYPES.find(e => e.type === type);
+const getDocEntityLabel = (db, assoc) => {
+  const cfg = getDocEntityConfig(assoc.type);
+  const rec = cfg ? (db[cfg.key] || []).find(r => String(r.id) === String(assoc.id)) : null;
+  return rec ? `${cfg.label}: ${cfg.name(rec) || "Untitled"}` : `${cfg?.label || assoc.type}: ${assoc.id}`;
+};
+const formatDocSize = (bytes) => {
+  if (!bytes) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1048576).toFixed(1) + " MB";
+};
+const getDocKindLabel = (doc) => {
+  if (doc.file_name || doc.storage_path || doc.kind === "attachment" || doc.kind === "file") return "Attachment";
+  if (doc.url || doc.kind === "link") return "Link";
+  return "Document";
+};
+const uploadDocumentFile = async (file) => {
+  const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
+  const path = `documents/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const { error } = await supabase.storage.from("memory-files").upload(path, file);
+  if (error) throw error;
+  const { data: urlData } = supabase.storage.from("memory-files").getPublicUrl(path);
+  return {
+    title:file.name,
+    file_name:file.name,
+    file_type:file.type || "application/octet-stream",
+    file_size:file.size,
+    storage_path:path,
+    url:urlData.publicUrl,
+    kind:"attachment",
+  };
+};
+const blankDocument = (associations=[]) => ({
+  title:"",
+  description:"",
+  kind:"attachment",
+  url:"",
+  file_name:"",
+  file_type:"",
+  file_size:0,
+  storage_path:"",
+  associations,
+  created_at:new Date().toISOString(),
+});
+const buildDocOptions = (db) => DOCUMENT_ENTITY_TYPES.map(cfg => ({
+  ...cfg,
+  options:(db[cfg.key] || []).map(r => ({ value:String(r.id), label:cfg.name(r) || "Untitled" }))
+}));
+
+const DocumentAssociationEditor = ({ db, value, onChange }) => {
+  const options = buildDocOptions(db);
+  const addAssociation = (type, id) => {
+    if (!id) return;
+    const next = [...(value || []), { type, id:normalizeDocId(id) }];
+    const unique = Array.from(new Map(next.map(a => [docAssociationKey(a), a])).values());
+    onChange(unique);
+  };
+  const removeAssociation = (assoc) => onChange((value || []).filter(a => docAssociationKey(a) !== docAssociationKey(assoc)));
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+        {(value || []).map(a => (
+          <span key={docAssociationKey(a)} className="tag" style={{ color:"var(--blue)", background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.18)" }}>
+            {getDocEntityLabel(db, a)}
+            <button type="button" onClick={() => removeAssociation(a)} style={{ border:"none", background:"transparent", color:"inherit", cursor:"pointer", padding:0, display:"flex" }}><X size={11}/></button>
+          </span>
+        ))}
+        {(value || []).length === 0 && <span className="mono" style={{ fontSize:11, color:"var(--text-dim)" }}>No associations yet</span>}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        {options.map(cfg => (
+          <SearchSelect
+            key={cfg.type}
+            value=""
+            onChange={id => addAssociation(cfg.type, id)}
+            options={cfg.options}
+            placeholder={`Add ${cfg.label.toLowerCase()}...`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AssociatedDocumentsPanel = ({ db, setDB, entityType, entityId, title="Documents" }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [doc, setDoc] = useState(blankDocument([{ type:entityType, id:entityId }]));
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+  const drawerFileInputRef = useRef(null);
+  const docs = (db.documents || []).filter(d => docHasAssociation(d, entityType, entityId)).sort((a,b) => (b.id || 0) - (a.id || 0));
+  const openNew = () => { setDoc(blankDocument([{ type:entityType, id:entityId }])); setDrawer("add"); };
+  const openEdit = (d) => { setDoc({ ...d, associations:d.associations || [] }); setDrawer("edit"); };
+  const saveDoc = () => {
+    if (!doc.title && !doc.file_name && !doc.url) return;
+    const rec = { ...doc, title:doc.title || doc.file_name || (doc.kind === "link" ? doc.url : "Untitled document"), associations:doc.associations || [] };
+    setDB(prev => drawer === "add"
+      ? { ...prev, documents:[{ ...rec, id:nextId(prev.documents || []) }, ...(prev.documents || [])] }
+      : { ...prev, documents:(prev.documents || []).map(d => d.id === rec.id ? rec : d) }
+    );
+    setDrawer(null);
+  };
+  const uploadForEntity = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        try {
+          uploaded.push({ ...blankDocument([{ type:entityType, id:entityId }]), id:0, ...(await uploadDocumentFile(file)) });
+        } catch (error) { console.error("Upload error:", error); }
+      }
+      if (uploaded.length) {
+        setDB(prev => {
+          let id = nextId(prev.documents || []);
+          return { ...prev, documents:[...uploaded.map(d => ({ ...d, id:id++ })), ...(prev.documents || [])] };
+        });
+      }
+    } catch (err) { console.error("Document upload failed:", err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+  const attachFileToDraft = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadDocumentFile(file);
+      setDoc(p => ({ ...p, ...uploaded, title:p.title || uploaded.title }));
+    } catch (err) { console.error("Document upload failed:", err); }
+    setUploading(false);
+    if (drawerFileInputRef.current) drawerFileInputRef.current.value = "";
+  };
+  return (
+    <div className="card-el" style={{ padding:14, marginTop:16 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+        <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{title.toUpperCase()} ({docs.length})</div>
+        <div style={{ display:"flex", gap:6 }}>
+          <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={uploadForEntity}/>
+          <button className="btn btn-ghost" style={{ fontSize:11, padding:"4px 8px" }} disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+            {uploading ? <><Loader size={11} className="spin"/>Uploading</> : <><Upload size={11}/>Add File</>}
+          </button>
+          <button className="btn btn-blue" style={{ fontSize:11, padding:"4px 8px" }} onClick={openNew}><Plus size={11}/>New Document</button>
+        </div>
+      </div>
+      {docs.length === 0 ? <div className="mono" style={{ fontSize:11, color:"var(--text-dim)" }}>No documents linked yet.</div> : (
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {docs.map(d => (
+            <div key={d.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", border:"1px solid var(--border)", borderRadius:8, background:"var(--bg)" }}>
+              {(d.file_name || d.storage_path) ? <Paperclip size={13} color="var(--blue)"/> : <ExternalLink size={13} color="var(--blue)"/>}
+              <div style={{ flex:1, minWidth:0 }}>
+                <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontSize:12, fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{getDocKindLabel(d)} · {(d.associations || []).length} association{(d.associations || []).length === 1 ? "" : "s"}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
+              </div>
+              <button className="btn-icon" title="Edit associations" onClick={() => openEdit(d)}><Pencil size={13}/></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {drawer && <Drawer title={drawer === "add" ? "New Document" : "Edit Document"} onClose={() => setDrawer(null)} onSave={saveDoc}>
+        <Field label="Title"><Inp value={doc.title || ""} onChange={v => setDoc(p => ({ ...p, title:v }))} placeholder="Document title"/></Field>
+        <Field label="Description"><Tex value={doc.description || ""} onChange={v => setDoc(p => ({ ...p, description:v }))} placeholder="What this document is for"/></Field>
+        <Field label="Attachment">
+          <input ref={drawerFileInputRef} type="file" style={{ display:"none" }} onChange={attachFileToDraft}/>
+          <button type="button" className="btn btn-ghost" disabled={uploading} onClick={() => drawerFileInputRef.current?.click()}>
+            {uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Paperclip size={13}/>Upload attachment</>}
+          </button>
+          <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:6 }}>PDF, image, markdown, HTML, ZIP, Office files, text, CSV, and other file types.</div>
+          {doc.file_name && <div className="card-el" style={{ padding:"8px 10px", marginTop:8, display:"flex", alignItems:"center", gap:8 }}>
+            <Paperclip size={13} color="var(--blue)"/>
+            <span style={{ flex:1, fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{doc.file_name}</span>
+            <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{formatDocSize(doc.file_size)}</span>
+          </div>}
+        </Field>
+        <Field label="Link"><Inp value={doc.kind === "link" || !doc.file_name ? (doc.url || "") : ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind, file_name:v ? "" : p.file_name, file_type:v ? "" : p.file_type, file_size:v ? 0 : p.file_size, storage_path:v ? "" : p.storage_path }))} placeholder="https://..."/></Field>
+        <Field label="Associations"><DocumentAssociationEditor db={db} value={doc.associations || []} onChange={v => setDoc(p => ({ ...p, associations:v }))}/></Field>
+      </Drawer>}
     </div>
   );
 };
@@ -427,18 +668,21 @@ const NAV = [
   {id:"companies",icon:Building2,label:"Companies"},
     {id:"marketing",icon:Megaphone,label:"Marketing"},
   {id:"projects",icon:Briefcase,label:"Projects"},
-  {id:"calendar",icon:Calendar,label:"Calendar"},
+  {id:"documents",icon:FileText,label:"Documents"},
     {id:"_fin",icon:DollarSign,label:"Financials",group:true,children:["deals","invoices","payments"]},
   {id:"deals",icon:Target,label:"Deals",parent:"_fin"},
   {id:"invoices",icon:FileText,label:"Invoices",parent:"_fin"},
   {id:"payments",icon:CreditCard,label:"Payments",parent:"_fin"},
   {divider:true},
-  {id:"email",icon:Mail,label:"Email Lab"},
+  {id:"inbox",icon:Inbox,label:"Inbox"},
+  {id:"gcal",icon:Calendar,label:"Google Cal"},
   {divider:true},
+  {id:"mstack",icon:Zap,label:"mstack Intake"},
   {id:"ai_memories",icon:Sparkles,label:"AI Memories"},
+  {id:"multi_llm",icon:MessageSquare,label:"AI Playground"},
   {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
-  {id:"instructions",icon:BookOpen,label:"Instructions"},
+  {id:"voitra_gate",icon:Mic,label:"Voitra Agent Control"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
@@ -477,7 +721,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"ai_memories",icon:Sparkles,label:"AI Memories"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"mstack",icon:Zap,label:"mstack"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"inbox",icon:Inbox,label:"Inbox"},{id:"gcal",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -570,7 +814,7 @@ const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sweepRunn
             {todayEvents.length > 0 && <>
               <div className="mono" style={{ fontSize:10, color:"var(--blue)", marginTop:6 }}>TODAY'S SCHEDULE</div>
               {todayEvents.slice(0,4).map(evt => (
-                <div key={evt.id} onClick={()=>setView("calendar")} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"rgba(0,119,204,0.06)", borderRadius:6, cursor:"pointer", borderLeft:`3px solid ${({meeting:"var(--blue)",call:"var(--purple)",reminder:"var(--amber)",event:"var(--green)"}[evt.type]||"var(--blue)")}` }}>
+                <div key={evt.id} onClick={()=>setView("gcal")} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"rgba(0,119,204,0.06)", borderRadius:6, cursor:"pointer", borderLeft:`3px solid ${({meeting:"var(--blue)",call:"var(--purple)",reminder:"var(--amber)",event:"var(--green)"}[evt.type]||"var(--blue)")}` }}>
                   <Calendar size={12} color="var(--blue)"/>
                   <span className="mono" style={{ fontSize:11, color:"var(--text-sec)", flexShrink:0 }}>{evt.start_time}</span>
                   <span style={{ fontWeight:500 }}>{evt.title}</span>
@@ -582,6 +826,33 @@ const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sweepRunn
           </div>
         )}
       </div>
+
+      {/* AI Nudges — latest orchestrator sweep */}
+      {(()=>{
+        const latestSweep = (db.agentLogs||[]).find(l=>l.agent==="Orchestrator"&&l.type==="sweep");
+        if(!latestSweep) return null;
+        const lines = latestSweep.message.split(/\n+/).filter(l=>l.trim());
+        return (
+          <div className="card" style={{ padding:20, borderLeft:"4px solid var(--amber)", background:"linear-gradient(135deg, rgba(245,158,11,0.04), transparent)" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <Zap size={14} color="var(--amber)"/>
+                <span style={{ fontFamily:"var(--font-d)", fontSize:14, fontWeight:700 }}>Today's AI Nudges</span>
+              </div>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{latestSweep.ts}</span>
+                <button className="btn btn-sm" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={11} className="spin"/>:<RefreshCw size={11}/>}</button>
+              </div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              {lines.map((line,i)=>{
+                const isBold = /^(\d+\.|TOP|DEAL|STRATEGIC|SMART|NUDGE|PRIORITY)/i.test(line.trim());
+                return <div key={i} style={{ fontSize:13, lineHeight:1.6, fontWeight:isBold?600:400, color:isBold?"var(--text)":"var(--text-sec)", paddingLeft:isBold?0:8 }}>{line}</div>;
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Metrics */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:12 }}>
@@ -703,7 +974,7 @@ const ContactForm = ({ data, onChange, companies, contacts, campaigns, setDB, db
   );
 };
 
-const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
+const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -790,7 +1061,6 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
       });
       const data = await res.json();
       const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
-    const instrList = (db.instructions || []).filter(i => i.active).map(i => `[${i.title}]: ${i.body}`).join('\n');
       let signals = [];
       try { const m = text.match(/\[[\s\S]*\]/); if (m) signals = JSON.parse(m[0]); } catch { signals = []; }
       let synthesis = signals.length > 0
@@ -807,7 +1077,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
     if (alreadyExists) { alert(`${signal.contact.name} is already in CRM.`); return; }
     const catMap = {"existing-customer":"customer","lead":"customer_lead","partner":"partner_lead","vendor":"vendor"};
     const newContact = { id:nextId(db.contacts), name:signal.contact.name||"Unknown", co:signal.contact.company||"", role:signal.contact.role||"", email:signal.contact.email||"", phone:signal.contact.phone||"", status:signal.contactType==="existing-customer"?"client":"prospect", score:signal.contactType==="existing-customer"?80:signal.contactType==="lead"?55:signal.contactType==="partner"?70:50, tags:[signal.contactType], lastTouch:today(), notes:signal.accountContext||"", category:catMap[signal.contactType]||"customer_lead", companyId:null };
-    const newTask = { id:nextId(db.tasks), title:signal.taskTitle||`Follow up with ${signal.contact.name}`, projectId:null, contactId:newContact.id, companyId:null, dealId:null, due:signal.taskDueDate||new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:signal.taskPriority||"medium", assignedTo:"CRM Agent", notes:signal.taskGuidance||"", status:"todo", category:"follow_up", source:"gmail_scan", recurrence:"none" };
+    const newTask = { id:nextId(db.tasks), title:signal.taskTitle||`Follow up with ${signal.contact.name}`, projectId:null, contactId:newContact.id, companyId:null, dealId:null, due:signal.taskDueDate||new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:signal.taskPriority||"medium", assignedTo:"CRM Agent", notes:signal.taskGuidance||"", status:"todo", category:"follow_up", source:"agent:gmail_scan", recurrence:"none" };
     setDB(d => ({...d, contacts:[...d.contacts,newContact], tasks:[...d.tasks,newTask], agentLogs:[{id:nextId(d.agentLogs), agent:"CRM Agent", type:"activity", message:`[IMPORTED] ${signal.contact.name} (${signal.contact.company})`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:signal.taskPriority||"medium"}, ...d.agentLogs]}));
     setGmailState(s => ({...s, signals:s.signals.map(sg=>sg===signal?{...sg,imported:true}:sg)}));
   };
@@ -950,7 +1220,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>OPEN TASKS ({contactTasks.length})</div>
               {contactTasks.map(t=>(
                 <div key={t.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", gap:8, alignItems:"center" }}>
-                  <div style={{ flex:1 }}><div style={{ fontSize:12, fontWeight:500 }}>{t.title}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due} · {t.category}</div></div>
+                  <div style={{ flex:1 }}><div style={{ fontSize:12, fontWeight:500 }}><EntityLink type="task" id={t.id} navigate={navigate}>{t.title}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due} · {t.category}</div></div>
                   <Tag label={t.priority}/>
                 </div>
               ))}
@@ -961,7 +1231,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>DEALS</div>
               {contactDeals.map(d=>(
                 <div key={d.id} className="card-el" style={{ padding:14, marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div><div style={{ fontSize:13, fontWeight:600 }}>{d.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>Close {d.closeDate} · {d.probability}%</div></div>
+                  <div><div style={{ fontSize:13, fontWeight:600 }}><EntityLink type="deal" id={d.id} navigate={navigate}>{d.name}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>Close {d.closeDate} · {d.probability}%</div></div>
                   <div style={{ textAlign:"right" }}><div style={{ fontSize:15, fontWeight:700, color:"var(--blue)", fontFamily:"var(--font-d)" }}>{fmt(d.value)}</div><Tag label={d.stage}/></div>
                 </div>
               ))}
@@ -972,7 +1242,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>SOURCE</div>
               <div style={{ display:"flex", gap:12, fontSize:12, flexWrap:"wrap" }}>
                 {contact.source && <span>Channel: <strong>{contact.source.replace(/_/g," ")}</strong></span>}
-                {contact.referredBy && <span>Referred by: <strong>{(db.contacts.find(c=>c.id===contact.referredBy))?.name || "Unknown"}</strong></span>}
+                {contact.referredBy && <span>Referred by: <strong><EntityLink type="contact" id={contact.referredBy} navigate={navigate}>{(db.contacts.find(c=>c.id===contact.referredBy))?.name || "Unknown"}</EntityLink></strong></span>}
                 {contact.campaignId && <span>Campaign: <strong>{(db.campaigns.find(c=>c.id===contact.campaignId))?.name || "Unknown"}</strong></span>}
               </div>
             </div>}
@@ -990,6 +1260,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
               </div>
             )}
 
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="contact" entityId={contact.id}/>
             <ActivityTimeline events={db.events} entityType="contact" entityId={contact.id}/>
           </div>
         ) : (
@@ -1025,7 +1296,7 @@ const CRMView = ({ db, setDB, setView, focus, setFocus }) => {
 ──────────────────────────────────────────────────────── */
 const blankCompany = () => ({ name:"", industry:"", website:"", linkedin_url:"", news_keywords:"", status:"prospect", notes:"", created_at:today() });
 
-const CompaniesView = ({ db, setDB, focus, setFocus }) => {
+const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -1120,17 +1391,18 @@ const CompaniesView = ({ db, setDB, focus, setFocus }) => {
             {company.notes && <div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{company.notes}</p></div>}
 
             {companyContacts.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>PEOPLE ({companyContacts.length})</div>
-              {companyContacts.map(c=><div key={c.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}><div><div style={{ fontSize:13, fontWeight:500 }}>{c.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{c.role} · {c.category?.replace(/_/g," ")}</div></div><div style={{ display:"flex", gap:6 }}><Tag label={c.status}/><ScoreBadge score={c.score}/></div></div>)}
+              {companyContacts.map(c=><div key={c.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}><div><div style={{ fontSize:13, fontWeight:500 }}><EntityLink type="contact" id={c.id} navigate={navigate}>{c.name}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{c.role} · {c.category?.replace(/_/g," ")}</div></div><div style={{ display:"flex", gap:6 }}><Tag label={c.status}/><ScoreBadge score={c.score}/></div></div>)}
             </div>}
 
             {companyDeals.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>DEALS ({companyDeals.length})</div>
-              {companyDeals.map(d=><div key={d.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between" }}><div><div style={{ fontSize:13, fontWeight:500 }}>{d.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{d.probability}% · Close {d.closeDate}</div></div><div style={{ textAlign:"right" }}><div style={{ fontFamily:"var(--font-d)", fontWeight:700, color:"var(--blue)" }}>{fmt(d.value)}</div><Tag label={d.stage}/></div></div>)}
+              {companyDeals.map(d=><div key={d.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between" }}><div><div style={{ fontSize:13, fontWeight:500 }}><EntityLink type="deal" id={d.id} navigate={navigate}>{d.name}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{d.probability}% · Close {d.closeDate}</div></div><div style={{ textAlign:"right" }}><div style={{ fontFamily:"var(--font-d)", fontWeight:700, color:"var(--blue)" }}>{fmt(d.value)}</div><Tag label={d.stage}/></div></div>)}
             </div>}
 
             {companyNews.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}><Newspaper size={11}/> NEWS</div>
               {companyNews.slice(0,5).map(n=><div key={n.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, borderLeft:"2px solid var(--blue)" }}><div style={{ fontSize:12, fontWeight:600 }}>{n.headline}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{n.published_date} · Score: {n.relevance_score}/10</div>{n.summary&&<p style={{ fontSize:11, color:"var(--text-sec)", marginTop:3 }}>{n.summary}</p>}</div>)}
             </div>}
 
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="company" entityId={company.id}/>
             <ActivityTimeline events={db.events} entityType="company" entityId={company.id}/>
           </div>
         ) : (
@@ -1162,7 +1434,7 @@ const CompaniesView = ({ db, setDB, focus, setFocus }) => {
 ──────────────────────────────────────────────────────── */
 const blankDeal = () => ({ name:"", contactId:"", companyId:"", value:0, stage:"discovery", probability:50, closeDate:"", notes:"" });
 
-const DealsView = ({ db, setDB, focus, setFocus }) => {
+const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankDeal());
@@ -1203,7 +1475,7 @@ const DealsView = ({ db, setDB, focus, setFocus }) => {
           if (rec.stage === "lost") {
             // Create re-engage task for 90 days
             const reengageDate = new Date(Date.now() + 90*86400000).toISOString().split("T")[0];
-            next = {...next, tasks:[...next.tasks, {id:nextId(next.tasks), title:`Re-engage: ${contact?.name||rec.name} (90 days post-loss)`, projectId:null, contactId:rec.contactId, companyId:rec.companyId, dealId:rec.id, due:reengageDate, done:false, priority:"medium", assignedTo:"CRM Agent", notes:`Deal "${rec.name}" was lost. Schedule re-engagement.`, status:"todo", category:"outreach", source:"orchestrator", recurrence:"none"}]};
+            next = {...next, tasks:[...next.tasks, {id:nextId(next.tasks), title:`Re-engage: ${contact?.name||rec.name} (90 days post-loss)`, projectId:null, contactId:rec.contactId, companyId:rec.companyId, dealId:rec.id, due:reengageDate, done:false, priority:"medium", assignedTo:"CRM Agent", notes:`Deal "${rec.name}" was lost. Schedule re-engagement.`, status:"todo", category:"outreach", source:"agent:orchestrator", recurrence:"none"}]};
             next = {...next, agentLogs:[{id:nextId(next.agentLogs), agent:"CRM Agent", type:"risk", message:`Deal lost: "${rec.name}". Re-engage task created for ${reengageDate}.`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:"medium"}, ...next.agentLogs]};
           }
         }
@@ -1255,7 +1527,7 @@ const DealsView = ({ db, setDB, focus, setFocus }) => {
               <div style={{ width:10, height:10, borderRadius:"50%", background:stageColor[deal.stage]||"var(--text-sec)", flexShrink:0 }}/>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{deal.name}</div>
-                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{contact?.name||"—"} · Close {deal.closeDate} · {deal.probability}%</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{contact ? <EntityLink type="contact" id={contact.id} navigate={navigate}>{contact.name}</EntityLink> : "—"} · Close {deal.closeDate} · {deal.probability}%</div>
               </div>
               <div style={{ textAlign:"right", flexShrink:0 }}>
                 <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700, color:"var(--blue)" }}>{fmt(deal.value)}</div>
@@ -1277,6 +1549,7 @@ const DealsView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Close Date"><Inp type="date" value={d.closeDate} onChange={v=>setD(p=>({...p,closeDate:v}))}/></Field>
         </div>
         <Field label="Notes"><Tex value={d.notes} onChange={v=>setD(p=>({...p,notes:v}))}/></Field>
+        {drawer === "edit" && d.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="deal" entityId={d.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1332,6 +1605,29 @@ const MarketingView = ({ db, setDB }) => {
           <Field label="Leads"><Inp type="number" value={d.leads} onChange={v=>setD(p=>({...p,leads:v}))}/></Field>
           <Field label="Impressions"><Inp type="number" value={d.opens} onChange={v=>setD(p=>({...p,opens:v}))}/></Field>
           <Field label="Conversions"><Inp type="number" value={d.conversions} onChange={v=>setD(p=>({...p,conversions:v}))}/></Field>
+        {drawer==="edit"&&d.id&&(()=>{
+          const leads = (db.contacts||[]).filter(c=>c.campaignId===d.id);
+          return leads.length > 0 ? (
+            <div style={{ marginTop:18, borderTop:"1px solid var(--border)", paddingTop:14 }}>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ASSOCIATED LEADS — {leads.length}</div>
+              {leads.map(c=>(
+                <div key={c.id} className="card-el" style={{ padding:"10px 12px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer" }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600 }}>{c.name}</div>
+                    <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{c.co}{c.role?(" · "+c.role):""}</div>
+                  </div>
+                  <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                    <span className="tag" style={{ background:c.status==="prospect"?"var(--blue-dim)":c.status==="client"?"var(--green-dim)":"var(--amber-dim)", color:c.status==="prospect"?"var(--blue)":c.status==="client"?"var(--green)":"var(--amber)" }}>{c.status}</span>
+                    <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Score: {c.score}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:16, fontStyle:"italic" }}>No leads associated with this campaign yet.</div>
+          );
+        })()}
+        {drawer==="edit"&&d.id&&<div style={{ gridColumn:"1 / -1" }}><AssociatedDocumentsPanel db={db} setDB={setDB} entityType="campaign" entityId={d.id}/></div>}
         </div>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
@@ -1342,13 +1638,13 @@ const MarketingView = ({ db, setDB }) => {
 /* ────────────────────────────────────────────────────────
    OPERATIONS — Projects + RELATIONAL TASKS with Filters
 ──────────────────────────────────────────────────────── */
-const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"", links:[], strategyId:"" });
-const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none" });
+const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"", links:[], files:[], strategyId:"" });
+const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none", reschedule_count:0 });
 
 /* ────────────────────────────────────────────────────────
    TASKS VIEW (standalone)
 ──────────────────────────────────────────────────────── */
-const TasksView = ({ db, setDB, focus, setFocus }) => {
+const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [td, setTD] = useState(blankTask());
@@ -1357,8 +1653,9 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
   const [fStatus, setFStatus] = useState("open"); // open = not done/cancelled
   const [fPriority, setFPriority] = useState("all");
   const [fCategory, setFCategory] = useState("all");
+  const [fSource, setFSource] = useState("mine"); // mine = user-created, agent = auto-generated, all = everything
   const [searchQ, setSearchQ] = useState(""); // free-text search across title, contact, company, project
-  const [sortBy, setSortBy] = useState("priority"); // priority, due
+  const [sortBy, setSortBy] = useState("due"); // priority, due
   const [groupBy, setGroupBy] = useState("none"); // none, project, company, person, status
 
   useEffect(() => {
@@ -1371,6 +1668,8 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
     else if (fStatus !== "all") tasks = tasks.filter(t => t.status === fStatus);
     if (fPriority !== "all") tasks = tasks.filter(t => t.priority === fPriority);
     if (fCategory !== "all") tasks = tasks.filter(t => t.category === fCategory);
+    if (fSource === "mine") tasks = tasks.filter(t => !(t.source||"").startsWith("agent:"));
+    else if (fSource === "agent") tasks = tasks.filter(t => (t.source||"").startsWith("agent:"));
     if (searchQ.trim()) {
       const q = searchQ.toLowerCase();
       tasks = tasks.filter(t => {
@@ -1388,7 +1687,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
       return 0;
     });
     return tasks;
-  }, [db.tasks, fStatus, fPriority, fCategory, searchQ, sortBy, db.contacts, db.companies, db.projects]);
+  }, [db.tasks, fStatus, fPriority, fCategory, fSource, searchQ, sortBy, db.contacts, db.companies, db.projects]);
 
   const grouped = useMemo(() => {
     if (groupBy === "none") return [{ label:null, tasks:filteredTasks }];
@@ -1408,7 +1707,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
   const saveTask = (d) => {
     const rec = {...d, projectId:parseInt(d.projectId)||null, contactId:parseInt(d.contactId)||null, companyId:parseInt(d.companyId)||null, dealId:parseInt(d.dealId)||null};
     if(drawer.mode==="add") setDB(db=>({...db,tasks:[...db.tasks,{...rec,id:nextId(db.tasks)}]}));
-    else setDB(db=>({...db,tasks:db.tasks.map(x=>x.id===rec.id?rec:x)}));
+    else setDB(db=>{const old=db.tasks.find(x=>x.id===rec.id);let updated={...rec};if(old&&old.due!==rec.due&&rec.due){updated.reschedule_count=(old.reschedule_count||0)+1;if(updated.reschedule_count>=3){updated.priority="low";updated.notes=(updated.notes?updated.notes+"\n":"")+"\u26a0\ufe0f Auto-downgraded: due date changed "+updated.reschedule_count+" times \u2014 may not be critical.";}}return{...db,tasks:db.tasks.map(x=>x.id===rec.id?updated:x)};});
     setDrawer(null);
   };
   const delTask = (id) => { setDB(db=>({...db,tasks:db.tasks.filter(x=>x.id!==id)})); setConfirm(null); };
@@ -1442,6 +1741,11 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
                 <option value="all">Any Category</option>
                 {TASK_CATEGORIES.map(c=><option key={c} value={c}>{c.replace(/_/g," ")}</option>)}
               </select>
+              <select className="filter-select" value={fSource} onChange={e=>setFSource(e.target.value)}>
+                <option value="mine">Mine</option>
+                <option value="agent">Agent</option>
+                <option value="all">All Sources</option>
+              </select>
               <select className="filter-select" value={sortBy} onChange={e=>setSortBy(e.target.value)}>
                 <option value="priority">Sort: Urgency</option><option value="due">Sort: Due Date</option>
               </select>
@@ -1474,9 +1778,9 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
                         <Tag label={t.priority}/>
                         <Tag label={t.category?.replace(/_/g," ")||"task"} color="var(--purple)"/>
                         {t.status && t.status !== "todo" && t.status !== "done" && <Tag label={t.status.replace(/_/g," ")}/>}
-                        {contact&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>👤 {contact.name}</span>}
-                        {company&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>🏢 {company.name}</span>}
-                        {project&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>📁 {project.name}</span>}
+                        {contact&&<EntityLink type="contact" id={contact.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>👤 {contact.name}</EntityLink>}
+                        {company&&<EntityLink type="company" id={company.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>🏢 {company.name}</EntityLink>}
+                        {project&&<EntityLink type="project" id={project.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>📁 {project.name}</EntityLink>}
                         {t.source!=="manual"&&<span className="mono" style={{ fontSize:9, color:"var(--text-dim)", background:"var(--bg-el)", padding:"1px 4px", borderRadius:3 }}>{t.source}</span>}
                       </div>
                     </div>
@@ -1496,14 +1800,15 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Priority"><Sel value={td.priority} onChange={v=>setTD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
           <Field label="Category"><Sel value={td.category} onChange={v=>setTD(p=>({...p,category:v}))} options={TASK_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
           <Field label="Due Date"><Inp type="date" value={td.due} onChange={v=>setTD(p=>({...p,due:v}))}/></Field>
-          <Field label="Person"><SearchSelect value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…"/></Field>
-          <Field label="Company"><SearchSelect value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
-          <Field label="Project"><SearchSelect value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search projects…"/></Field>
-          <Field label="Deal"><SearchSelect value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search deals…"/></Field>
+          <Field label="Person"><SearchSelect value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…" entityType="contact" navigate={navigate}/></Field>
+          <Field label="Company"><SearchSelect value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…" entityType="company" navigate={navigate}/></Field>
+          <Field label="Project"><SearchSelect value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search projects…" entityType="project" navigate={navigate}/></Field>
+          <Field label="Deal"><SearchSelect value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search deals…" entityType="deal" navigate={navigate}/></Field>
           <Field label="Assigned To"><Inp value={td.assignedTo} onChange={v=>setTD(p=>({...p,assignedTo:v}))}/></Field>
-          <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","orchestrator","news_engine","gmail_scan","ai_sweep"]}/></Field>
+          <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","user:voice","agent:orchestrator","agent:news_engine","agent:gmail_scan","agent:ai_sweep","agent:signal-engine","agent:claude_assist"]}/></Field>
         </div>
         <Field label="Notes"><Tex value={td.notes} onChange={v=>setTD(p=>({...p,notes:v}))}/></Field>
+        {drawer.mode === "edit" && td.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="task" entityId={td.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delTask(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1513,7 +1818,7 @@ const TasksView = ({ db, setDB, focus, setFocus }) => {
 /* ────────────────────────────────────────────────────────
    PROJECTS VIEW (with AI Agent)
 ──────────────────────────────────────────────────────── */
-const ProjectsView = ({ db, setDB, focus, setFocus }) => {
+const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [pd, setPD] = useState(blankProject());
@@ -1522,20 +1827,54 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiProposals, setAiProposals] = useState(null);
   const [selectedProposals, setSelectedProposals] = useState({});
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if(focus?.type==="project" && focus.id) {
       const p = db.projects.find(p=>p.id===focus.id);
-      if(p) { setPD({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:p.links||[]}); setDrawer({mode:"edit",type:"project"}); }
+      if(p) { setPD({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:p.links||[], files:p.files||[]}); setDrawer({mode:"edit",type:"project"}); }
       setFocus(null);
     }
   }, [focus]);
 
   const saveProject = (d) => {
-    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null, strategyId:parseInt(d.strategyId)||null, links:d.links||[]};
+    const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null, strategyId:parseInt(d.strategyId)||null, links:d.links||[], files:d.files||[]};
     if(drawer.mode==="add") setDB(db=>({...db,projects:[...db.projects,{...rec,id:nextId(db.projects)}]}));
     else setDB(db=>({...db,projects:db.projects.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
+  };
+
+  const handleProjectFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = 'projects/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const { error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) { console.error('Upload error:', error); continue; }
+        const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
+      }
+      setPD(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
+    } catch (err) { console.error('Upload failed:', err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeProjectFile = async (fileObj) => {
+    if (fileObj.path) await supabase.storage.from('memory-files').remove([fileObj.path]);
+    setPD(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
   };
   const delProject = (id) => { setDB(db=>({...db,projects:db.projects.filter(x=>x.id!==id)})); setConfirm(null); };
   const toggleTask = (id) => setDB(db=>({...db,tasks:db.tasks.map(t=>t.id===id?{...t,done:!t.done,status:t.done?"todo":"done"}:t)}));
@@ -1547,7 +1886,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
     try {
       const existingTasks = db.tasks.filter(t=>t.projectId===projectId).map(t=>`- ${t.title} (${t.status}, ${t.priority})`).join("\n");
       const system = `You are a project task planner. Given a project context and user instructions, generate actionable tasks. Return ONLY valid JSON: { "tasks": [{ "title": "...", "priority": "high|medium|low", "category": "follow_up|outreach|admin|research|meeting_prep|deliverable", "due": "YYYY-MM-DD or null", "notes": "..." }] }`;
-      const user = `Project: ${proj.name}\nClient: ${proj.client}\nProgress: ${proj.progress}%\nDue: ${proj.dueDate}\nExisting tasks:\n${existingTasks||"(none)"}\n\nUser request: ${aiInput}\n\n\n\nActive Instructions (follow these directives when generating tasks):\n${(db.instructions||[]).filter(i=>i.active).map(i=>i.title+": "+i.body).join("\n")||"None set"}\n\nGenerate 3-6 concrete tasks. Today is ${today()}.`;
+      const user = `Project: ${proj.name}\nClient: ${proj.client}\nProgress: ${proj.progress}%\nDue: ${proj.dueDate}\nExisting tasks:\n${existingTasks||"(none)"}\n\nUser request: ${aiInput}\n\nGenerate 3-6 concrete tasks. Today is ${today()}.`;
       const response = await callClaude(system, user, 1200);
       let parsed;
       try { parsed = JSON.parse(response); } catch {
@@ -1569,7 +1908,7 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
       const companyId = proj?.companyId || null;
       setDB(db => {
         let id = nextId(db.tasks);
-        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:expandedId, companyId, source:"ai_sweep"}))]};
+        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:expandedId, companyId, source:"agent:ai_sweep"}))]};
       });
     }
     setAiProposals(null); setAiInput(""); setSelectedProposals({});
@@ -1593,12 +1932,13 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
                 <div>
                   <div style={{ fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{p.name} <span style={{ fontSize:9, padding:"1px 6px", borderRadius:8, background: (p.type||"client")==="strategic"?"var(--purple-dim)":"var(--blue-dim)", color:(p.type||"client")==="strategic"?"var(--purple)":"var(--blue)", fontWeight:500 }}>{(p.type||"client")}</span></div>
-                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
+                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.companyId ? <EntityLink type="company" id={p.companyId} navigate={navigate}>{p.client}</EntityLink> : p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
+                  {(p.files||[]).length > 0 && <div className="mono" style={{fontSize:9,color:"var(--text-dim)",marginTop:1,display:"flex",alignItems:"center",gap:3}}><Paperclip size={9}/> {(p.files||[]).length} file{(p.files||[]).length>1?"s":""}</div>}
                   {p.strategyId && (db.strategies||[]).find(s=>s.id===p.strategyId) && <div className="mono" style={{fontSize:9,color:"var(--purple)",marginTop:1}}>Strategy: {(db.strategies||[]).find(s=>s.id===p.strategyId)?.name}</div>}
                 </div>
                 <div style={{ display:"flex", gap:6, alignItems:"center" }} onClick={e=>e.stopPropagation()}>
                   <Tag label={p.priority}/><Tag label={p.status}/>
-                  <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[]});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
+                  <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[],files:p.files||[]});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
                 </div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:12 }}>
@@ -1617,11 +1957,19 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
                     {(p.links||[]).map((lnk,li)=>(<a key={li} href={lnk.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,fontSize:11,color:"var(--blue)",textDecoration:"none",cursor:"pointer"}} title={lnk.desc||lnk.url}><ExternalLink size={11}/>{lnk.label||lnk.url}</a>))}
                   </div>
                 </div>}
+                {/* PROJECT FILES */}
+                {(p.files||[]).length > 0 && <div style={{marginBottom:14}}>
+                  <div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginBottom:6}}>FILES</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {(p.files||[]).map((f,fi)=>(<a key={fi} href={f.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,fontSize:11,color:"var(--blue)",textDecoration:"none",cursor:"pointer"}} title={f.name}><FileText size={11}/>{f.name}</a>))}
+                  </div>
+                </div>}
+                <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="project" entityId={p.id}/>
                                 <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>PROJECT TASKS</div>
                 {pTasks.length > 0 ? pTasks.map(t => (
                   <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
                     <button onClick={()=>toggleTask(t.id)} style={{ width:16, height:16, borderRadius:3, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>{t.done&&<Check size={9} color="#fff"/>}</button>
-                    <span style={{ fontSize:12, flex:1, textDecoration:t.done?"line-through":"none", opacity:t.done?0.5:1 }}>{t.title}</span>
+                    <EntityLink type="task" id={t.id} navigate={navigate} style={{ fontSize:12, flex:1, textDecoration:t.done?"line-through":"none", opacity:t.done?0.5:1 }}>{t.title}</EntityLink>
                     <Tag label={t.priority}/><span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{t.due||""}</span>
                   </div>
                 )) : <div style={{ fontSize:12, color:"var(--text-dim)", padding:"8px 0" }}>No tasks yet — use the AI agent below to generate some.</div>}
@@ -1693,116 +2041,39 @@ const ProjectsView = ({ db, setDB, focus, setFocus }) => {
             <button type="button" onClick={()=>setPD(p=>({...p,links:(p.links||[]).filter((_,i)=>i!==li)}))} style={{background:"none",border:"none",color:"var(--red)",cursor:"pointer",padding:4,marginTop:2}}><X size={14}/></button>
           </div>))}
         </div>
+        <div style={{marginTop:14,borderTop:"1px solid var(--border)",paddingTop:14}}>
+          <div className="mono" style={{fontSize:11,color:"var(--text-sec)",marginBottom:8,textTransform:"uppercase"}}>Attached Files</div>
+          {(pd.files||[]).length > 0 && (
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+              {(pd.files||[]).map((f,fi)=>(
+                <div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 10px",borderRadius:6,background:"var(--bg-sec)",border:"1px solid var(--border)"}}>
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"var(--blue)",textDecoration:"none",overflow:"hidden"}}>
+                    <FileText size={13}/> <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+                    <span className="mono" style={{fontSize:10,color:"var(--text-dim)",flexShrink:0}}>{f.size?'('+formatFileSize(f.size)+')':''}</span>
+                  </a>
+                  <button className="btn btn-sm" style={{padding:"2px 6px",color:"var(--red)"}} onClick={()=>removeProjectFile(f)} title="Remove file"><X size={12}/></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={handleProjectFileUpload}/>
+          <button className="btn btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{fontSize:12,gap:6}}>
+            {uploading ? <><Loader size={12} className="spin"/> Uploading...</> : <><Upload size={12}/> Upload Files</>}
+          </button>
+        </div>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delProject(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
   );
 };
 
-/* ────────────────────────────────────────────────────────
-   CALENDAR VIEW
-──────────────────────────────────────────────────────── */
-const blankEvent = () => ({ title:"", date:today(), start_time:"09:00", end_time:"10:00", type:"meeting", location:"", notes:"", attendees:"", source:"manual", google_event_id:"", contactId:"", companyId:"", projectId:"", dealId:"", invoiceId:"" });
-
-const CalendarView = ({ db, setDB }) => {
-  const [mode, setMode] = useState("week");
-  const [date, setDate] = useState(today());
-  const [drawer, setDrawer] = useState(null);
-  const [confirm, setConfirm] = useState(null);
-  const [ed, setED] = useState(null);
-
-  const daysInWeek = () => {
-    const d = new Date(date + "T12:00:00");
-    const day = d.getDay();
-    const start = new Date(d); start.setDate(d.getDate() - day);
-    return Array.from({length:7},(_,i)=>{const x=new Date(start);x.setDate(start.getDate()+i);return x.toISOString().split("T")[0];});
-  };
-  const evtColor = (type) => ({meeting:"var(--blue)",call:"var(--purple)",reminder:"var(--amber)",event:"var(--green)"}[type]||"var(--text-sec)");
-
-  const saveEvent = (d) => {
-    if(drawer==="add") setDB(db=>({...db,events:[...db.events,{...d,id:nextId(db.events)}]}));
-    else setDB(db=>({...db,events:db.events.map(x=>x.id===d.id?d:x)}));
-    setDrawer(null); setED(null);
-  };
-  const delEvent = (id) => { setDB(db=>({...db,events:db.events.filter(x=>x.id!==id)})); setConfirm(null); setDrawer(null); };
-
-  const weekDays = mode==="week" ? daysInWeek() : [date];
-  const todayEvents = db.events.filter(e=>e.date===today());
-
-  return (
-    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <Calendar size={20} color="var(--blue)"/>
-          <div className="display" style={{ fontSize:18, fontWeight:700 }}>Calendar</div>
-          {todayEvents.length>0&&<span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{todayEvents.length} today</span>}
-        </div>
-        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-          <div style={{ display:"flex", background:"var(--bg-el)", borderRadius:8, padding:3 }}>
-            {["week","day"].map(v=>(<button key={v} onClick={()=>setMode(v)} style={{ padding:"5px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:500, cursor:"pointer", background:mode===v?"#fff":"transparent", color:mode===v?"var(--text)":"var(--text-sec)", boxShadow:mode===v?"var(--shadow)":"none" }}>{v}</button>))}
-          </div>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="input" style={{ padding:"5px 8px", fontSize:12, width:"auto" }}/>
-          <button className="btn btn-ghost" style={{ fontSize:12, padding:"6px 10px" }} onClick={()=>setDate(today())}>Today</button>
-          <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setED(blankEvent());setDrawer("add");}}><Plus size={12}/>Event</button>
-        </div>
-      </div>
-
-      <div style={{ display:"grid", gridTemplateColumns:`repeat(${weekDays.length}, 1fr)`, gap:10 }}>
-        {weekDays.map(dayStr => {
-          const evts = (db.events||[]).filter(e=>e.date===dayStr).sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||""));
-          const d = new Date(dayStr+"T12:00:00");
-          const isToday = dayStr===today();
-          return (
-            <div key={dayStr} className="card" style={{ padding:14, minHeight:mode==="week"?340:500, display:"flex", flexDirection:"column", background:isToday?"rgba(0,119,204,0.03)":"var(--bg-card)", borderTop:isToday?"3px solid var(--blue)":"none" }}>
-              <div style={{ fontWeight:600, fontSize:12, color:isToday?"var(--blue)":"var(--text)", marginBottom:10 }}>
-                {d.toLocaleDateString("en-US",{weekday:"short"})} {d.toLocaleDateString("en-US",{month:"short",day:"numeric"})}
-              </div>
-              <div style={{ flex:1, display:"flex", flexDirection:"column", gap:6 }}>
-                {evts.length>0 ? evts.map(evt=>(
-                  <div key={evt.id} className="card-el" style={{ padding:8, borderLeft:`3px solid ${evtColor(evt.type)}`, cursor:"pointer" }} onClick={()=>{setED({...evt});setDrawer("edit");}}>
-                    <div className="mono" style={{ fontSize:10, fontWeight:600, color:evtColor(evt.type) }}>{evt.start_time}–{evt.end_time}</div>
-                    <div style={{ fontSize:12, fontWeight:500, marginTop:2 }}>{evt.title}</div>
-                    {evt.location&&<div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:2 }}>📍 {evt.location}</div>}
-                  </div>
-                )) : <div style={{ fontSize:11, color:"var(--text-dim)", textAlign:"center", marginTop:40 }}>No events</div>}
-              </div>
-              <button className="btn btn-ghost" style={{ fontSize:10, width:"100%", marginTop:8, justifyContent:"center" }} onClick={()=>{setED({...blankEvent(),date:dayStr});setDrawer("add");}}>+ Add</button>
-            </div>
-          );
-        })}
-      </div>
-
-      {drawer&&ed&&<Drawer title={drawer==="add"?"New Event":"Edit Event"} onClose={()=>{setDrawer(null);setED(null);}} onSave={()=>saveEvent(ed)}>
-        <Field label="Title"><Inp value={ed.title} onChange={v=>setED(e=>({...e,title:v}))}/></Field>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-          <Field label="Date"><Inp type="date" value={ed.date} onChange={v=>setED(e=>({...e,date:v}))}/></Field>
-          <Field label="Type"><Sel value={ed.type} onChange={v=>setED(e=>({...e,type:v}))} options={["meeting","call","reminder","event"]}/></Field>
-          <Field label="Start Time"><Inp type="time" value={ed.start_time} onChange={v=>setED(e=>({...e,start_time:v}))}/></Field>
-          <Field label="End Time"><Inp type="time" value={ed.end_time} onChange={v=>setED(e=>({...e,end_time:v}))}/></Field>
-        </div>
-        <Field label="Location"><Inp value={ed.location} onChange={v=>setED(e=>({...e,location:v}))}/></Field>
-        <Field label="Attendees"><Inp value={ed.attendees} onChange={v=>setED(e=>({...e,attendees:v}))} placeholder="Comma-separated"/></Field>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-          <Field label="Person"><SearchSelect value={ed.contactId} onChange={v=>setED(e=>({...e,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…"/></Field>
-          <Field label="Company"><SearchSelect value={ed.companyId} onChange={v=>setED(e=>({...e,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
-          <Field label="Project"><SearchSelect value={ed.projectId} onChange={v=>setED(e=>({...e,projectId:v}))} options={db.projects.map(p=>({value:String(p.id),label:p.name}))} placeholder="Search projects…"/></Field>
-          <Field label="Deal"><SearchSelect value={ed.dealId} onChange={v=>setED(e=>({...e,dealId:v}))} options={db.deals.map(d=>({value:String(d.id),label:d.name}))} placeholder="Search deals…"/></Field>
-          <Field label="Invoice"><SearchSelect value={ed.invoiceId} onChange={v=>setED(e=>({...e,invoiceId:v}))} options={db.invoices.map(i=>({value:String(i.id),label:`${i.number} — ${i.client}`}))} placeholder="Search invoices…"/></Field>
-        </div>
-        <Field label="Notes"><Tex value={ed.notes} onChange={v=>setED(e=>({...e,notes:v}))}/></Field>
-        {drawer==="edit"&&<div style={{ marginTop:16, paddingTop:14, borderTop:"1px solid var(--border)" }}><button className="btn" style={{ width:"100%", justifyContent:"center", background:"var(--red-dim)", color:"var(--red)", border:"1px solid var(--red)" }} onClick={()=>setConfirm({id:ed.id,label:ed.title})}><Trash2 size={12}/>Delete Event</button></div>}
-      </Drawer>}
-      {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delEvent(confirm.id)} onCancel={()=>setConfirm(null)}/>}
-    </div>
-  );
-};
 
 /* ────────────────────────────────────────────────────────
    BILLING — INVOICES (mostly unchanged)
 ──────────────────────────────────────────────────────── */
 const blankInvoice = () => ({ number:"", client:"", amount:0, status:"draft", issued:"", due:"", notes:"" });
 
-const BillingView = ({ db, setDB, focus, setFocus }) => {
+const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankInvoice());
@@ -1840,7 +2111,7 @@ const BillingView = ({ db, setDB, focus, setFocus }) => {
         {db.invoices.map(inv=>(
           <div key={inv.id} className="card row-hover" style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
             <div style={{ flex:1 }}>
-              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}><span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{inv.number}</span><span style={{ fontSize:13, fontWeight:600 }}>{inv.client}</span></div>
+              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}><span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{inv.number}</span><span style={{ fontSize:13, fontWeight:600 }}>{inv.contactId ? <EntityLink type="contact" id={inv.contactId} navigate={navigate}>{inv.client}</EntityLink> : inv.client}</span></div>
               {inv.due&&<div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due: {inv.due}</div>}
             </div>
             <div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontFamily:"var(--font-d)", fontSize:15, fontWeight:700 }}>{fmt(inv.amount)}</div><Tag label={inv.status}/></div>
@@ -1858,6 +2129,7 @@ const BillingView = ({ db, setDB, focus, setFocus }) => {
           <Field label="Due Date"><Inp type="date" value={d.due} onChange={v=>setD(p=>({...p,due:v}))}/></Field>
         </div>
         <Field label="Notes"><Tex value={d.notes} onChange={v=>setD(p=>({...p,notes:v}))}/></Field>
+        {drawer === "edit" && d.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="invoice" entityId={d.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1917,12 +2189,12 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
   const dailyPriorities = allPriorities.filter(p => !dismissed[p.key]);
 
   const convertToTask = (p) => {
-    const newTask = { id:nextId(db.tasks), title:p.taskTitle, due:today(), done:false, priority:p.taskPriority||"medium", status:"done", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Completed from Orchestrator priority on ${today()}.`, source:"orchestrator", recurrence:"none" };
+    const newTask = { id:nextId(db.tasks), title:p.taskTitle, due:today(), done:false, priority:p.taskPriority||"medium", status:"done", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Completed from Orchestrator priority on ${today()}.`, source:"agent:orchestrator", recurrence:"none" };
     setDB(d=>({...d, tasks:[...d.tasks, newTask]}));
     setDismissed(d=>({...d,[p.key]:true}));
   };
   const snoozeItem = (p, newDate) => {
-    const newTask = { id:nextId(db.tasks), title:p.taskTitle||p.label, due:newDate, done:false, priority:p.taskPriority||"medium", status:"todo", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Snoozed from Orchestrator priority. Original: ${p.label}`, source:"orchestrator", recurrence:"none" };
+    const newTask = { id:nextId(db.tasks), title:p.taskTitle||p.label, due:newDate, done:false, priority:p.taskPriority||"medium", status:"todo", category:"follow_up", contactId:p.contactId||null, companyId:p.companyId||null, dealId:null, projectId:null, assignedTo:"", notes:`Snoozed from Orchestrator priority. Original: ${p.label}`, source:"agent:orchestrator", recurrence:"none" };
     setDB(d=>({...d, tasks:[...d.tasks, newTask]}));
     setDismissed(d=>({...d,[p.key]:true}));
     setSnoozing(null);
@@ -1957,10 +2229,9 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
         projects: db.projects.map(p=>({name:p.name,client:p.client,type:p.type||"client",status:p.status,progress:p.progress,priority:p.priority,dueDate:p.dueDate})),
         tasks: openTasks.map(t=>({title:t.title,due:t.due,priority:t.priority,category:t.category,contactId:t.contactId})),
         invoices: db.invoices.filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
-        metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, pipelineCoverage, openTasks:openTasks.length, decayedContacts:decayedContacts.length },
-      instructions: (db.instructions || []).filter(i => i.active).map(i => ({ title: i.title, body: i.body }))};
+        metrics: { paidYTD, weightedPipeline:weightedPipe, totalPipeline:totalPipe, overdueAR, revenueGap, pipelineCoverage, openTasks:openTasks.length, decayedContacts:decayedContacts.length }};
       const msg = await callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. IMPORTANT: The snapshot includes an instructions array containing the user's active directives. These MUST guide your analysis. Projects have a "type" field: "client" (revenue-generating work) or "strategic" (partnerships, marketing, internal tools). Strategic projects have priority levels (critical/high/medium/low). HIGH-PRIORITY STRATEGIC projects should be weighted alongside client deliverables when generating priorities. Use goals, instructions, and strategic project priorities to shape your daily recommendations. Be specific — name names and cite numbers.`,
+        `You are Mendy Ezagui's Orchestrator Agent. He's an independent AI ops consultant targeting property management/HOA. Revenue target: ${fmt(goal.target_value)}. Projects have a "type" field: "client" (revenue-generating work) or "strategic" (partnerships, marketing, internal tools). Strategic projects have priority levels (critical/high/medium/low). HIGH-PRIORITY STRATEGIC projects should be weighted alongside client deliverables when generating priorities. Use goals and strategic project priorities to shape your daily recommendations. Be specific — name names and cite numbers.`,
         `Live snapshot \u2014 ${today()}:\n${JSON.stringify(snap,null,2)}\n\nGenerate a DAILY ACTION PLAN with these sections:\n1. TOP PRIORITY: The single most critical action today (revenue, deadline, or relationship at stake)\n2. DEAL MOVES: Specific next steps for deals closest to closing or with highest revenue potential\n3. STRATEGIC PLAYS: Actions to advance high-priority strategic projects and partnerships\n4. SMART NUDGES: Flag any stale deals (no activity 7+ days), contacts not touched in 14+ days, upcoming deadlines this week, or at-risk relationships\n\nBe specific \u2014 name people, dollar amounts, and exact actions. Max 8 sentences total.`,
         500
       );
@@ -2004,7 +2275,7 @@ const OrchestratorView = ({ db, setDB, navigate }) => {
           if (item.relevance_score >= 7 && item.suggested_action) {
             const contact = db.contacts.find(c => c.companyId === company.id || c.co === company.name);
             const taskId = nextId([...db.tasks, ...newTasks]);
-            newTasks.push({ id:taskId, title:`News: ${item.suggested_action.substring(0,80)}`, projectId:null, contactId:contact?.id||null, companyId:company.id, dealId:null, due:new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:item.action_priority||"medium", assignedTo:"CRM Agent", notes:`News: "${item.headline}"\n${item.summary}\n\nSuggested action: ${item.suggested_action}`, status:"todo", category:"outreach", source:"news_engine", recurrence:"none" });
+            newTasks.push({ id:taskId, title:`News: ${item.suggested_action.substring(0,80)}`, projectId:null, contactId:contact?.id||null, companyId:company.id, dealId:null, due:new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:item.action_priority||"medium", assignedTo:"CRM Agent", notes:`News: "${item.headline}"\n${item.summary}\n\nSuggested action: ${item.suggested_action}`, status:"todo", category:"outreach", source:"agent:news_engine", recurrence:"none" });
           }
         });
 
@@ -2142,8 +2413,7 @@ const VoiceView = ({ db, setDB, autoRecord }) => {
     const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} — $${d.value} — stage:${d.stage} (prob:${d.probability}%)`).join("\n");
     const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} (${p.type||"client"}) — status:${p.status} priority:${p.priority||"medium"} (progress:${p.progress}%)`).join("\n");
     const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} — due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
-    const instrList = (db.instructions || []).filter(i => i.active).map(i => `[${i.title}]: ${i.body}`).join('\n');
-    return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}\n\nACTIVE INSTRUCTIONS (directives to follow):\n${instrList || 'None set'}`;
+    return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}`;
   };
 
   /* Describe an operation in human-readable form */
@@ -2226,7 +2496,7 @@ Rules:
       for (const op of ops) {
         try {
           if (op.action === "create_task" && op.data) {
-            const t = { id: nextId(d.tasks||[]), ...op.data };
+            const t = { id: nextId(d.tasks||[]), ...op.data, source: "user:voice" };
             d.tasks = [...(d.tasks||[]), t];
             logs.push({icon:"Zap",color:"var(--amber)",text:`Created task: ${t.title}`});
           } else if (op.action === "update_contact" && op.data?.id) {
@@ -2392,190 +2662,1621 @@ Rules:
 };
 
 /* ────────────────────────────────────────────────────────
-   EMAIL LAB
+   INBOX — unified Gmail across all connected accounts
+   Reads from public.emails (written by email-sync edge fn).
+   Actions go through email-action edge fn (archive/trash/send).
+   AI replies via llm-proxy (Gemini by default).
+   Images stripped by default — banner offers explicit display.
 ──────────────────────────────────────────────────────── */
-const EmailView = ({ db, setDB }) => {
-  const [email, setEmail] = useState("");
-  const [result, setResult] = useState(null);
+const INBOX_ACCOUNT_COLORS = ["var(--blue)","var(--purple)","var(--green)","var(--amber)","var(--red)"];
+const INBOX_REPLY_PROVIDERS = [
+  { id: "google",    label: "Gemini" },
+  { id: "anthropic", label: "Claude" },
+  { id: "openai",    label: "ChatGPT" },
+];
+
+function inboxStripImages(html) {
+  if (!html) return { html: "", imgCount: 0 };
+  let imgCount = 0;
+  let out = html.replace(/<img\b[^>]*>/gi, () => { imgCount++; return ""; });
+  // Neutralize CSS background-image URLs too
+  out = out.replace(/background(-image)?:\s*url\([^)]*\)/gi, "background:none");
+  return { html: out, imgCount };
+}
+
+const InboxView = ({ session }) => {
+  const [accounts, setAccounts] = useState([]);
+  const [acctColors, setAcctColors] = useState({});
+  const [selectedAcct, setSelectedAcct] = useState(null);
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [emails, setEmails] = useState([]);
+  const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
-  const parse = async () => {
-    if(!email.trim())return;
+  const [syncing, setSyncing] = useState(false);
+  const [showHtml, setShowHtml] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Image safety: per-message opt-in to load images
+  const [showImagesFor, setShowImagesFor] = useState({});
+
+  // Reply composer state
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyTo, setReplyTo] = useState("");
+  const [replySubject, setReplySubject] = useState("");
+  const [replyBody, setReplyBody] = useState("");
+  const [replyProvider, setReplyProvider] = useState("google");
+  const [replyFromAccount, setReplyFromAccount] = useState(""); // account_id to send from; defaults to email's inbox account
+  const [generating, setGenerating] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [actionInProgress, setActionInProgress] = useState(false);
+  const [actionMsg, setActionMsg] = useState(null);
+
+  const loadAccounts = async () => {
+    if (!supabase) return;
+    const { data, error: e } = await supabase
+      .from("email_accounts")
+      .select("id, address, display_name, provider, is_active")
+      .eq("is_active", true)
+      .order("address");
+    if (e) { setError(e.message); return; }
+    const list = data || [];
+    setAccounts(list);
+    const colors = {};
+    list.forEach((a, i) => { colors[a.id] = INBOX_ACCOUNT_COLORS[i % INBOX_ACCOUNT_COLORS.length]; });
+    setAcctColors(colors);
+  };
+
+  const loadEmails = async () => {
+    if (!supabase) return;
     setLoading(true);
-    try {
-      const raw = await callClaude("You are Mendy's CRM Agent. Parse email and return JSON: {\"from\":\"\",\"company\":\"\",\"sentiment\":\"positive|neutral|negative\",\"urgency\":\"high|medium|low\",\"summary\":\"\",\"entities\":{\"people\":[],\"companies\":[],\"amounts\":[],\"dates\":[]},\"actions\":[],\"opportunities\":[],\"module\":\"crm|marketing|operations|billing\",\"suggestedResponse\":\"\"}",`Email:\n${email}`,800);
-      try{setResult(JSON.parse(raw));}catch{setResult({summary:raw,entities:{},actions:[],opportunities:[]});}
-    }catch{setResult({summary:"Error.",entities:{},actions:[],opportunities:[]});}
+    setError(null);
+    let q = supabase
+      .from("emails")
+      .select("id, account_id, from_addr, from_name, subject, snippet, received_at, is_read, direction, is_archived")
+      .or("is_archived.is.null,is_archived.eq.false")
+      .order("received_at", { ascending: false })
+      .limit(200);
+    if (selectedAcct) q = q.eq("account_id", selectedAcct);
+    if (unreadOnly) q = q.eq("is_read", false);
+    if (debounced.trim()) {
+      const s = debounced.trim().replace(/[%_\\]/g, m => "\\" + m);
+      q = q.or(`subject.ilike.%${s}%,from_addr.ilike.%${s}%,from_name.ilike.%${s}%,snippet.ilike.%${s}%`);
+    }
+    const { data, error: e } = await q;
+    if (e) { setError(e.message); setLoading(false); return; }
+    setEmails(data || []);
     setLoading(false);
   };
+
+  const openEmail = async (id) => {
+    if (!supabase) return;
+    setReplyOpen(false);
+    setReplyBody("");
+    setActionMsg(null);
+    const { data, error: e } = await supabase.from("emails").select("*").eq("id", id).maybeSingle();
+    if (e) { setError(e.message); return; }
+    setSelected(data);
+    if (data) {
+      setReplyTo(data.from_addr || "");
+      const subj = (data.subject || "").trim();
+      setReplySubject(/^re:/i.test(subj) ? subj : (subj ? `Re: ${subj}` : "Re:"));
+      // Default From to the inbox account this email arrived in
+      setReplyFromAccount(data.account_id || "");
+      if (!data.is_read) {
+        setEmails(es => es.map(em => em.id === id ? { ...em, is_read: true } : em));
+        supabase.from("emails").update({ is_read: true }).eq("id", id).then(() => {});
+      }
+    }
+  };
+
+  const triggerSync = async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      const headers = { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
+      await Promise.all([
+        fetch(`${SUPA_URL}/functions/v1/email-sync`, { method: "POST", headers }),
+        fetch(`${SUPA_URL}/functions/v1/calendar-sync?primary_only=true`, { method: "POST", headers }),
+      ]);
+    } catch (e) { setError(String(e)); }
+    await loadAccounts();
+    await loadEmails();
+    setSyncing(false);
+  };
+
+  const callEmailAction = async (payload) => {
+    const r = await fetch(`${SUPA_URL}/functions/v1/email-action`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  };
+
+  const handleArchive = async () => {
+    if (!selected || actionInProgress) return;
+    setActionInProgress(true);
+    setError(null);
+    try {
+      await callEmailAction({ action: "archive", message_id: selected.id });
+      setEmails(es => es.filter(e => e.id !== selected.id));
+      setSelected(null);
+      setActionMsg("Archived.");
+    } catch (e) { setError(String(e.message || e)); }
+    setActionInProgress(false);
+  };
+
+  const handleTrash = async () => {
+    if (!selected || actionInProgress) return;
+    setActionInProgress(true);
+    setError(null);
+    try {
+      await callEmailAction({ action: "trash", message_id: selected.id });
+      setEmails(es => es.filter(e => e.id !== selected.id));
+      setSelected(null);
+      setActionMsg("Moved to Trash.");
+    } catch (e) { setError(String(e.message || e)); }
+    setActionInProgress(false);
+  };
+
+  const generateReply = async () => {
+    if (!selected || generating) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const orig = (selected.body_text || selected.snippet || "").slice(0, 6000);
+      const r = await fetch(`${SUPA_URL}/functions/v1/llm-proxy`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: replyProvider,
+          system: "You are drafting an email reply on behalf of the user. Write a concise, natural, professional response. Plain text only — no markdown, no salutation if obvious from context, no signature. Match the tone of the original.",
+          messages: [{
+            role: "user",
+            content: `Original email:\nFrom: ${selected.from_name || ""} <${selected.from_addr || ""}>\nSubject: ${selected.subject || ""}\n\n${orig}\n\n---\nDraft a short reply:`,
+          }],
+          maxTokens: 600,
+        }),
+      });
+      const j = await r.json();
+      if (j.text) setReplyBody(j.text.trim());
+      else if (j.error) setError(`AI: ${j.error}`);
+    } catch (e) { setError(`AI: ${String(e.message || e)}`); }
+    setGenerating(false);
+  };
+
+  const sendReply = async () => {
+    if (!selected || !replyBody.trim() || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      const sentFrom = accounts.find(a => a.id === replyFromAccount)?.address;
+      await callEmailAction({
+        action: "send",
+        message_id: selected.id,
+        to: replyTo,
+        subject: replySubject,
+        body: replyBody,
+        from_account_id: replyFromAccount || undefined,
+      });
+      setActionMsg(`Reply sent${sentFrom ? ` from ${sentFrom}` : ""}.`);
+      setReplyOpen(false);
+      setReplyBody("");
+    } catch (e) { setError(`Send failed: ${String(e.message || e)}`); }
+    setSending(false);
+  };
+
+  useEffect(() => { loadAccounts(); }, []);
+  useEffect(() => { loadEmails(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedAcct, unreadOnly, debounced]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+  // Auto-sync once when this view mounts
+  useEffect(() => { triggerSync(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const fmtTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+  };
+
   return (
-    <div style={{ padding:24, maxWidth:640, display:"flex", flexDirection:"column", gap:20 }}>
-      <div className="display" style={{ fontSize:18, fontWeight:700 }}>Email Lab</div>
-      <div className="card" style={{ padding:20 }}>
-        <textarea className="input" placeholder="Paste email content…" value={email} onChange={e=>setEmail(e.target.value)} style={{ minHeight:160, marginBottom:12 }}/>
-        <button className="btn btn-blue" onClick={parse} disabled={!email.trim()||loading} style={{ width:"100%", justifyContent:"center", opacity:(!email.trim()||loading)?0.5:1 }}>
-          {loading?<><Loader size={13} className="spin"/>Parsing…</>:<><Brain size={13}/>Parse & Extract</>}
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 24px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)", flexWrap: "wrap" }}>
+        <div className="display" style={{ fontSize: 18, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+          <Inbox size={18} color="var(--blue)" /> Inbox
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <button onClick={() => setSelectedAcct(null)} className="filter-chip"
+            style={selectedAcct === null ? { background: "var(--blue-dim)", color: "var(--blue)", borderColor: "var(--blue)" } : {}}>
+            All
+          </button>
+          {accounts.map(a => {
+            const color = acctColors[a.id];
+            const active = selectedAcct === a.id;
+            return (
+              <button key={a.id} onClick={() => setSelectedAcct(a.id)} className="filter-chip"
+                style={{ background: active ? color : "var(--bg-card)", color: active ? "#fff" : "var(--text-sec)", borderColor: active ? color : "var(--border)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: active ? "#fff" : color }} />
+                {a.address}
+              </button>
+            );
+          })}
+        </div>
+        <input className="input" placeholder="Search subject, sender, snippet…"
+          value={search} onChange={e => setSearch(e.target.value)}
+          style={{ flex: 1, maxWidth: 320, marginLeft: "auto" }} />
+        <button className="btn btn-ghost" onClick={() => setUnreadOnly(u => !u)}
+          style={unreadOnly ? { background: "var(--blue-dim)", color: "var(--blue)", borderColor: "var(--blue)" } : {}}>
+          Unread
+        </button>
+        <button className="btn btn-blue" onClick={triggerSync} disabled={syncing}>
+          {syncing ? <><Loader size={13} className="spin" /> Syncing…</> : <><RefreshCw size={13} /> Sync now</>}
         </button>
       </div>
-      {result&&<div className="card slide-in" style={{ padding:20 }}>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:14 }}>
-          <span style={{ fontSize:13, fontWeight:600, color:"var(--blue)" }}>Email Intelligence</span>
-          {result.sentiment&&<Tag label={result.sentiment}/>}
-          {result.urgency&&<Tag label={`${result.urgency} urgency`}/>}
-          {result.module&&<Tag label={`→ ${result.module}`} color="var(--purple)"/>}
+
+      {error && (
+        <div style={{ padding: "8px 24px", background: "var(--red-dim)", color: "var(--red)", fontSize: 12, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertCircle size={13} /> {error}
+          <button className="btn-icon" onClick={() => setError(null)} style={{ marginLeft: "auto" }}><X size={13} /></button>
         </div>
-        {result.summary&&<p style={{ fontSize:13, lineHeight:1.6, marginBottom:14 }}>{result.summary}</p>}
-        {result.entities&&<div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
-          {Object.entries(result.entities).map(([k,v])=>Array.isArray(v)&&v.length>0&&(
-            <div key={k} className="card-el" style={{ padding:"11px 13px" }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>{k.toUpperCase()}</div>{v.map((x,i)=><div key={i} style={{ fontSize:12 }}>· {x}</div>)}</div>
-          ))}
-        </div>}
-        {result.actions?.length>0&&<div style={{ marginBottom:12 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>ACTIONS</div>{result.actions.map((a,i)=><div key={i} className="card-el" style={{ padding:"9px 12px", marginBottom:6, fontSize:13 }}><Zap size={12} color="var(--amber)"/>{a}</div>)}</div>}
-        {result.suggestedResponse&&<div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:6 }}>SUGGESTED RESPONSE</div><div className="card-el" style={{ padding:13, fontSize:13, lineHeight:1.6, borderLeft:"2px solid var(--blue)" }}>{result.suggestedResponse}</div></div>}
-      </div>}
+      )}
+      {actionMsg && !error && (
+        <div style={{ padding: "6px 24px", background: "var(--green-dim)", color: "var(--green)", fontSize: 12, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+          <CheckCircle size={13} /> {actionMsg}
+          <button className="btn-icon" onClick={() => setActionMsg(null)} style={{ marginLeft: "auto" }}><X size={13} /></button>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(360px, 460px) 1fr", flex: 1, overflow: "hidden" }}>
+        <div style={{ borderRight: "1px solid var(--border)", overflowY: "auto", background: "var(--bg)" }}>
+          {loading && (
+            <div style={{ padding: 40, textAlign: "center", color: "var(--text-sec)", fontSize: 13 }}>
+              <Loader size={16} className="spin" /> Loading…
+            </div>
+          )}
+          {!loading && emails.length === 0 && (
+            <div style={{ padding: 40, textAlign: "center", color: "var(--text-sec)", fontSize: 13 }}>No messages.</div>
+          )}
+          {!loading && emails.map(e => {
+            const color = acctColors[e.account_id] || "var(--text-sec)";
+            const isSel = selected?.id === e.id;
+            const fromName = e.from_name || e.from_addr || "Unknown";
+            return (
+              <div key={e.id} onClick={() => openEmail(e.id)}
+                style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", cursor: "pointer", background: isSel ? "var(--bg-card)" : "transparent", borderLeft: isSel ? `3px solid ${color}` : "3px solid transparent", transition: "background 0.1s" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: e.is_read ? 500 : 700, color: e.is_read ? "var(--text-sec)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                    {fromName}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0 }}>{fmtTime(e.received_at)}</span>
+                </div>
+                <div style={{ fontSize: 13, marginTop: 3, color: e.is_read ? "var(--text-sec)" : "var(--text)", fontWeight: e.is_read ? 400 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {e.subject || "(no subject)"}
+                </div>
+                <div style={{ fontSize: 12, marginTop: 3, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {e.snippet || ""}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ overflowY: "auto", padding: "20px 32px 32px", background: "var(--bg-card)" }}>
+          {!selected && (
+            <div style={{ color: "var(--text-dim)", textAlign: "center", marginTop: "30vh", fontSize: 14 }}>
+              Select a message to read
+            </div>
+          )}
+          {selected && (() => {
+            const acct = accounts.find(a => a.id === selected.account_id);
+            const acctLabel = acct ? acct.address : "?";
+            const dt = selected.received_at ? new Date(selected.received_at).toLocaleString() : "";
+            const showImg = !!showImagesFor[selected.id];
+            const stripped = selected.body_html ? inboxStripImages(selected.body_html) : { html: "", imgCount: 0 };
+            return (
+              <Fragment>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+                  <button className="btn btn-blue" onClick={() => setReplyOpen(o => !o)} disabled={actionInProgress}>
+                    <Send size={13} /> Reply
+                  </button>
+                  <button className="btn btn-ghost" onClick={handleArchive} disabled={actionInProgress}>
+                    <ArrowDown size={13} /> Archive
+                  </button>
+                  <button className="btn btn-danger" onClick={handleTrash} disabled={actionInProgress}>
+                    <Trash2 size={13} /> Trash
+                  </button>
+                  {selected.body_html && (
+                    <button className="btn btn-ghost" style={{ marginLeft: "auto", fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => setShowHtml(h => !h)}>
+                      {showHtml ? "Plain text" : "HTML"}
+                    </button>
+                  )}
+                </div>
+
+                <h2 style={{ fontSize: 20, color: "var(--text)", lineHeight: 1.3, fontWeight: 700, marginBottom: 8 }}>
+                  {selected.subject || "(no subject)"}
+                </h2>
+                <div style={{ color: "var(--text-sec)", fontSize: 13, marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ color: "var(--text)" }}>
+                    <strong>{selected.from_name || ""}</strong> &lt;{selected.from_addr || ""}&gt;
+                  </div>
+                  {(() => {
+                    const fmtAddrs = (a) => Array.isArray(a) && a.length > 0
+                      ? a.map(x => x.name ? `${x.name} <${x.addr}>` : x.addr).join(", ")
+                      : null;
+                    const toLine = fmtAddrs(selected.to_addrs);
+                    const ccLine = fmtAddrs(selected.cc_addrs);
+                    return (
+                      <Fragment>
+                        <div style={{ marginTop: 4 }}><span style={{ color: "var(--text-dim)" }}>To:</span> {toLine || acctLabel}</div>
+                        {ccLine && <div style={{ marginTop: 4 }}><span style={{ color: "var(--text-dim)" }}>Cc:</span> {ccLine}</div>}
+                        <div style={{ marginTop: 4, color: "var(--text-dim)", fontSize: 11 }}>In: {acctLabel} · {dt}</div>
+                      </Fragment>
+                    );
+                  })()}
+                </div>
+
+                {showHtml && selected.body_html && stripped.imgCount > 0 && !showImg && (
+                  <div style={{ background: "var(--amber-dim)", border: "1px solid rgba(217,119,6,0.35)", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
+                    <Shield size={16} color="var(--amber)" />
+                    <span style={{ flex: 1 }}>
+                      <strong>{stripped.imgCount}</strong> image{stripped.imgCount > 1 ? "s" : ""} hidden. Loading them tells the sender you opened this email and may track you.
+                    </span>
+                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}
+                      onClick={() => setShowImagesFor(s => ({ ...s, [selected.id]: true }))}>
+                      Display images
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ color: "var(--text)", lineHeight: 1.7, fontSize: 14 }}>
+                  {showHtml && selected.body_html ? (
+                    <iframe sandbox="allow-same-origin" srcDoc={showImg ? selected.body_html : stripped.html}
+                      style={{ width: "100%", minHeight: 600, border: "1px solid var(--border)", background: "#fff", borderRadius: 6 }} />
+                  ) : (
+                    <pre style={{ whiteSpace: "pre-wrap", wordWrap: "break-word", fontFamily: "var(--font-b)", fontSize: 14 }}>
+                      {selected.body_text || "(no plain text)"}
+                    </pre>
+                  )}
+                </div>
+
+                {replyOpen && (
+                  <div className="card slide-in" style={{ marginTop: 20, padding: 18 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                      <Send size={14} color="var(--blue)" />
+                      <strong style={{ fontSize: 14 }}>Reply</strong>
+                      <select className="filter-select" value={replyProvider} onChange={e => setReplyProvider(e.target.value)} style={{ marginLeft: "auto" }}>
+                        {INBOX_REPLY_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                      </select>
+                      <button className="btn btn-ghost" onClick={generateReply} disabled={generating}>
+                        {generating ? <><Loader size={12} className="spin" /> Generating…</> : <><Sparkles size={12} /> Draft with AI</>}
+                      </button>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">From</label>
+                      <select className="input" value={replyFromAccount} onChange={e => setReplyFromAccount(e.target.value)}>
+                        {accounts.map(a => (
+                          <option key={a.id} value={a.id}>
+                            {a.display_name ? `${a.display_name} <${a.address}>` : a.address}
+                          </option>
+                        ))}
+                      </select>
+                      {replyFromAccount && selected && replyFromAccount !== selected.account_id && (
+                        <div style={{ fontSize: 11, color: "var(--amber)", marginTop: 4 }}>
+                          Sending from a different account — won't thread with the original conversation.
+                        </div>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">To</label>
+                      <input className="input" value={replyTo} onChange={e => setReplyTo(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Subject</label>
+                      <input className="input" value={replySubject} onChange={e => setReplySubject(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Message</label>
+                      <textarea className="input" value={replyBody} onChange={e => setReplyBody(e.target.value)} style={{ minHeight: 180, fontFamily: "var(--font-b)" }} placeholder="Type your reply, or click Draft with AI…" />
+                    </div>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button className="btn btn-ghost" onClick={() => { setReplyOpen(false); setReplyBody(""); }}>
+                        Cancel
+                      </button>
+                      <button className="btn btn-blue" onClick={sendReply} disabled={sending || !replyBody.trim()}>
+                        {sending ? <><Loader size={13} className="spin" /> Sending…</> : <><Send size={13} /> Send</>}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })()}
+        </div>
+      </div>
     </div>
   );
 };
+
+
+/* ────────────────────────────────────────────────────────
+   GCAL — Google Calendar (bi-directional, week/day grid)
+   Reads from public.calendar_events (written by calendar-sync).
+   Writes via calendar-action edge fn → both Google + local row.
+   CRM-link fields (contactId/companyId/projectId/dealId/invoiceId)
+   stored locally only — Google Calendar has no equivalent.
+──────────────────────────────────────────────────────── */
+const GCAL_ACCOUNT_COLORS = ["var(--blue)","var(--purple)","var(--green)","var(--amber)","var(--red)"];
+
+const gcalIsoToLocalInput = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const gcalLocalToIsoOrDate = (localStr, allDay) => {
+  if (!localStr) return null;
+  if (allDay) return localStr.slice(0, 10);
+  return new Date(localStr).toISOString();
+};
+
+const blankGCalEvent = (defaults = {}) => {
+  const baseDate = defaults.date || today();
+  const start = new Date(`${baseDate}T09:00:00`);
+  const end   = new Date(`${baseDate}T10:00:00`);
+  return {
+    id:              null,
+    account_id:      defaults.account_id || "",
+    calendar_id:     defaults.calendar_id || null,
+    summary:         "",
+    description:     "",
+    location:        "",
+    all_day:         false,
+    start_time:      gcalIsoToLocalInput(start.toISOString()),
+    end_time:        gcalIsoToLocalInput(end.toISOString()),
+    google_event_id: null,
+    contactId:       "",
+    companyId:       "",
+    projectId:       "",
+    dealId:          "",
+    invoiceId:       "",
+  };
+};
+
+const gcalDaysInWeek = (anchorYmd, mode = "week") => {
+  // mode: "week" (Sun-Sat, 7 days), "workWeek" (Mon-Fri, 5 days), "day" (1 day)
+  if (mode === "day") return [anchorYmd];
+  const d = new Date(anchorYmd + "T12:00:00");
+  const day = d.getDay();
+  const start = new Date(d);
+  if (mode === "workWeek") {
+    // Anchor to Monday: if Sunday, jump forward to Mon; else back to Mon
+    const offset = day === 0 ? 1 : 1 - day;
+    start.setDate(d.getDate() + offset);
+    return Array.from({ length: 5 }, (_, i) => {
+      const x = new Date(start); x.setDate(start.getDate() + i);
+      return x.toISOString().split("T")[0];
+    });
+  }
+  // Full week — Sun to Sat
+  start.setDate(d.getDate() - day);
+  return Array.from({ length: 7 }, (_, i) => {
+    const x = new Date(start); x.setDate(start.getDate() + i);
+    return x.toISOString().split("T")[0];
+  });
+};
+
+const gcalDayKey = (iso) => {
+  // Convert ISO timestamp to local YYYY-MM-DD for bucket matching
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const GCalView = ({ session, db, setDB }) => {
+  const [accounts, setAccounts] = useState([]);
+  const [acctColors, setAcctColors] = useState({});
+  const [selectedAcct, setSelectedAcct] = useState(null);
+  const [mode, setMode] = useState("day");           // "day" | "workWeek" | "week"
+  const [date, setDate] = useState(today());          // YYYY-MM-DD anchor
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [form, setForm] = useState(blankGCalEvent());
+  const [selected, setSelected] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirm, setConfirm] = useState(null);
+  const [error, setError] = useState(null);
+  const [actionMsg, setActionMsg] = useState(null);
+
+  const visibleDays = useMemo(() => gcalDaysInWeek(date, mode), [mode, date]);
+
+  const loadAccounts = async () => {
+    if (!supabase) return;
+    const { data, error: e } = await supabase
+      .from("email_accounts")
+      .select("id, address, display_name, provider, is_active")
+      .eq("is_active", true)
+      .order("address");
+    if (e) { setError(e.message); return; }
+    const list = data || [];
+    setAccounts(list);
+    const colors = {};
+    list.forEach((a, i) => { colors[a.id] = GCAL_ACCOUNT_COLORS[i % GCAL_ACCOUNT_COLORS.length]; });
+    setAcctColors(colors);
+  };
+
+  const loadEvents = async () => {
+    if (!supabase) return;
+    setLoading(true);
+    setError(null);
+    const rangeStart = `${visibleDays[0]}T00:00:00`;
+    const rangeEnd   = `${visibleDays[visibleDays.length - 1]}T23:59:59`;
+    let q = supabase
+      .from("calendar_events")
+      .select("*")
+      .gte("start_time", new Date(rangeStart).toISOString())
+      .lte("start_time", new Date(rangeEnd).toISOString())
+      .order("start_time", { ascending: true })
+      .limit(500);
+    if (selectedAcct) q = q.eq("account_id", selectedAcct);
+    const { data, error: e } = await q;
+    if (e) { setError(e.message); setLoading(false); return; }
+    setEvents(data || []);
+    setLoading(false);
+  };
+
+  const triggerSync = async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      await fetch(`${SUPA_URL}/functions/v1/calendar-sync?primary_only=true`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" },
+      });
+    } catch (e) { setError(String(e)); }
+    await loadEvents();
+    setSyncing(false);
+  };
+
+  const openEvent = (ev) => {
+    setSelected(ev);
+    setCreatingNew(false);
+    setEditing(false);
+    setDrawerOpen(true);
+    setForm({
+      id:              ev.id,
+      account_id:      ev.account_id,
+      calendar_id:     ev.calendar_id,
+      summary:         ev.summary || "",
+      description:     ev.description || "",
+      location:        ev.location || "",
+      all_day:         !!ev.all_day,
+      start_time:      gcalIsoToLocalInput(ev.start_time),
+      end_time:        gcalIsoToLocalInput(ev.end_time),
+      google_event_id: ev.google_event_id,
+      contactId:       ev.contact_id ? String(ev.contact_id) : "",
+      companyId:       ev.company_id ? String(ev.company_id) : "",
+      projectId:       ev.project_id ? String(ev.project_id) : "",
+      dealId:          ev.deal_id ? String(ev.deal_id) : "",
+      invoiceId:       ev.invoice_id ? String(ev.invoice_id) : "",
+    });
+  };
+
+  const openNew = (dayStr) => {
+    if (accounts.length === 0) { setError("No accounts connected."); return; }
+    const defaultAcct = selectedAcct || accounts[0]?.id;
+    const acct = accounts.find(a => a.id === defaultAcct) || accounts[0];
+    setSelected(null);
+    setCreatingNew(true);
+    setEditing(true);
+    setDrawerOpen(true);
+    setForm(blankGCalEvent({ account_id: acct.id, calendar_id: acct.address, date: dayStr || date }));
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setEditing(false);
+    setCreatingNew(false);
+    setSelected(null);
+  };
+
+  const callCalendarAction = async (payload) => {
+    const r = await fetch(`${SUPA_URL}/functions/v1/calendar-action`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  };
+
+  // Persist CRM-link fields directly to the local row (Google has no equivalent)
+  const persistCrmLinks = async (localId, links) => {
+    if (!supabase) return;
+    const update = {
+      contact_id: links.contactId  ? Number(links.contactId)  : null,
+      company_id: links.companyId  ? Number(links.companyId)  : null,
+      project_id: links.projectId  ? Number(links.projectId)  : null,
+      deal_id:    links.dealId     ? Number(links.dealId)     : null,
+      invoice_id: links.invoiceId  ? Number(links.invoiceId)  : null,
+    };
+    await supabase.from("calendar_events").update(update).eq("id", localId);
+  };
+
+  const handleSave = async () => {
+    if (!form.summary.trim()) { setError("Title is required."); return; }
+    if (!form.start_time)     { setError("Start time is required."); return; }
+    if (!form.end_time)       { setError("End time is required."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        action:      creatingNew ? "create" : "update",
+        summary:     form.summary,
+        description: form.description,
+        location:    form.location,
+        all_day:     form.all_day,
+        start:       gcalLocalToIsoOrDate(form.start_time, form.all_day),
+        end:         gcalLocalToIsoOrDate(form.end_time,   form.all_day),
+        timeZone:    Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+      if (creatingNew) {
+        payload.account_id  = form.account_id;
+        payload.calendar_id = form.calendar_id || (accounts.find(a => a.id === form.account_id)?.address);
+      } else {
+        payload.local_id = form.id;
+      }
+      const j = await callCalendarAction(payload);
+      const updatedEvent = j.event;
+      // Persist CRM links separately (Google doesn't store them)
+      if (updatedEvent?.id) {
+        await persistCrmLinks(updatedEvent.id, form);
+        // Reflect into local copy
+        updatedEvent.contact_id = form.contactId ? Number(form.contactId) : null;
+        updatedEvent.company_id = form.companyId ? Number(form.companyId) : null;
+        updatedEvent.project_id = form.projectId ? Number(form.projectId) : null;
+        updatedEvent.deal_id    = form.dealId    ? Number(form.dealId)    : null;
+        updatedEvent.invoice_id = form.invoiceId ? Number(form.invoiceId) : null;
+      }
+      setEvents(es => {
+        if (creatingNew) return [updatedEvent, ...es].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+        return es.map(e => e.id === updatedEvent.id ? updatedEvent : e);
+      });
+      setActionMsg(creatingNew ? "Event created in Google Calendar." : "Event updated in Google Calendar.");
+      closeDrawer();
+    } catch (e) { setError(`Save failed: ${String(e.message || e)}`); }
+    setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!form.id) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await callCalendarAction({ action: "delete", local_id: form.id });
+      setEvents(es => es.filter(e => e.id !== form.id));
+      setActionMsg("Event deleted from Google Calendar.");
+      closeDrawer();
+    } catch (e) { setError(`Delete failed: ${String(e.message || e)}`); }
+    setDeleting(false);
+    setConfirm(null);
+  };
+
+  useEffect(() => { loadAccounts(); }, []);
+  useEffect(() => { loadEvents(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedAcct, date, mode]);
+  // Auto-sync once when this view mounts
+  useEffect(() => { triggerSync(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const eventsByDay = useMemo(() => {
+    const buckets = {};
+    for (const day of visibleDays) buckets[day] = [];
+    for (const ev of events) {
+      const k = gcalDayKey(ev.start_time);
+      if (buckets[k]) buckets[k].push(ev);
+    }
+    return buckets;
+  }, [events, visibleDays]);
+
+  const todayCount = useMemo(() => events.filter(e => gcalDayKey(e.start_time) === today()).length, [events]);
+
+  const fmtTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  };
+
+  return (
+    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, height: "100%", overflow: "hidden" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Calendar size={20} color="var(--blue)" />
+          <div className="display" style={{ fontSize: 18, fontWeight: 700 }}>Google Calendar</div>
+          {todayCount > 0 && <span className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>{todayCount} today</span>}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", background: "var(--bg-el)", borderRadius: 8, padding: 3 }}>
+            {[["day","Day"],["workWeek","Work week"],["week","Week"]].map(([v,lbl]) => (
+              <button key={v} onClick={() => setMode(v)}
+                style={{ padding: "5px 12px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 500, cursor: "pointer", background: mode === v ? "#fff" : "transparent", color: mode === v ? "var(--text)" : "var(--text-sec)", boxShadow: mode === v ? "var(--shadow)" : "none" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input" style={{ padding: "5px 8px", fontSize: 12, width: "auto" }} />
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => setDate(today())}>Today</button>
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: "6px 10px" }} onClick={triggerSync} disabled={syncing}>
+            {syncing ? <><Loader size={12} className="spin" /> Syncing…</> : <><RefreshCw size={12} /> Sync</>}
+          </button>
+          <button className="btn btn-blue" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => openNew(date)}><Plus size={12} /> Event</button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <button onClick={() => setSelectedAcct(null)} className="filter-chip"
+          style={selectedAcct === null ? { background: "var(--blue-dim)", color: "var(--blue)", borderColor: "var(--blue)" } : {}}>
+          All
+        </button>
+        {accounts.map(a => {
+          const color = acctColors[a.id];
+          const active = selectedAcct === a.id;
+          return (
+            <button key={a.id} onClick={() => setSelectedAcct(a.id)} className="filter-chip"
+              style={{ background: active ? color : "var(--bg-card)", color: active ? "#fff" : "var(--text-sec)", borderColor: active ? color : "var(--border)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: active ? "#fff" : color }} />
+              {a.address}
+            </button>
+          );
+        })}
+      </div>
+
+      {error && (
+        <div style={{ padding: "8px 14px", background: "var(--red-dim)", color: "var(--red)", fontSize: 12, borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertCircle size={13} /> {error}
+          <button className="btn-icon" onClick={() => setError(null)} style={{ marginLeft: "auto" }}><X size={13} /></button>
+        </div>
+      )}
+      {actionMsg && !error && (
+        <div style={{ padding: "6px 14px", background: "var(--green-dim)", color: "var(--green)", fontSize: 12, borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}>
+          <CheckCircle size={13} /> {actionMsg}
+          <button className="btn-icon" onClick={() => setActionMsg(null)} style={{ marginLeft: "auto" }}><X size={13} /></button>
+        </div>
+      )}
+
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${visibleDays.length}, 1fr)`, gap: 10 }}>
+          {visibleDays.map(dayStr => {
+            const evts = eventsByDay[dayStr] || [];
+            const d = new Date(dayStr + "T12:00:00");
+            const isToday = dayStr === today();
+            return (
+              <div key={dayStr} className="card"
+                style={{ padding: 14, minHeight: mode === "day" ? 500 : 340, display: "flex", flexDirection: "column", background: isToday ? "rgba(0,119,204,0.03)" : "var(--bg-card)", borderTop: isToday ? "3px solid var(--blue)" : "none" }}>
+                <div style={{ fontWeight: 600, fontSize: 12, color: isToday ? "var(--blue)" : "var(--text)", marginBottom: 10 }}>
+                  {d.toLocaleDateString("en-US", { weekday: "short" })} {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                  {loading && evts.length === 0 ? null : (
+                    evts.length > 0 ? evts.map(ev => {
+                      const color = acctColors[ev.account_id] || "var(--text-sec)";
+                      return (
+                        <div key={ev.id} className="card-el" style={{ padding: 8, borderLeft: `3px solid ${color}`, cursor: "pointer" }} onClick={() => openEvent(ev)}>
+                          <div className="mono" style={{ fontSize: 10, fontWeight: 600, color }}>
+                            {ev.all_day ? "All day" : `${fmtTime(ev.start_time)}–${fmtTime(ev.end_time)}`}
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 500, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {ev.summary || "(no title)"}
+                          </div>
+                          {ev.location && <div className="mono" style={{ fontSize: 9, color: "var(--text-sec)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📍 {ev.location}</div>}
+                          {ev.conference_link && <div className="mono" style={{ fontSize: 9, color: "var(--blue)", marginTop: 2 }}>🎥 join</div>}
+                        </div>
+                      );
+                    }) : <div style={{ fontSize: 11, color: "var(--text-dim)", textAlign: "center", marginTop: 40 }}>No events</div>
+                  )}
+                </div>
+                <button className="btn btn-ghost" style={{ fontSize: 10, width: "100%", marginTop: 8, justifyContent: "center" }} onClick={() => openNew(dayStr)}>+ Add</button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {drawerOpen && (
+        <Drawer
+          title={creatingNew ? "New Event" : (editing ? "Edit Event" : (form.summary || "(no title)"))}
+          onClose={closeDrawer}
+          onSave={editing ? handleSave : null}>
+          {!editing && !creatingNew && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              <button className="btn btn-ghost" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button>
+              <button className="btn btn-danger" onClick={() => setConfirm({ id: form.id, label: form.summary || "(no title)" })}><Trash2 size={13} /> Delete</button>
+              {selected?.conference_link && (
+                <a href={selected.conference_link} target="_blank" rel="noreferrer"
+                  className="btn btn-blue" style={{ marginLeft: "auto", textDecoration: "none" }}>
+                  <Mic size={13} /> Join
+                </a>
+              )}
+            </div>
+          )}
+          {creatingNew && (
+            <Field label="Account">
+              <select className="input" value={form.account_id}
+                onChange={e => {
+                  const acct = accounts.find(a => a.id === e.target.value);
+                  setForm(f => ({ ...f, account_id: e.target.value, calendar_id: acct?.address || null }));
+                }}>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.address}</option>)}
+              </select>
+            </Field>
+          )}
+          <Field label="Title">
+            {editing ? (
+              <Inp value={form.summary} onChange={v => setForm(f => ({ ...f, summary: v }))} />
+            ) : (
+              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{form.summary || "(no title)"}</div>
+            )}
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <Field label={`Start${form.all_day ? " (date)" : ""}`}>
+              {editing ? (
+                <Inp type={form.all_day ? "date" : "datetime-local"}
+                  value={form.all_day ? form.start_time.slice(0, 10) : form.start_time}
+                  onChange={v => setForm(f => ({ ...f, start_time: v }))} />
+              ) : (
+                <div style={{ fontSize: 13, color: "var(--text-sec)" }}>
+                  {form.all_day ? form.start_time.slice(0, 10) : new Date(form.start_time).toLocaleString()}
+                </div>
+              )}
+            </Field>
+            <Field label={`End${form.all_day ? " (date)" : ""}`}>
+              {editing ? (
+                <Inp type={form.all_day ? "date" : "datetime-local"}
+                  value={form.all_day ? form.end_time.slice(0, 10) : form.end_time}
+                  onChange={v => setForm(f => ({ ...f, end_time: v }))} />
+              ) : (
+                <div style={{ fontSize: 13, color: "var(--text-sec)" }}>
+                  {form.all_day ? form.end_time.slice(0, 10) : new Date(form.end_time).toLocaleString()}
+                </div>
+              )}
+            </Field>
+          </div>
+          <Field label="All day">
+            <input type="checkbox" checked={form.all_day} disabled={!editing}
+              onChange={e => setForm(f => ({ ...f, all_day: e.target.checked }))}
+              style={{ width: 16, height: 16 }} />
+          </Field>
+          <Field label="Location">
+            {editing ? (
+              <Inp value={form.location} onChange={v => setForm(f => ({ ...f, location: v }))} />
+            ) : (
+              <div style={{ fontSize: 13, color: "var(--text-sec)" }}>{form.location || "—"}</div>
+            )}
+          </Field>
+          <Field label="Description">
+            {editing ? (
+              <Tex value={form.description} onChange={v => setForm(f => ({ ...f, description: v }))} />
+            ) : (
+              <div style={{ fontSize: 13, color: "var(--text-sec)", whiteSpace: "pre-wrap" }}>{form.description || "—"}</div>
+            )}
+          </Field>
+          {db && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <Field label="Person">
+                <SearchSelect value={form.contactId} onChange={v => setForm(f => ({ ...f, contactId: v }))}
+                  options={(db.contacts || []).map(c => ({ value: String(c.id), label: c.name }))}
+                  placeholder="Search contacts…" />
+              </Field>
+              <Field label="Company">
+                <SearchSelect value={form.companyId} onChange={v => setForm(f => ({ ...f, companyId: v }))}
+                  options={(db.companies || []).map(c => ({ value: String(c.id), label: c.name }))}
+                  placeholder="Search companies…" />
+              </Field>
+              <Field label="Project">
+                <SearchSelect value={form.projectId} onChange={v => setForm(f => ({ ...f, projectId: v }))}
+                  options={(db.projects || []).map(p => ({ value: String(p.id), label: p.name }))}
+                  placeholder="Search projects…" />
+              </Field>
+              <Field label="Deal">
+                <SearchSelect value={form.dealId} onChange={v => setForm(f => ({ ...f, dealId: v }))}
+                  options={(db.deals || []).map(d => ({ value: String(d.id), label: d.name }))}
+                  placeholder="Search deals…" />
+              </Field>
+              <Field label="Invoice">
+                <SearchSelect value={form.invoiceId} onChange={v => setForm(f => ({ ...f, invoiceId: v }))}
+                  options={(db.invoices || []).map(i => ({ value: String(i.id), label: `${i.number} — ${i.client}` }))}
+                  placeholder="Search invoices…" />
+              </Field>
+            </div>
+          )}
+          {!creatingNew && selected?.conference_link && (
+            <Field label="Conference link">
+              <a href={selected.conference_link} target="_blank" rel="noreferrer"
+                style={{ fontSize: 13, color: "var(--blue)", wordBreak: "break-all" }}>
+                {selected.conference_link}
+              </a>
+            </Field>
+          )}
+          {!creatingNew && Array.isArray(selected?.attendees) && selected.attendees.length > 0 && (
+            <Field label="Attendees">
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {selected.attendees.map((att, i) => (
+                  <div key={i} style={{ fontSize: 12, color: "var(--text-sec)" }}>
+                    {att.email}{att.responseStatus ? ` · ${att.responseStatus}` : ""}
+                  </div>
+                ))}
+              </div>
+            </Field>
+          )}
+          {!editing && !creatingNew && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-m)" }}>
+              Account: {accounts.find(a => a.id === form.account_id)?.address || "?"}
+              {form.calendar_id && form.calendar_id !== accounts.find(a => a.id === form.account_id)?.address && ` · Calendar: ${form.calendar_id}`}
+            </div>
+          )}
+        </Drawer>
+      )}
+      {confirm && <ConfirmDelete label={confirm.label} onConfirm={handleDelete} onCancel={() => setConfirm(null)} />}
+      {(saving || deleting) && (
+        <div className="confirm-overlay" style={{ background: "rgba(0,0,0,0.15)" }}>
+          <div className="confirm-box" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Loader size={16} className="spin" /> {saving ? "Saving to Google…" : "Deleting…"}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+
 /* ────────────────────────────────────────────────────────
    GOALS VIEW
 ──────────────────────────────────────────────────────── */
 /* ────────────────────────────────────────────────────────
    PAYMENTS VIEW
 ──────────────────────────────────────────────────────── */
-const InstructionsView = ({ db, setDB }) => {
-  const [drawer, setDrawer] = useState(null);
-  const [confirm, setConfirm] = useState(null);
-  const [ed, setEd] = useState({ title:"", body:"", active:true });
-  const items = (db.instructions || []).sort((a,b) => a.sort_order - b.sort_order);
-  const activeCount = items.filter(i => i.active).length;
+/* ════════════════════════════════════════════════════════════════
+   MULTI-LLM VIEW  — fan-out to Anthropic, OpenAI, Google Gemini
+   Paste this block into src/App.jsx anywhere after `supabase` is
+   defined (a natural home is just above the `VoitraGateView`
+   declaration, around line ~2490).
+   Also wire it up in three places:
+     1. lucide-react import  → add: MessageSquare, Send, Paperclip, Loader2
+     2. NAV array            → add: {id:"multi_llm",icon:MessageSquare,label:"AI Playground"}
+     3. VALID_VIEWS array    → push "multi_llm"
+     4. VIEWS object         → multi_llm: <MultiLLMView session={session}/>
+══════════════════════════════════════════════════════════════════ */
 
-  const save = () => {
-    const rec = { ...ed, sort_order: ed.sort_order ?? items.length };
-    if (drawer === "new") {
-      const id = Math.max(0, ...items.map(i=>i.id)) + 1;
-      setDB(p => ({ ...p, instructions: [...(p.instructions||[]), { ...rec, id }] }));
-    } else {
-      setDB(p => ({ ...p, instructions: (p.instructions||[]).map(x => x.id === drawer ? { ...x, ...rec } : x) }));
+const LLM_PROXY_URL   = `${SUPA_URL}/functions/v1/llm-proxy`;
+const LLM_PROVIDERS   = [
+  { id:"anthropic", label:"Claude",  color:"var(--purple)" },
+  { id:"openai",    label:"ChatGPT", color:"var(--green)"  },
+  { id:"google",    label:"Gemini",  color:"var(--blue)"   },
+];
+const JUDGE_OPTIONS = [
+  { value:"anthropic",  label:"Claude judges"    },
+  { value:"openai",     label:"ChatGPT judges"   },
+  { value:"google",     label:"Gemini judges"    },
+  { value:"synthesize", label:"Claude synthesizes (merged answer)" },
+  { value:"none",       label:"No judge (side-by-side only)" },
+];
+const JUDGE_SYSTEM_COMPARE = `You are a careful judge. Three AI assistants have answered the user's question independently. Your job:
+1. In one paragraph, state which answer is strongest overall and why.
+2. List each assistant's key strengths and any mistakes/weaknesses.
+Keep it tight — no preamble, no conclusion.`;
+const JUDGE_SYSTEM_SYNTH = `You are synthesizing the best single answer from three AI candidates. Take the strongest points from each, fix mistakes, and produce ONE clean answer to the user's prompt. Do not mention the candidates — just give the merged answer.`;
+
+async function callLLMProxy({ provider, messages, system, model }) {
+  // Always use the public anon key for the edge function call so a stale user
+  // JWT can never cause a gateway 401. Provider keys live in function secrets.
+  const started = Date.now();
+  try {
+    const r = await fetch(LLM_PROXY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${SUPA_KEY}`,
+        "apikey":        SUPA_KEY,
+      },
+      body: JSON.stringify({ provider, messages, system, model }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d?.error || d?.message || `${provider} ${r.status}`);
+    return { text: d.text || "", elapsed_ms: d.elapsed_ms ?? (Date.now() - started), error: null };
+  } catch (e) {
+    return { text: "", elapsed_ms: Date.now() - started, error: e.message || String(e) };
+  }
+}
+
+// Build per-provider history: user messages + THIS provider's prior assistant replies
+function buildHistory(messages, provider) {
+  const out = [];
+  for (const m of messages) {
+    if (m.role === "user") {
+      out.push({ role: "user", content: m.content, attachments: m.attachments_inline || [] });
+    } else if (m.role === "assistant" && m.provider === provider) {
+      out.push({ role: "assistant", content: m.content });
     }
-    setDrawer(null);
+  }
+  return out;
+}
+
+// Read a File into { name, type, dataB64 }
+function fileToInline(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(fr.error);
+    fr.onload  = () => {
+      const res = fr.result || "";
+      const b64 = typeof res === "string" ? (res.split(",")[1] || "") : "";
+      resolve({ name: file.name, type: file.type || "application/octet-stream", dataB64: b64 });
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+const MultiLLMView = ({ session }) => {
+  const [conversations, setConversations] = useState([]);
+  const [activeId,      setActiveId]      = useState(null);
+  const [messages,      setMessages]      = useState([]);   // turn-ordered; each has attachments_inline for the current session only
+  const [prompt,        setPrompt]        = useState("");
+  const [pendingFiles,  setPendingFiles]  = useState([]);   // File[] queued for the next send
+  const [judge,         setJudge]         = useState("anthropic");
+  const [busy,          setBusy]          = useState(false);
+  const [renaming,      setRenaming]      = useState(null); // { id, title }
+  const fileRef = useRef(null);
+  const endRef  = useRef(null);
+
+  // ── Load threads on mount
+  useEffect(() => {
+    (async () => {
+      if (!supabase) return;
+      const { data } = await supabase
+        .from("llm_conversations")
+        .select("*")
+        .order("updated_at", { ascending: false });
+      setConversations(data || []);
+      if (data?.length && !activeId) setActiveId(data[0].id);
+    })();
+    // eslint-disable-next-line
+  }, []);
+
+  // ── Load messages when thread changes
+  useEffect(() => {
+    if (!activeId) { setMessages([]); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("llm_messages")
+        .select("*")
+        .eq("conversation_id", activeId)
+        .order("id", { ascending: true });
+      setMessages((data || []).map(m => ({ ...m, attachments_inline: [] })));
+    })();
+  }, [activeId]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+
+  const newThread = async () => {
+    const { data, error } = await supabase
+      .from("llm_conversations")
+      .insert({ title: "New conversation", judge })
+      .select()
+      .single();
+    if (error) { alert(error.message); return; }
+    setConversations(c => [data, ...c]);
+    setActiveId(data.id);
+    setMessages([]);
   };
 
-  const del = (id) => {
-    setDB(p => ({ ...p, instructions: (p.instructions||[]).filter(x => x.id !== id) }));
-    setConfirm(null);
+  const deleteThread = async (id) => {
+    if (!window.confirm("Delete this conversation?")) return;
+    await supabase.from("llm_conversations").delete().eq("id", id);
+    setConversations(c => c.filter(x => x.id !== id));
+    if (activeId === id) { setActiveId(null); setMessages([]); }
   };
 
-  const toggle = (id) => {
-    setDB(p => ({ ...p, instructions: (p.instructions||[]).map(x => x.id === id ? { ...x, active: !x.active } : x) }));
+  const renameThread = async (id, title) => {
+    await supabase.from("llm_conversations").update({ title }).eq("id", id);
+    setConversations(c => c.map(x => x.id === id ? { ...x, title } : x));
+    setRenaming(null);
   };
 
-  const moveUp = (idx) => {
-    if (idx === 0) return;
-    const arr = [...items];
-    [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
-    const reordered = arr.map((x,i) => ({ ...x, sort_order: i }));
-    setDB(p => ({ ...p, instructions: reordered }));
+  const send = async () => {
+    if (busy) return;
+    const text = prompt.trim();
+    if (!text && pendingFiles.length === 0) return;
+
+    // Ensure a thread exists
+    let convId = activeId;
+    if (!convId) {
+      const { data } = await supabase
+        .from("llm_conversations")
+        .insert({ title: text.slice(0, 60) || "New conversation", judge })
+        .select().single();
+      convId = data.id;
+      setConversations(c => [data, ...c]);
+      setActiveId(convId);
+    }
+
+    // Convert attachments once, up-front
+    const inline = [];
+    for (const f of pendingFiles) { try { inline.push(await fileToInline(f)); } catch {} }
+
+    const turn = (messages.at(-1)?.turn_index ?? 0) + 1;
+
+    // Persist the user message
+    const userRow = {
+      conversation_id: convId, turn_index: turn, role: "user",
+      provider: null, content: text,
+      attachments: inline.map(a => ({ name: a.name, type: a.type })),
+    };
+    const { data: userSaved } = await supabase
+      .from("llm_messages").insert(userRow).select().single();
+
+    const optimistic = [...messages, { ...userSaved, attachments_inline: inline }];
+    setMessages(optimistic);
+    setPrompt("");
+    setPendingFiles([]);
+    setBusy(true);
+
+    // Auto-title thread on first turn
+    if (turn === 1 && text) {
+      const title = text.slice(0, 60);
+      await supabase.from("llm_conversations").update({ title }).eq("id", convId);
+      setConversations(c => c.map(x => x.id === convId ? { ...x, title } : x));
+    }
+
+    // Fan out to all three providers in parallel
+    const fanouts = await Promise.all(LLM_PROVIDERS.map(async (p) => {
+      const history = buildHistory(optimistic, p.id);
+      const res = await callLLMProxy({ provider: p.id, messages: history });
+      const row = {
+        conversation_id: convId, turn_index: turn, role: "assistant",
+        provider: p.id, content: res.text,
+        elapsed_ms: res.elapsed_ms, error: res.error,
+      };
+      const { data: saved } = await supabase
+        .from("llm_messages").insert(row).select().single();
+      return { ...saved, attachments_inline: [] };
+    }));
+
+    let updatedMessages = [...optimistic, ...fanouts];
+    setMessages(updatedMessages);
+
+    // Judge / Synthesize step
+    if (judge !== "none") {
+      const judgePrompt = [
+        `User's question:\n${text}`,
+        `\n\n--- Claude (anthropic) ---\n${fanouts.find(x=>x.provider==="anthropic")?.content || "(no response)"}`,
+        `\n\n--- ChatGPT (openai) ---\n${fanouts.find(x=>x.provider==="openai")?.content || "(no response)"}`,
+        `\n\n--- Gemini (google) ---\n${fanouts.find(x=>x.provider==="google")?.content || "(no response)"}`,
+      ].join("");
+      const judgeProvider = judge === "synthesize" ? "anthropic" : judge;
+      const judgeSystem   = judge === "synthesize" ? JUDGE_SYSTEM_SYNTH : JUDGE_SYSTEM_COMPARE;
+      const res = await callLLMProxy({
+        provider: judgeProvider,
+        messages: [{ role: "user", content: judgePrompt }],
+        system: judgeSystem,
+      });
+      const row = {
+        conversation_id: convId, turn_index: turn, role: "assistant",
+        provider: "judge", model: `${judgeProvider}:${judge}`,
+        content: res.text, elapsed_ms: res.elapsed_ms, error: res.error,
+      };
+      const { data: saved } = await supabase.from("llm_messages").insert(row).select().single();
+      updatedMessages = [...updatedMessages, { ...saved, attachments_inline: [] }];
+      setMessages(updatedMessages);
+    }
+
+    setBusy(false);
   };
 
-  const moveDown = (idx) => {
-    if (idx === items.length - 1) return;
-    const arr = [...items];
-    [arr[idx], arr[idx+1]] = [arr[idx+1], arr[idx]];
-    const reordered = arr.map((x,i) => ({ ...x, sort_order: i }));
-    setDB(p => ({ ...p, instructions: reordered }));
-  };
+  // ── Group messages by turn for rendering
+  const turns = useMemo(() => {
+    const groups = new Map();
+    for (const m of messages) {
+      if (!groups.has(m.turn_index)) groups.set(m.turn_index, { user: null, providers: {}, judge: null });
+      const g = groups.get(m.turn_index);
+      if (m.role === "user") g.user = m;
+      else if (m.provider === "judge") g.judge = m;
+      else g.providers[m.provider] = m;
+    }
+    return [...groups.entries()].sort((a,b) => a[0] - b[0]).map(([,g]) => g);
+  }, [messages]);
 
   return (
-    <div style={{ maxWidth:900, margin:"0 auto" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
-        <div>
-          <h2 style={{ margin:0 }}>Instructions</h2>
-          <p style={{ margin:"4px 0 0", color:"var(--text-dim)", fontSize:13 }}>Directives your Second Brain follows when generating tasks and priorities</p>
+    <div style={{ display:"flex", height:"100%", overflow:"hidden" }}>
+      {/* ── Thread sidebar ── */}
+      <div style={{ width:240, borderRight:"1px solid var(--border)", background:"var(--bg-card)", display:"flex", flexDirection:"column", flexShrink:0 }}>
+        <div style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)" }}>
+          <button className="btn btn-blue" onClick={newThread} style={{ width:"100%", justifyContent:"center" }}>
+            <Plus size={13}/> New conversation
+          </button>
         </div>
-        <button onClick={() => { setEd({ title:"", body:"", active:true }); setDrawer("new"); }}
-          style={{ background:"var(--blue)", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:"pointer", display:"flex", alignItems:"center", gap:6, fontSize:14 }}>
-          <Plus size={16}/> New Instruction
+        <div style={{ flex:1, overflowY:"auto", padding:"6px" }}>
+          {conversations.length === 0 && (
+            <div style={{ padding:"14px 8px", fontSize:12, color:"var(--text-dim)" }}>No threads yet.</div>
+          )}
+          {conversations.map(c => (
+            <div key={c.id}
+              onClick={() => setActiveId(c.id)}
+              style={{
+                display:"flex", alignItems:"center", gap:6,
+                padding:"8px 10px", borderRadius:7, cursor:"pointer",
+                background: c.id === activeId ? "var(--blue-dim)" : "transparent",
+                border:     c.id === activeId ? "1px solid rgba(0,119,204,0.2)" : "1px solid transparent",
+                marginBottom:3,
+              }}>
+              <MessageSquare size={13} color={c.id === activeId ? "var(--blue)" : "var(--text-sec)"}/>
+              {renaming?.id === c.id ? (
+                <input className="input" value={renaming.title} autoFocus
+                  onClick={e=>e.stopPropagation()}
+                  onChange={e=>setRenaming({ ...renaming, title:e.target.value })}
+                  onBlur={() => renameThread(c.id, renaming.title || c.title)}
+                  onKeyDown={e=> e.key === "Enter" && renameThread(c.id, renaming.title || c.title)}
+                  style={{ fontSize:12, padding:"2px 6px", flex:1 }}/>
+              ) : (
+                <span onDoubleClick={e=>{ e.stopPropagation(); setRenaming({ id:c.id, title:c.title });}}
+                  style={{ flex:1, fontSize:12, color: c.id === activeId ? "var(--blue)" : "var(--text-sec)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                  {c.title}
+                </span>
+              )}
+              <button className="btn-icon" title="Delete" onClick={e=>{ e.stopPropagation(); deleteThread(c.id); }}>
+                <Trash2 size={11} color="var(--text-dim)"/>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Conversation pane ── */}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+        {/* Scrollable transcript */}
+        <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", background:"var(--bg)" }}>
+          {turns.length === 0 && !busy && (
+            <div style={{ textAlign:"center", marginTop:60, color:"var(--text-dim)" }}>
+              <Sparkles size={32} style={{ opacity:0.4 }}/>
+              <div style={{ fontFamily:"var(--font-d)", fontSize:17, marginTop:12, color:"var(--text-sec)" }}>
+                Ask one prompt — get three answers.
+              </div>
+              <div style={{ fontSize:12, marginTop:6 }}>
+                Each response is rendered side-by-side. A judge model picks the best or synthesizes.
+              </div>
+            </div>
+          )}
+
+          {turns.map((g, i) => (
+            <div key={i} style={{ marginBottom:28 }}>
+              {/* User bubble */}
+              {g.user && (
+                <div style={{
+                  background:"var(--bg-card)", border:"1px solid var(--border)",
+                  padding:"12px 14px", borderRadius:10, marginBottom:12, whiteSpace:"pre-wrap",
+                  fontSize:13, lineHeight:1.55,
+                }}>
+                  <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginBottom:6 }}>YOU</div>
+                  {g.user.content}
+                  {(g.user.attachments || []).length > 0 && (
+                    <div style={{ marginTop:8, display:"flex", gap:6, flexWrap:"wrap" }}>
+                      {g.user.attachments.map((a,ai) => (
+                        <span key={ai} className="mono" style={{ fontSize:10, background:"var(--bg-el)", padding:"2px 6px", borderRadius:4 }}>
+                          📎 {a.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Provider column grid */}
+              <div style={{
+                display:"grid",
+                gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",
+                gap:12,
+              }}>
+                {LLM_PROVIDERS.map(p => {
+                  const m = g.providers[p.id];
+                  return (
+                    <div key={p.id} style={{
+                      background:"var(--bg-card)", border:`1px solid ${p.color}33`,
+                      borderRadius:10, padding:"12px 14px", fontSize:13, lineHeight:1.5,
+                    }}>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                        <span className="mono" style={{ fontSize:10, color:p.color, fontWeight:600 }}>{p.label}</span>
+                        {m?.elapsed_ms != null && (
+                          <span className="mono" style={{ fontSize:9, color:"var(--text-dim)" }}>
+                            {(m.elapsed_ms/1000).toFixed(1)}s
+                          </span>
+                        )}
+                      </div>
+                      {m ? (
+                        m.error
+                          ? <div style={{ color:"var(--red)", fontSize:12 }}>⚠ {m.error}</div>
+                          : <div style={{ whiteSpace:"pre-wrap" }}>{m.content || <em style={{ color:"var(--text-dim)" }}>(empty)</em>}</div>
+                      ) : busy ? (
+                        <div style={{ display:"flex", gap:6, alignItems:"center", color:"var(--text-dim)", fontSize:12 }}>
+                          <Loader2 size={12} className="spin"/> thinking…
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Judge / synthesis */}
+              {g.judge && (
+                <div style={{
+                  marginTop:12, background:"linear-gradient(135deg, var(--bg-card), rgba(124,58,237,0.04))",
+                  border:"1px solid rgba(124,58,237,0.25)", borderRadius:10, padding:"12px 14px",
+                  fontSize:13, lineHeight:1.55,
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                    <span className="mono" style={{ fontSize:10, color:"var(--purple)", fontWeight:600 }}>
+                      ⚖ JUDGE · {g.judge.model || judge}
+                    </span>
+                    {g.judge.elapsed_ms != null && (
+                      <span className="mono" style={{ fontSize:9, color:"var(--text-dim)" }}>
+                        {(g.judge.elapsed_ms/1000).toFixed(1)}s
+                      </span>
+                    )}
+                  </div>
+                  {g.judge.error
+                    ? <div style={{ color:"var(--red)", fontSize:12 }}>⚠ {g.judge.error}</div>
+                    : <div style={{ whiteSpace:"pre-wrap" }}>{g.judge.content}</div>}
+                </div>
+              )}
+            </div>
+          ))}
+          <div ref={endRef}/>
+        </div>
+
+        {/* ── Composer ── */}
+        <div style={{ borderTop:"1px solid var(--border)", padding:"12px 16px", background:"var(--bg-card)" }}>
+          {pendingFiles.length > 0 && (
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
+              {pendingFiles.map((f, i) => (
+                <span key={i} className="mono" style={{
+                  fontSize:10, background:"var(--bg-el)", padding:"3px 8px", borderRadius:4,
+                  display:"inline-flex", alignItems:"center", gap:6,
+                }}>
+                  📎 {f.name}
+                  <button className="btn-icon" style={{ padding:0 }}
+                    onClick={() => setPendingFiles(p => p.filter((_, j) => j !== i))}>
+                    <X size={11} color="var(--text-dim)"/>
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ display:"flex", gap:8, alignItems:"flex-end" }}>
+            <input ref={fileRef} type="file" multiple style={{ display:"none" }}
+              onChange={e => {
+                const files = Array.from(e.target.files || []);
+                setPendingFiles(p => [...p, ...files]);
+                e.target.value = "";
+              }}/>
+            <button className="btn btn-ghost" title="Attach files" onClick={() => fileRef.current?.click()}
+              style={{ padding:"8px 10px" }}>
+              <Paperclip size={14}/>
+            </button>
+            <select className="input" value={judge} onChange={e=>setJudge(e.target.value)}
+              style={{ width:180, fontSize:12 }}>
+              {JUDGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <textarea
+              className="input"
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+              }}
+              placeholder="Ask all three models…  (⌘+Enter to send)"
+              style={{ flex:1, resize:"vertical", minHeight:42, maxHeight:220, fontSize:13, lineHeight:1.45 }}
+            />
+            <button className="btn btn-blue" onClick={send} disabled={busy}
+              style={{ padding:"9px 14px" }}>
+              {busy ? <Loader2 size={13} className="spin"/> : <Send size={13}/>}
+              {busy ? "Running…" : "Send"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const VOITRA_GATE_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/voitra-gate";
+const VOITRA_ADMIN_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/voitra-admin";
+const VOITRA_ADMIN_TOKEN = "vt-mendy-shomer-9f3k2m";
+
+const VoitraGateView = () => {
+  const [state, setState] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const refresh = async () => {
+    try {
+      setErr(null);
+      const r = await fetch(VOITRA_GATE_URL + "?_=" + Date.now());
+      const d = await r.json();
+      setState(d);
+    } catch (e) {
+      setErr("Couldn't reach gate: " + (e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const act = async (action) => {
+    setPending(action);
+    try {
+      await fetch(VOITRA_ADMIN_URL + "?t=" + encodeURIComponent(VOITRA_ADMIN_TOKEN) + "&do=" + action);
+      await refresh();
+    } catch (e) {
+      setErr("Action failed: " + (e?.message || e));
+    }
+    setPending(null);
+  };
+
+  const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+    timeZone: "America/Los_Angeles"
+  }) + " PT" : null;
+
+  const fmtHour = (h) => {
+    const h12 = ((h + 11) % 12) + 1;
+    return h12 + (h < 12 ? "am" : "pm");
+  };
+
+  const reasonLabel = {
+    auto_open: "Open — following the schedule",
+    auto_nightly: "Closed for the nightly window (11pm–6am PT)",
+    auto_shabbat: "Closed for Shabbat",
+    manual_on: "Forced ON (manual override)",
+    manual_off: "Paused manually",
+  };
+
+  const enabled = state?.enabled;
+  const statusColor = enabled ? "var(--green)" : "var(--red)";
+  const statusBg = enabled ? "var(--green-dim)" : "var(--red-dim)";
+
+  const pauseActions = [
+    { do: "pause-30",      label: "Pause 30 minutes" },
+    { do: "pause-60",      label: "Pause 1 hour" },
+    { do: "pause-240",     label: "Pause 4 hours" },
+    { do: "pause-morning", label: "Pause until 6am tomorrow" },
+  ];
+  const resumeActions = [
+    { do: "resume",   label: "Resume auto schedule",            flavor: "go" },
+    { do: "force-on", label: "Force ON (override Shabbat too)", flavor: "go-muted" },
+  ];
+
+  const buttonStyle = (flavor) => ({
+    display: "block", width: "100%", textAlign: "left",
+    padding: "12px 16px", marginBottom: 8,
+    border: "1px solid",
+    borderColor: flavor === "go"       ? "rgba(5,150,105,0.4)"
+              : flavor === "go-muted"  ? "rgba(5,150,105,0.25)"
+              :                          "rgba(220,38,38,0.4)",
+    background:  flavor === "go"       ? "rgba(5,150,105,0.08)"
+              : flavor === "go-muted"  ? "rgba(5,150,105,0.05)"
+              :                          "rgba(220,38,38,0.08)",
+    color: "var(--text)",
+    borderRadius: 8,
+    fontSize: 14, fontWeight: 600,
+    cursor: pending ? "default" : "pointer",
+    opacity: pending ? 0.55 : 1,
+    transition: "background 0.15s",
+  });
+
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Voitra Agent Control</h2>
+          <p style={{ margin: "4px 0 0", color: "var(--text-dim)", fontSize: 13 }}>
+            Pause or resume the demo agents on voitra.ai/verticals
+          </p>
+        </div>
+        <button onClick={refresh} disabled={loading}
+          style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "var(--text-sec)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+          <RefreshCw size={14}/>{loading ? "Loading…" : "Refresh"}
         </button>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, marginBottom:24 }}>
-        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
-          <div style={{ fontSize:28, fontWeight:700 }}>{items.length}</div>
-          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Total Instructions</div>
-        </div>
-        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
-          <div style={{ fontSize:28, fontWeight:700, color:"var(--green)" }}>{activeCount}</div>
-          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Active</div>
-        </div>
-        <div style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)" }}>
-          <div style={{ fontSize:28, fontWeight:700, color:"var(--text-dim)" }}>{items.length - activeCount}</div>
-          <div style={{ color:"var(--text-dim)", fontSize:13 }}>Paused</div>
-        </div>
-      </div>
+      {err && <div style={{ background: "var(--red-dim)", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8, padding: 12, marginBottom: 16, color: "var(--red)", fontSize: 13 }}>
+        {err}
+      </div>}
 
-      {items.length === 0 && <p style={{ textAlign:"center", color:"var(--text-dim)", padding:40 }}>No instructions yet. Add your first directive to guide your Second Brain.</p>}
-
-      <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-        {items.map((inst, idx) => (
-          <div key={inst.id} style={{ background:"var(--bg-card)", borderRadius:12, padding:20, border:"1px solid var(--border)", opacity: inst.active ? 1 : 0.5 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                  <BookOpen size={16} style={{ color:"var(--blue)" }}/>
-                  <h3 style={{ margin:0, fontSize:16 }}>{inst.title || "Untitled"}</h3>
-                  {!inst.active && <span style={{ fontSize:11, background:"var(--bg-el)", padding:"2px 8px", borderRadius:8, color:"var(--text-dim)" }}>Paused</span>}
-                </div>
-                <p style={{ margin:0, color:"var(--text-sec)", fontSize:13, whiteSpace:"pre-wrap", maxHeight:80, overflow:"hidden" }}>{inst.body}</p>
-              </div>
-              <div style={{ display:"flex", gap:4, marginLeft:12, flexShrink:0 }}>
-                <button onClick={() => moveUp(idx)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--text-dim)" }} title="Move up"><ArrowUp size={14}/></button>
-                <button onClick={() => moveDown(idx)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--text-dim)" }} title="Move down"><ArrowDown size={14}/></button>
-                <button onClick={() => toggle(inst.id)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color: inst.active ? "var(--green)" : "var(--text-dim)" }} title={inst.active ? "Pause" : "Activate"}>{inst.active ? <Eye size={14}/> : <MicOff size={14}/>}</button>
-                <button onClick={() => { setEd({ title:inst.title, body:inst.body, active:inst.active, sort_order:inst.sort_order }); setDrawer(inst.id); }} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--blue)" }} title="Edit"><Pencil size={14}/></button>
-                <button onClick={() => setConfirm(inst.id)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:"var(--red)" }} title="Delete"><Trash2 size={14}/></button>
-              </div>
-            </div>
+      {!state ? <div style={{ color: "var(--text-dim)", fontSize: 13, padding: 32, textAlign: "center" }}>Loading status…</div> :
+        <div style={{ padding: 22, borderRadius: 12, background: statusBg, border: "1px solid " + statusColor, marginBottom: 22 }}>
+          <div style={{ display: "inline-block", padding: "4px 10px", borderRadius: 999, background: statusColor, color: "#fff", fontWeight: 700, fontSize: 11, letterSpacing: ".04em" }}>
+            {enabled ? "AGENTS LIVE" : "AGENTS OFF"}
           </div>
+          <div style={{ marginTop: 10, fontSize: 17, fontWeight: 600, color: "var(--text)" }}>
+            {reasonLabel[state.reason] || state.reason}
+          </div>
+          {state.until && <div style={{ marginTop: 6, color: "var(--text-sec)", fontSize: 13 }}>
+            Until: {fmtTime(state.until)}
+          </div>}
+        </div>
+      }
+
+      {state && <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 14 }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-sec)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".06em" }}>
+          Automated schedule
+        </h3>
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 14px", fontSize: 13.5, color: "var(--text)", alignItems: "baseline" }}>
+          <div style={{ color: "var(--text-sec)" }}>This Shabbat</div>
+          <div>
+            {state.shabbat?.start && state.shabbat?.end ? (
+              <>
+                <span style={{ fontWeight: 600 }}>{fmtTime(state.shabbat.start)}</span>
+                <span style={{ color: "var(--text-sec)" }}> → </span>
+                <span style={{ fontWeight: 600 }}>{fmtTime(state.shabbat.end)}</span>
+              </>
+            ) : <span style={{ color: "var(--text-dim)" }}>(times unavailable — Hebcal unreachable)</span>}
+          </div>
+          <div style={{ color: "var(--text-sec)" }}>Every night</div>
+          <div>
+            <span style={{ fontWeight: 600 }}>{fmtHour(state.nightly?.start_hour ?? 23)}</span>
+            <span style={{ color: "var(--text-sec)" }}> → </span>
+            <span style={{ fontWeight: 600 }}>{fmtHour(state.nightly?.end_hour ?? 6)} next day</span>
+          </div>
+          <div style={{ color: "var(--text-sec)" }}>Timezone</div>
+          <div style={{ fontWeight: 600 }}>{state.tz || "America/Los_Angeles"}</div>
+        </div>
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 12, lineHeight: 1.55 }}>
+          Shabbat times pull live from Hebcal each week (Los Angeles, geonameid 5368361, candle-lighting 18 min before sunset, default Havdalah). Once Saturday's Havdalah passes, the schedule rolls forward to next Friday automatically — no manual update needed. Cached up to 6 hours.
+        </div>
+      </div>}
+
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 14 }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-sec)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".06em" }}>
+          Pause for a while
+        </h3>
+        {pauseActions.map(a => (
+          <button key={a.do} onClick={() => act(a.do)} disabled={!!pending} style={buttonStyle("pause")}>
+            {pending === a.do ? "Saving…" : a.label}
+          </button>
         ))}
       </div>
 
-      {drawer && <>
-        <div onClick={() => setDrawer(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:100 }}/>
-        <div style={{ position:"fixed", top:0, right:0, width:500, height:"100vh", background:"var(--bg-card)", zIndex:101, boxShadow:"-2px 0 20px rgba(0,0,0,0.15)", display:"flex", flexDirection:"column" }}>
-          <div style={{ padding:"20px 24px", borderBottom:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <h3 style={{ margin:0 }}>{drawer === "new" ? "New Instruction" : "Edit Instruction"}</h3>
-            <button onClick={() => setDrawer(null)} style={{ background:"none", border:"none", cursor:"pointer" }}><X size={18}/></button>
-          </div>
-          <div style={{ padding:24, flex:1, overflowY:"auto", display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <label style={{ fontSize:13, fontWeight:600, marginBottom:4, display:"block" }}>Title</label>
-              <input value={ed.title} onChange={e => setEd(p => ({...p, title:e.target.value}))} placeholder="e.g. Healthcare Billing Model" style={{ width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid var(--border)", fontSize:14, background:"var(--bg-el)" }}/>
-            </div>
-            <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
-              <label style={{ fontSize:13, fontWeight:600, marginBottom:4, display:"block" }}>Instructions</label>
-              <textarea value={ed.body} onChange={e => setEd(p => ({...p, body:e.target.value}))} placeholder="Write the rules, context, and directives here..." style={{ flex:1, minHeight:300, padding:"10px 12px", borderRadius:8, border:"1px solid var(--border)", fontSize:14, background:"var(--bg-el)", resize:"vertical", fontFamily:"var(--font-b)" }}/>
-            </div>
-            <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:14, cursor:"pointer" }}>
-              <input type="checkbox" checked={ed.active} onChange={e => setEd(p => ({...p, active:e.target.checked}))}/> Active
-            </label>
-          </div>
-          <div style={{ padding:"16px 24px", borderTop:"1px solid var(--border)", display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <button onClick={() => setDrawer(null)} style={{ padding:"8px 20px", borderRadius:8, border:"1px solid var(--border)", background:"var(--bg-el)", cursor:"pointer" }}>Cancel</button>
-            <button onClick={save} style={{ padding:"8px 20px", borderRadius:8, border:"none", background:"var(--blue)", color:"#fff", cursor:"pointer" }}>Save</button>
-          </div>
-        </div>
-      </>}
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: 18, marginBottom: 14 }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-sec)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".06em" }}>
+          Resume
+        </h3>
+        {resumeActions.map(a => (
+          <button key={a.do} onClick={() => act(a.do)} disabled={!!pending} style={buttonStyle(a.flavor)}>
+            {pending === a.do ? "Saving…" : a.label}
+          </button>
+        ))}
+      </div>
 
-      {confirm && <>
-        <div onClick={() => setConfirm(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:100 }}/>
-        <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", background:"var(--bg-card)", borderRadius:12, padding:24, zIndex:101, width:360, boxShadow:"0 8px 32px rgba(0,0,0,0.2)" }}>
-          <h3 style={{ margin:"0 0 8px" }}>Delete Instruction?</h3>
-          <p style={{ color:"var(--text-dim)", margin:"0 0 20px", fontSize:14 }}>This cannot be undone.</p>
-          <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-            <button onClick={() => setConfirm(null)} style={{ padding:"8px 20px", borderRadius:8, border:"1px solid var(--border)", background:"var(--bg-el)", cursor:"pointer" }}>Cancel</button>
-            <button onClick={() => del(confirm)} style={{ padding:"8px 20px", borderRadius:8, border:"none", background:"var(--red)", color:"#fff", cursor:"pointer" }}>Delete</button>
-          </div>
-        </div>
-      </>}
     </div>
   );
 };
@@ -2646,6 +4347,7 @@ const PaymentsView = ({ db, setDB }) => {
           </div>
           <label>Reference #<input value={pd.reference} onChange={e=>setPD({...pd,reference:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
           <label>Notes<textarea value={pd.notes} onChange={e=>setPD({...pd,notes:e.target.value})} rows={2} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4,resize:"vertical"}} /></label>
+          {drawer.mode==="edit"&&pd.id&&<AssociatedDocumentsPanel db={db} setDB={setDB} entityType="payment" entityId={pd.id}/>}
           <div style={{borderTop:"1px solid var(--border)",paddingTop:"0.75rem",marginTop:"0.25rem"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.5rem"}}>
               <strong style={{fontSize:"0.9rem"}}>Apply to Invoices</strong>
@@ -2679,157 +4381,626 @@ const PaymentsView = ({ db, setDB }) => {
     </div>}
   </div>);
 };
+
 /* ────────────────────────────────────────────────────────
-   AI MEMORIES VIEW
+   DOCUMENTS VIEW
 ──────────────────────────────────────────────────────── */
-const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
-const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
-const blankMemory = () => ({ ai_system:"claude", memory_summary:"", memory_type:"general", source_context:"", companyId:"", contactId:"", dealId:"", projectId:"", strategyId:"" });
-
-const AIMemoriesView = ({ db, setDB }) => {
+const DocumentsView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
-  const [confirm, setConfirm] = useState(null);
-  const [md, setMD] = useState(blankMemory());
+  const [doc, setDoc] = useState(blankDocument());
+  const [query, setQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
-  const [filterSystem, setFilterSystem] = useState("all");
-  const [search, setSearch] = useState("");
-  const memories = (db.ai_memories || []);
-  const contacts = (db.contacts || []);
-  const companies = (db.companies || []);
-  const deals = (db.deals || []);
-  const projects = (db.projects || []);
-  const strategies = (db.strategies || []);
-  window.__componentPartial = true;
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+  const drawerFileInputRef = useRef(null);
 
-  const filtered = memories.filter(m => {
-    if (filterType !== "all" && m.memory_type !== filterType) return false;
-    if (filterSystem !== "all" && m.ai_system !== filterSystem) return false;
-    if (search && !m.memory_summary.toLowerCase().includes(search.toLowerCase()) && !(m.source_context||"").toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  }).sort((a, b) => (b.id || 0) - (a.id || 0));
+  const docs = (db.documents || []).filter(d => {
+    const q = query.toLowerCase();
+    const matchesSearch = !q || [d.title, d.file_name, d.description, d.url].some(v => (v || "").toLowerCase().includes(q))
+      || (d.associations || []).some(a => getDocEntityLabel(db, a).toLowerCase().includes(q));
+    const matchesType = filterType === "all" || (d.associations || []).some(a => a.type === filterType);
+    return matchesSearch && matchesType;
+  }).sort((a,b) => (b.id || 0) - (a.id || 0));
 
-  const saveMemory = (d) => {
-    const rec = { ...d, companyId:parseInt(d.companyId)||null, contactId:parseInt(d.contactId)||null, dealId:parseInt(d.dealId)||null, projectId:parseInt(d.projectId)||null, strategyId:parseInt(d.strategyId)||null };
-    if (drawer.mode === "add") setDB(db => ({ ...db, ai_memories: [...(db.ai_memories || []), { ...rec, id: nextId(db.ai_memories || []), created_at: new Date().toISOString() }] }));
-    else setDB(db => ({ ...db, ai_memories: (db.ai_memories || []).map(x => x.id === rec.id ? rec : x) }));
+  const saveDoc = () => {
+    if (!doc.title && !doc.file_name && !doc.url) return;
+    const rec = { ...doc, title:doc.title || doc.file_name || (doc.kind === "link" ? doc.url : "Untitled document"), associations:doc.associations || [] };
+    setDB(prev => drawer === "add"
+      ? { ...prev, documents:[{ ...rec, id:nextId(prev.documents || []) }, ...(prev.documents || [])] }
+      : { ...prev, documents:(prev.documents || []).map(d => d.id === rec.id ? rec : d) }
+    );
     setDrawer(null);
   };
-  const delMemory = (id) => { setDB(db => ({ ...db, ai_memories: (db.ai_memories || []).filter(x => x.id !== id) })); setConfirm(null); };
-  const typeColor = (t) => ({ general:"var(--text-sec)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--blue)", decision:"var(--green)", relationship:"var(--red)", insight:"var(--purple)" }[t] || "var(--text-sec)");
-  const systemIcon = (s) => ({ claude:"🟣", chatgpt:"🟢", gemini:"🔵", copilot:"⚪", other:"⚙️" }[s] || "⚙️");
-  const linkedName = (id, arr, fallback) => { const r = arr.find(x => x.id === id); return r ? (r.name || r.title || fallback) : null; };
+  const delDoc = async (d) => {
+    if (d.storage_path) await supabase.storage.from("memory-files").remove([d.storage_path]);
+    setDB(prev => ({ ...prev, documents:(prev.documents || []).filter(x => x.id !== d.id) }));
+    setDrawer(null);
+  };
+  const uploadDocs = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        try {
+          uploaded.push({ ...blankDocument(), ...(await uploadDocumentFile(file)) });
+        } catch (error) { console.error("Upload error:", error); }
+      }
+      if (uploaded.length) setDB(prev => { let id = nextId(prev.documents || []); return { ...prev, documents:[...uploaded.map(d => ({ ...d, id:id++ })), ...(prev.documents || [])] }; });
+    } catch (err) { console.error("Document upload failed:", err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+  const attachFileToDraft = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadDocumentFile(file);
+      setDoc(p => ({ ...p, ...uploaded, title:p.title || uploaded.title }));
+    } catch (err) { console.error("Document upload failed:", err); }
+    setUploading(false);
+    if (drawerFileInputRef.current) drawerFileInputRef.current.value = "";
+  };
 
   return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, maxWidth: 900 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div className="display" style={{ fontSize: 18, fontWeight: 700 }}>AI Memories</div>
-        <button className="btn btn-blue" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => { setMD(blankMemory()); setDrawer({ mode: "add" }); }}><Plus size={12} />Memory</button>
+    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div>
+          <div className="display" style={{ fontSize:18, fontWeight:700 }}>Documents</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>{(db.documents || []).length} shared repository item{(db.documents || []).length === 1 ? "" : "s"}</div>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={uploadDocs}/>
+          <button className="btn btn-ghost" disabled={uploading} onClick={() => fileInputRef.current?.click()}>{uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Upload size={13}/>Upload Attachments</>}</button>
+          <button className="btn btn-blue" onClick={() => { setDoc(blankDocument()); setDrawer("add"); }}><Plus size={13}/>New Document</button>
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {[{ label: "Total", value: memories.length, color: "var(--blue)" },
-          ...AI_SYSTEMS.filter(s => memories.some(m => m.ai_system === s)).map(s => ({ label: s.charAt(0).toUpperCase() + s.slice(1), value: memories.filter(m => m.ai_system === s).length, color: "var(--purple)" }))
-        ].map((s, i) => (
-          <div key={i} style={{ padding: "8px 14px", background: "var(--bg-el)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}>
-            <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{s.label}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>{s.value}</div>
+      <div className="card" style={{ padding:"10px 14px" }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+          <div style={{ position:"relative", flex:1, minWidth:220 }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:9 }}/>
+            <input className="input" placeholder="Search documents and associations..." value={query} onChange={e => setQuery(e.target.value)} style={{ paddingLeft:30 }}/>
           </div>
-        ))}
+          <select className="filter-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
+            <option value="all">All associations</option>
+            {DOCUMENT_ENTITY_TYPES.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
+          </select>
+          <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{docs.length} shown</span>
+        </div>
       </div>
-      <div className="filter-bar">
-        <div style={{ position: "relative", flex: 1, maxWidth: 260 }}>
-          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)" }} />
-          <input className="input" placeholder="Search memories…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 30, fontSize: 12, padding: "6px 10px 6px 30px" }} />
+      {docs.length === 0 ? (
+        <div className="card" style={{ padding:42, textAlign:"center" }}>
+          <FileText size={34} color="var(--text-dim)" style={{ marginBottom:12 }}/>
+          <div style={{ fontSize:14, color:"var(--text-sec)" }}>No documents found</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:4 }}>Upload or create a document, then associate it anywhere in the system.</div>
+          <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:8 }}>Supports attachments like PDF, images, markdown, HTML, ZIP, Office files, text, CSV, and links.</div>
         </div>
-        <select className="filter-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
-          <option value="all">All types</option>
-          {MEMORY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select className="filter-select" value={filterSystem} onChange={e => setFilterSystem(e.target.value)}>
-          <option value="all">All AI systems</option>
-          {AI_SYSTEMS.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
-      </div>
-      {filtered.length === 0 && <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
-        {memories.length === 0 ? "No AI memories yet. Add one to start tracking what your AI systems know." : "No memories match your filters."}
-      </div>}
-      {filtered.map(m => {
-        const links = [
-          linkedName(m.contactId, contacts) && { icon: Users, label: linkedName(m.contactId, contacts) },
-          linkedName(m.companyId, companies) && { icon: Building2, label: linkedName(m.companyId, companies) },
-          linkedName(m.dealId, deals) && { icon: Target, label: linkedName(m.dealId, deals) },
-          linkedName(m.projectId, projects) && { icon: Briefcase, label: linkedName(m.projectId, projects) },
-          linkedName(m.strategyId, strategies) && { icon: Target, label: linkedName(m.strategyId, strategies, "Strategy") },
-        ].filter(Boolean);
-        return (
-          <div key={m.id} className="card row-hover" style={{ padding: 16, borderLeft: "3px solid " + typeColor(m.memory_type) }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 14 }}>{systemIcon(m.ai_system)}</span>
-                <Tag label={m.memory_type} color={typeColor(m.memory_type)} />
-                <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>{m.ai_system}</span>
-              </div>
-              <RowActions onEdit={() => { setMD({ ...m, companyId: String(m.companyId || ""), contactId: String(m.contactId || ""), dealId: String(m.dealId || ""), projectId: String(m.projectId || ""), strategyId: String(m.strategyId || "") }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: m.id, label: (m.memory_summary||"").substring(0, 40) })} />
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>{m.memory_summary}</div>
-            {m.source_context && <div style={{ fontSize: 11, color: "var(--text-sec)", fontStyle: "italic", marginBottom: 6 }}>Source: {m.source_context}</div>}
-            {links.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-                {links.map((lnk, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", background: "var(--bg-el)", borderRadius: 4, fontSize: 10 }}>
-                    <lnk.icon size={10} color="var(--text-sec)" /><span style={{ color: "var(--text-sec)" }}>{lnk.label}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {m.created_at && <div className="mono" style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 6 }}>{new Date(m.created_at).toLocaleString()}</div>}
-          </div>
-        );
-      })}
-      {drawer && <Drawer title={drawer.mode === "add" ? "New AI Memory" : "Edit AI Memory"} onClose={() => setDrawer(null)} onSave={() => saveMemory(md)}>
-        <Field label="Memory Summary"><Tex value={md.memory_summary} onChange={v => setMD(p => ({ ...p, memory_summary: v }))} placeholder="What does the AI remember?" /></Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="AI System"><Sel value={md.ai_system} onChange={v => setMD(p => ({ ...p, ai_system: v }))} options={AI_SYSTEMS} /></Field>
-          <Field label="Memory Type"><Sel value={md.memory_type} onChange={v => setMD(p => ({ ...p, memory_type: v }))} options={MEMORY_TYPES} /></Field>
+      ) : (
+        <div className="card" style={{ overflow:"hidden" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <tbody>
+              {docs.map(d => (
+                <tr key={d.id} className="row-hover" style={{ borderBottom:"1px solid var(--border)" }}>
+                  <td style={{ padding:"12px 14px" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      {(d.file_name || d.storage_path) ? <Paperclip size={14} color="var(--blue)"/> : <ExternalLink size={14} color="var(--blue)"/>}
+                      <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
+                    </div>
+                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{getDocKindLabel(d)}{d.file_name ? ` · ${d.file_name}` : ""}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
+                    {d.description && <div style={{ fontSize:12, color:"var(--text-sec)", marginTop:5, lineHeight:1.4 }}>{d.description}</div>}
+                  </td>
+                  <td style={{ padding:"12px 14px" }}>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+                      {(d.associations || []).length === 0 ? <span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>Unassociated</span> : (d.associations || []).map(a => (
+                        <span key={docAssociationKey(a)} className="tag" style={{ color:"var(--purple)", background:"var(--purple-dim)", border:"1px solid rgba(124,58,237,0.16)" }}>{getDocEntityLabel(db, a)}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td style={{ padding:"12px 14px", textAlign:"right", width:70 }}>
+                    <button className="btn-icon" title="Edit document" onClick={() => { setDoc({ ...d, associations:d.associations || [] }); setDrawer("edit"); }}><Pencil size={13}/></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <Field label="Source / Context"><Inp value={md.source_context} onChange={v => setMD(p => ({ ...p, source_context: v }))} placeholder="Where did this memory come from?" /></Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Contact"><Sel value={md.contactId} onChange={v => setMD(p => ({ ...p, contactId: v }))} options={[{ value: "", label: "None" }, ...contacts.map(c => ({ value: String(c.id), label: c.name }))]} /></Field>
-          <Field label="Company"><Sel value={md.companyId} onChange={v => setMD(p => ({ ...p, companyId: v }))} options={[{ value: "", label: "None" }, ...companies.map(c => ({ value: String(c.id), label: c.name }))]} /></Field>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Deal"><Sel value={md.dealId} onChange={v => setMD(p => ({ ...p, dealId: v }))} options={[{ value: "", label: "None" }, ...deals.map(d => ({ value: String(d.id), label: d.name }))]} /></Field>
-          <Field label="Project"><Sel value={md.projectId} onChange={v => setMD(p => ({ ...p, projectId: v }))} options={[{ value: "", label: "None" }, ...projects.map(p => ({ value: String(p.id), label: p.name }))]} /></Field>
-        </div>
-        <Field label="Strategy"><Sel value={md.strategyId} onChange={v => setMD(p => ({ ...p, strategyId: v }))} options={[{ value: "", label: "None" }, ...strategies.map(s => ({ value: String(s.id), label: s.name }))]} /></Field>
+      )}
+      {drawer && <Drawer title={drawer === "add" ? "New Document" : "Edit Document"} onClose={() => setDrawer(null)} onSave={saveDoc}>
+        <Field label="Title"><Inp value={doc.title || ""} onChange={v => setDoc(p => ({ ...p, title:v }))} placeholder="Document title"/></Field>
+        <Field label="Description"><Tex value={doc.description || ""} onChange={v => setDoc(p => ({ ...p, description:v }))} placeholder="Purpose, contents, or notes"/></Field>
+        <Field label="Attachment">
+          <input ref={drawerFileInputRef} type="file" style={{ display:"none" }} onChange={attachFileToDraft}/>
+          <button type="button" className="btn btn-ghost" disabled={uploading} onClick={() => drawerFileInputRef.current?.click()}>
+            {uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Paperclip size={13}/>Upload attachment</>}
+          </button>
+          <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:6 }}>PDF, image, markdown, HTML, ZIP, Office files, text, CSV, and other file types.</div>
+          {doc.file_name && <div className="card-el" style={{ padding:"8px 10px", marginTop:8, display:"flex", alignItems:"center", gap:8 }}>
+            <Paperclip size={13} color="var(--blue)"/>
+            <span style={{ flex:1, fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{doc.file_name}</span>
+            <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{formatDocSize(doc.file_size)}</span>
+          </div>}
+        </Field>
+        <Field label="Link"><Inp value={doc.kind === "link" || !doc.file_name ? (doc.url || "") : ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind, file_name:v ? "" : p.file_name, file_type:v ? "" : p.file_type, file_size:v ? 0 : p.file_size, storage_path:v ? "" : p.storage_path }))} placeholder="https://..."/></Field>
+        <Field label="Associations"><DocumentAssociationEditor db={db} value={doc.associations || []} onChange={v => setDoc(p => ({ ...p, associations:v }))}/></Field>
+        {drawer === "edit" && <button className="btn btn-danger" style={{ marginTop:14 }} onClick={() => delDoc(doc)}><Trash2 size={13}/>Delete Document</button>}
       </Drawer>}
-      {confirm && <ConfirmDelete label={confirm.label} onConfirm={() => delMemory(confirm.id)} onCancel={() => setConfirm(null)} />}
     </div>
   );
 };
 
 /* ────────────────────────────────────────────────────────
-   STRATEGIES VIEW
+   MSTACK INTAKE
 ──────────────────────────────────────────────────────── */
-const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"high", links:[], notes:"" });
+const MSTACK_AGENTS = [
+  "discovery-plan","discovery-synthesis","pitch-draft","pricing-strategy","proposal","sow-builder",
+  "project-kickoff","project-status","demo-builder","plan-voice-agent","retell-review","supabase-review",
+  "sf-review","scope-guard","client-brief","office-hours","weekly-retro","bd-signal","ship","second-brain-sync"
+];
 
+const blankMstackIntake = () => ({
+  agent:"discovery-synthesis",
+  subject:"",
+  output:"",
+  memory_type:"context",
+  contactId:"",
+  dealId:"",
+  projectId:"",
+  createTask:false,
+  taskTitle:"",
+  taskDue:"",
+  taskPriority:"medium",
+});
+
+const MstackIntakeView = ({ db, setDB }) => {
+  const [form, setForm] = useState(blankMstackIntake());
+  const [saved, setSaved] = useState(null);
+
+  const inferSubject = () => {
+    if (form.subject.trim()) return form.subject.trim();
+    const firstLine = form.output.split("\n").find(l => l.trim()) || "mstack output";
+    return firstLine.replace(/^#+\s*/, "").slice(0, 90);
+  };
+
+  const extractTaskTitle = () => {
+    if (form.taskTitle.trim()) return form.taskTitle.trim();
+    const match = form.output.match(/(?:Next action|Next step|Action):\s*(.+)/i);
+    return match?.[1]?.trim()?.slice(0, 120) || `Follow up from /${form.agent}`;
+  };
+
+  const saveOutput = () => {
+    if (!form.output.trim()) return;
+    const subject = inferSubject();
+    const now = new Date().toISOString();
+    const contactId = form.contactId ? parseInt(form.contactId) : null;
+    const dealId = form.dealId ? parseInt(form.dealId) : null;
+    const projectId = form.projectId ? parseInt(form.projectId) : null;
+    setDB(prev => {
+      const memoryId = nextId(prev.ai_memories || []);
+      const memory = {
+        id: memoryId,
+        subject,
+        ai_system: "codex",
+        memory_type: form.memory_type,
+        memory_summary: form.output.trim(),
+        source_context: `mstack /${form.agent} imported ${new Date().toLocaleString()}`,
+        companyId: null,
+        contactId,
+        dealId,
+        projectId,
+        strategyId: null,
+        files: [],
+        created_at: now,
+      };
+      const next = {
+        ...prev,
+        ai_memories: [memory, ...(prev.ai_memories || [])],
+        agentLogs: [{
+          id: nextId(prev.agentLogs || []),
+          agent: "mstack",
+          type: "memory",
+          message: `Saved /${form.agent}: ${subject}`,
+          ts: new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}),
+          priority: "medium",
+        }, ...(prev.agentLogs || [])],
+      };
+      if (form.createTask) {
+        next.tasks = [...(prev.tasks || []), {
+          id: nextId(prev.tasks || []),
+          title: extractTaskTitle(),
+          projectId,
+          contactId,
+          companyId: null,
+          dealId,
+          due: form.taskDue || "",
+          done: false,
+          priority: form.taskPriority,
+          assignedTo: "mstack",
+          notes: `Created from /${form.agent} output saved as AI Memory #${memoryId}.`,
+          status: "todo",
+          category: "follow_up",
+          source: "mstack",
+          recurrence: "none",
+        }];
+      }
+      return next;
+    });
+    setSaved({ subject, taskCreated: form.createTask });
+    setForm(blankMstackIntake());
+  };
+
+  const recent = (db.ai_memories || []).filter(m => (m.source_context || "").includes("mstack /")).slice(0, 8);
+
+  return (
+    <div style={{ padding:24, maxWidth:1100, margin:"0 auto", display:"grid", gridTemplateColumns:"minmax(0,1.25fr) minmax(280px,0.75fr)", gap:20 }}>
+      <div className="card" style={{ padding:20 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:18 }}>
+          <Zap size={18} color="var(--purple)"/>
+          <div>
+            <div className="display" style={{ fontSize:18, fontWeight:700 }}>mstack Intake</div>
+            <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>Paste an agent output. Save it to memory. Create the next task.</div>
+          </div>
+        </div>
+
+        {saved && (
+          <div style={{ padding:"10px 12px", borderRadius:8, background:"var(--green-dim)", border:"1px solid rgba(5,150,105,0.22)", color:"var(--green)", fontSize:12, marginBottom:14 }}>
+            Saved: {saved.subject}{saved.taskCreated ? " + task created" : ""}
+          </div>
+        )}
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          <Field label="Agent"><Sel value={form.agent} onChange={v=>setForm(f=>({...f, agent:v}))} options={MSTACK_AGENTS}/></Field>
+          <Field label="Memory Type"><Sel value={form.memory_type} onChange={v=>setForm(f=>({...f, memory_type:v}))} options={["context","decision","relationship","insight","feedback","preference","general"]}/></Field>
+        </div>
+
+        <Field label="Subject"><Inp value={form.subject} onChange={v=>setForm(f=>({...f, subject:v}))} placeholder="Optional. I can infer this from the output."/></Field>
+        <Field label="Agent Output"><Tex value={form.output} onChange={v=>setForm(f=>({...f, output:v}))} placeholder="Paste the mstack agent output here..."/></Field>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
+          <Field label="Contact"><SearchSelect value={form.contactId} onChange={v=>setForm(f=>({...f, contactId:v}))} options={(db.contacts||[]).map(c=>({value:String(c.id),label:c.name+(c.co?" ("+c.co+")":"")}))} placeholder="Link contact"/></Field>
+          <Field label="Deal"><SearchSelect value={form.dealId} onChange={v=>setForm(f=>({...f, dealId:v}))} options={(db.deals||[]).map(d=>({value:String(d.id),label:d.name}))} placeholder="Link deal"/></Field>
+          <Field label="Project"><SearchSelect value={form.projectId} onChange={v=>setForm(f=>({...f, projectId:v}))} options={(db.projects||[]).map(p=>({value:String(p.id),label:p.name}))} placeholder="Link project"/></Field>
+        </div>
+
+        <div className="card-el" style={{ padding:14, marginTop:4 }}>
+          <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, fontWeight:600, marginBottom:12 }}>
+            <input type="checkbox" checked={form.createTask} onChange={e=>setForm(f=>({...f, createTask:e.target.checked}))}/>
+            Create follow-up task
+          </label>
+          {form.createTask && (
+            <div style={{ display:"grid", gridTemplateColumns:"1.5fr 0.8fr 0.7fr", gap:10 }}>
+              <Field label="Task Title"><Inp value={form.taskTitle} onChange={v=>setForm(f=>({...f, taskTitle:v}))} placeholder="Optional. I can infer next action."/></Field>
+              <Field label="Due"><Inp type="date" value={form.taskDue} onChange={v=>setForm(f=>({...f, taskDue:v}))}/></Field>
+              <Field label="Priority"><Sel value={form.taskPriority} onChange={v=>setForm(f=>({...f, taskPriority:v}))} options={["high","medium","low"]}/></Field>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:16 }}>
+          <button className="btn btn-ghost" onClick={()=>setForm(blankMstackIntake())}>Clear</button>
+          <button className="btn btn-blue" onClick={saveOutput} disabled={!form.output.trim()} style={{ opacity:form.output.trim()?1:0.5 }}><Save size={13}/>Save to Second Brain</button>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding:18, alignSelf:"start" }}>
+        <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:10 }}>Recent mstack Memories</div>
+        {recent.length === 0 ? (
+          <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.6 }}>No mstack outputs saved yet.</div>
+        ) : recent.map(m => (
+          <div key={m.id} className="card-el" style={{ padding:12, marginBottom:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"flex-start" }}>
+              <div style={{ fontSize:13, fontWeight:600, lineHeight:1.4 }}>{m.subject}</div>
+              <Tag label={m.memory_type || "context"}/>
+            </div>
+            <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:6 }}>{m.source_context}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────
+   AI MEMORIES VIEW
+──────────────────────────────────────────────────────── */
+const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
+const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
+const blankMemory = () => ({ subject:"", ai_system:"claude", memory_summary:"", memory_type:"general", source_context:"", companyId:"", contactId:"", dealId:"", projectId:"", strategyId:"" });
+
+const AIMemoriesView = ({ db, setDB }) => {
+  const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [md, setMd] = useState({});
+  const [filterType, setFilterType] = useState("all");
+  const [filterSystem, setFilterSystem] = useState("all");
+  const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const typeColors = { general:"var(--blue)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--green)", decision:"var(--red)", relationship:"var(--pink)", insight:"var(--teal)" };
+  const systemIcons = { claude:"\u2728", chatgpt:"\ud83e\udd16", gemini:"\ud83d\udc8e", copilot:"\u2708\ufe0f", other:"\ud83d\udccc" };
+  const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
+  const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
+
+  const items = (db.ai_memories||[]).filter(m => {
+    if (filterType !== "all" && m.memory_type !== filterType) return false;
+    if (filterSystem !== "all" && m.ai_system !== filterSystem) return false;
+    if (search) { const s = search.toLowerCase(); return (m.subject||"").toLowerCase().includes(s) || (m.memory_summary||"").toLowerCase().includes(s) || (m.source_context||"").toLowerCase().includes(s); }
+    return true;
+  }).sort((a,b) => (b.id||0)-(a.id||0));
+
+  const save = () => {
+    if (!md.subject) return;
+    setDB(prev => {
+      const mem = prev.ai_memories || [];
+      if (drawer === "add") {
+        const id = Math.max(0, ...mem.map(x=>x.id||0)) + 1;
+        return { ...prev, ai_memories: [{ ...md, id, created_at: new Date().toISOString(), files: md.files||[] }, ...mem] };
+      }
+      return { ...prev, ai_memories: mem.map(x => x.id === md.id ? { ...md } : x) };
+    });
+    setDrawer(null);
+  };
+
+  const handleFileUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const { data, error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) { console.error('Upload error:', error); continue; }
+        const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
+      }
+      setMd(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
+    } catch(err) { console.error('Upload failed:', err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = async (fileObj) => {
+    await supabase.storage.from('memory-files').remove([fileObj.path]);
+    setMd(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
+  };
+
+  const copyToClipboard = (text, id) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
+  };
+
+  return (
+    <div style={{ padding:24 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <Brain size={18} color="var(--purple)"/>
+          <span style={{ fontFamily:"var(--font-d)", fontSize:18, fontWeight:700 }}>AI Memories</span>
+          <span className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginLeft:4 }}>{items.length}</span>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setMd({ subject:"", memory_summary:"", ai_system:"claude", memory_type:"general", source_context:"", companyId:null, contactId:null, dealId:null, projectId:null, strategyId:null, files:[] }); setDrawer("add"); }}><Plus size={13}/> New Memory</button>
+      </div>
+
+      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ position:"relative", flex:1, minWidth:200 }}>
+          <Search size={13} style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:"var(--text-dim)" }}/>
+          <input className="input" placeholder="Search memories..." value={search} onChange={e=>setSearch(e.target.value)} style={{ paddingLeft:32, width:"100%" }}/>
+        </div>
+        <select className="input" value={filterType} onChange={e=>setFilterType(e.target.value)} style={{ width:140 }}>
+          <option value="all">All Types</option>
+          {MEMORY_TYPES.map(t=><option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+        </select>
+        <select className="input" value={filterSystem} onChange={e=>setFilterSystem(e.target.value)} style={{ width:140 }}>
+          <option value="all">All Systems</option>
+          {AI_SYSTEMS.map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+        </select>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="card" style={{ padding:40, textAlign:"center" }}>
+          <Brain size={32} color="var(--text-dim)" style={{ marginBottom:12 }}/>
+          <div style={{ fontSize:14, color:"var(--text-sec)" }}>No memories found</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:4 }}>Create your first AI memory to get started</div>
+        </div>
+      ) : (
+        <div className="card" style={{ overflow:"hidden" }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <thead>
+              <tr style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-sec)" }}>
+                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px" }}>Title</th>
+                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>Type</th>
+                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>System</th>
+                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:90 }}>Date</th>
+                <th style={{ textAlign:"center", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(m => (
+                <Fragment key={m.id}>
+                  <tr style={{ borderBottom: expandedId===m.id ? "none" : "1px solid var(--border)", cursor:"pointer", transition:"background 0.15s" }} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-sec)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <td style={{ padding:"12px 14px" }} onClick={()=>setExpandedId(expandedId===m.id?null:m.id)}>
+                      <div style={{ fontWeight:600, fontSize:13, lineHeight:1.4 }}>{m.subject || "Untitled Memory"}</div>
+                      {(m.files||[]).length > 0 && <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", display:"flex", alignItems:"center", gap:3, marginTop:2 }}><Paperclip size={10}/> {(m.files||[]).length} file{(m.files||[]).length>1?"s":""}</span>}
+                    </td>
+                    <td style={{ padding:"12px 14px" }}>
+                      <span style={{ fontSize:11, padding:"2px 8px", borderRadius:10, background: (typeColors[m.memory_type]||"var(--text-dim)")+"20", color: typeColors[m.memory_type]||"var(--text-dim)", fontWeight:500 }}>{m.memory_type}</span>
+                    </td>
+                    <td style={{ padding:"12px 14px" }}>
+                      <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{systemIcons[m.ai_system]||""} {m.ai_system}</span>
+                    </td>
+                    <td style={{ padding:"12px 14px" }}>
+                      <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{m.created_at ? new Date(m.created_at).toLocaleDateString() : "\u2014"}</span>
+                    </td>
+                    <td style={{ padding:"12px 14px", textAlign:"center" }}>
+                      <div style={{ display:"flex", gap:4, justifyContent:"center" }}>
+                        <button className="btn btn-sm" title="Expand / Collapse" onClick={(e)=>{e.stopPropagation();setExpandedId(expandedId===m.id?null:m.id)}} style={{ padding:"4px 6px" }}>
+                          {expandedId===m.id ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+                        </button>
+                        <button className="btn btn-sm" title="Copy prompt / summary" onClick={(e)=>{e.stopPropagation();copyToClipboard(m.memory_summary||"",m.id)}} style={{ padding:"4px 6px", color: copiedId===m.id?"var(--green)":"inherit" }}>
+                          {copiedId===m.id ? <Check size={13}/> : <Copy size={13}/>}
+                        </button>
+                        <button className="btn btn-sm" title="Edit" onClick={(e)=>{e.stopPropagation();setMd({...m});setDrawer("edit")}} style={{ padding:"4px 6px" }}>
+                          <Pencil size={13}/>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedId===m.id && (
+                    <tr style={{ borderBottom:"1px solid var(--border)" }}>
+                      <td colSpan={5} style={{ padding:"0 14px 14px 14px", background:"var(--bg-sec)" }}>
+                        <div style={{ padding:14, borderRadius:8, background:"var(--bg)", border:"1px solid var(--border)", marginTop:4 }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                            <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", textTransform:"uppercase", letterSpacing:"0.5px" }}>Summary / Prompt</span>
+                            <button className="btn btn-sm" onClick={()=>copyToClipboard(m.memory_summary||"",m.id)} style={{ fontSize:10, padding:"2px 8px", gap:4 }}>
+                              {copiedId===m.id ? <><Check size={10}/> Copied</> : <><Copy size={10}/> Copy</>}
+                            </button>
+                          </div>
+                          <div style={{ fontSize:13, lineHeight:1.7, whiteSpace:"pre-wrap", color:"var(--text)" }}>{m.memory_summary || "No summary"}</div>
+                          {m.source_context && <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:10, paddingTop:8, borderTop:"1px solid var(--border)" }}>Source: {m.source_context}</div>}
+                          {(m.files||[]).length > 0 && (
+                            <div style={{ marginTop:10, paddingTop:8, borderTop:"1px solid var(--border)" }}>
+                              <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginBottom:6, textTransform:"uppercase" }}>Attached Files</div>
+                              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                                {(m.files||[]).map((f,i) => (
+                                  <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:4, padding:"4px 10px", borderRadius:6, background:"var(--bg-sec)", border:"1px solid var(--border)", fontSize:11, color:"var(--blue)", textDecoration:"none" }}>
+                                    <FileText size={12}/> {f.name}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="ai_memory" entityId={m.id}/>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {confirm!==null && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }} onClick={()=>setConfirm(null)}>
+          <div className="card" style={{ padding:24, maxWidth:380 }} onClick={e=>e.stopPropagation()}>
+            <div style={{ fontSize:14, fontWeight:600, marginBottom:12 }}>Delete this memory?</div>
+            <div style={{ fontSize:13, color:"var(--text-sec)", marginBottom:20 }}>This action cannot be undone.</div>
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+              <button className="btn" onClick={()=>setConfirm(null)}>Cancel</button>
+              <button className="btn" style={{ background:"var(--red)", color:"#fff" }} onClick={()=>{setDB(p=>({...p,ai_memories:(p.ai_memories||[]).filter(x=>x.id!==confirm)}));setConfirm(null)}}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {drawer && <Drawer title={drawer==="add"?"New AI Memory":"Edit AI Memory"} onClose={()=>setDrawer(null)} onSave={save}>
+        <Field label="Subject"><Inp value={md.subject||""} onChange={v=>setMd(p=>({...p,subject:v}))} placeholder="e.g. Brand voice guidelines"/></Field>
+        <Field label="Memory Summary / Prompt">
+          <textarea className="input" rows={6} value={md.memory_summary||""} onChange={e=>setMd(p=>({...p,memory_summary:e.target.value}))} placeholder="The AI detail, prompt, or context to remember..." style={{ width:"100%", resize:"vertical", fontFamily:"inherit", fontSize:13, lineHeight:1.6 }}/>
+        </Field>
+        <Field label="AI System"><Sel value={md.ai_system||"claude"} onChange={v=>setMd(p=>({...p,ai_system:v}))} options={AI_SYSTEMS}/></Field>
+        <Field label="Memory Type"><Sel value={md.memory_type||"general"} onChange={v=>setMd(p=>({...p,memory_type:v}))} options={MEMORY_TYPES}/></Field>
+        <Field label="Source / Context"><Inp value={md.source_context||""} onChange={v=>setMd(p=>({...p,source_context:v}))} placeholder="Where this memory came from"/></Field>
+        <Field label="Contact"><Sel value={md.contactId||""} onChange={v=>setMd(p=>({...p,contactId:v||null}))} options={[{value:"",label:"None"},...(db.contacts||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
+        <Field label="Company"><Sel value={md.companyId||""} onChange={v=>setMd(p=>({...p,companyId:v||null}))} options={[{value:"",label:"None"},...(db.companies||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
+        <Field label="Deal"><Sel value={md.dealId||""} onChange={v=>setMd(p=>({...p,dealId:v||null}))} options={[{value:"",label:"None"},...(db.deals||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
+        <Field label="Project"><Sel value={md.projectId||""} onChange={v=>setMd(p=>({...p,projectId:v||null}))} options={[{value:"",label:"None"},...(db.projects||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
+        <Field label="Strategy"><Sel value={md.strategyId||""} onChange={v=>setMd(p=>({...p,strategyId:v||null}))} options={[{value:"",label:"None"},...(db.strategies||[]).map(c=>({value:c.id,label:c.name||c.title}))]}/></Field>
+
+        <div style={{ marginTop:14, borderTop:"1px solid var(--border)", paddingTop:14 }}>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8, textTransform:"uppercase" }}>Attached Files</div>
+          {(md.files||[]).length > 0 && (
+            <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:10 }}>
+              {(md.files||[]).map((f,i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 10px", borderRadius:6, background:"var(--bg-sec)", border:"1px solid var(--border)" }}>
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--blue)", textDecoration:"none", overflow:"hidden" }}>
+                    <FileText size={13}/> <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</span>
+                    <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", flexShrink:0 }}>{f.size ? '('+formatSize(f.size)+')' : ''}</span>
+                  </a>
+                  <button className="btn btn-sm" style={{ padding:"2px 6px", color:"var(--red)" }} onClick={()=>removeFile(f)} title="Remove file"><X size={12}/></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={handleFileUpload}/>
+          <button className="btn btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{ fontSize:12, gap:6 }}>
+            {uploading ? <><Loader size={12} className="spin"/> Uploading...</> : <><Upload size={12}/> Upload Files</>}
+          </button>
+        </div>
+
+        {drawer==="edit" && (
+          <div style={{ marginTop:16, paddingTop:12, borderTop:"1px solid var(--border)" }}>
+            <button className="btn btn-sm" style={{ color:"var(--red)", fontSize:11 }} onClick={()=>{setDrawer(null);setConfirm(md.id)}}><Trash2 size={12}/> Delete Memory</button>
+          </div>
+        )}
+      </Drawer>}
+    </div>
+  );
+}
+const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"medium", notes:"", links:[], files:[] });
 const StrategiesView = ({ db, setDB }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [sd, setSD] = useState(blankStrategy());
   const [expandedId, setExpandedId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const strategies = (db.strategies || []);
   const goals = (db.goals || []);
-  const instructions = (db.instructions || []).filter(i => i.active);
 
   const saveStrategy = (d) => {
-    const rec = { ...d, goalId: parseInt(d.goalId) || null, links: d.links || [] };
+    const rec = { ...d, goalId: parseInt(d.goalId) || null, links: d.links || [], files: d.files || [] };
     if (drawer.mode === "add") setDB(db => ({ ...db, strategies: [...(db.strategies || []), { ...rec, id: nextId(db.strategies || []) }] }));
     else setDB(db => ({ ...db, strategies: (db.strategies || []).map(x => x.id === rec.id ? rec : x) }));
     setDrawer(null);
   };
   const delStrategy = (id) => { setDB(db => ({ ...db, strategies: (db.strategies || []).filter(x => x.id !== id) })); setConfirm(null); };
+
+  const handleStrategyFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = 'strategies/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const { error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) { console.error('Upload error:', error); continue; }
+        const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
+      }
+      setSD(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
+    } catch (err) { console.error('Upload failed:', err); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeStrategyFile = async (fileObj) => {
+    if (fileObj.path) await supabase.storage.from('memory-files').remove([fileObj.path]);
+    setSD(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
+  };
+
+  const formatStrategyFileSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
+  };
 
   const statusColor = (s) => ({ active: "var(--green)", completed: "var(--blue)", paused: "var(--amber)", cancelled: "var(--text-dim)" }[s] || "var(--text-sec)");
 
@@ -2854,14 +5025,6 @@ const StrategiesView = ({ db, setDB }) => {
         </div>
       </div>}
 
-      {/* Active Instructions */}
-      {instructions.length > 0 && <div className="card" style={{ padding: 14 }}>
-        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8 }}>ACTIVE INSTRUCTIONS</div>
-        {instructions.map(inst => (<div key={inst.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
-          <span style={{ fontWeight: 600 }}>{inst.title}</span>: <span style={{ color: "var(--text-sec)" }}>{inst.body}</span>
-        </div>))}
-      </div>}
-
       {/* Strategies list */}
       {strategies.length === 0 && <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No strategies yet. Create one to start organizing your strategic initiatives.</div>}
       {strategies.map(s => {
@@ -2875,11 +5038,11 @@ const StrategiesView = ({ db, setDB }) => {
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{s.name} <Tag label={s.priority} /></div>
                   {goal && <div className="mono" style={{ fontSize: 10, color: "var(--purple)", marginTop: 2 }}>Goal: {goal.name}</div>}
-                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 2 }}>{linkedProjects.length} linked project{linkedProjects.length !== 1 ? "s" : ""}</div>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 2 }}>{linkedProjects.length} linked project{linkedProjects.length !== 1 ? "s" : ""}{(s.files||[]).length > 0 && <> · <Paperclip size={9} style={{verticalAlign:"middle"}}/> {(s.files||[]).length} file{(s.files||[]).length>1?"s":""}</>}</div>
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
                   <Tag label={s.status} />
-                  <RowActions onEdit={() => { setSD({ ...s, goalId: String(s.goalId || ""), links: s.links || [] }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: s.id, label: s.name })} />
+                  <RowActions onEdit={() => { setSD({ ...s, goalId: String(s.goalId || ""), links: s.links || [], files: s.files || [] }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: s.id, label: s.name })} />
                 </div>
               </div>
               {s.description && <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>{s.description}</div>}
@@ -2895,7 +5058,16 @@ const StrategiesView = ({ db, setDB }) => {
                 </div>
               </div>}
 
+              {/* Strategy Files */}
+              {(s.files || []).length > 0 && <div style={{ marginBottom: 14 }}>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>FILES</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {(s.files || []).map((f, fi) => (<a key={fi} href={f.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--blue)", textDecoration: "none" }} title={f.name}><FileText size={11} />{f.name}</a>))}
+                </div>
+              </div>}
+
               {/* Linked Projects */}
+              <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="strategy" entityId={s.id}/>
               <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>LINKED PROJECTS</div>
               {linkedProjects.length > 0 ? linkedProjects.map(p => (
                 <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
@@ -2936,6 +5108,26 @@ const StrategiesView = ({ db, setDB }) => {
             </div>
             <button type="button" onClick={() => setSD(p => ({ ...p, links: (p.links || []).filter((_, i) => i !== li) }))} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", padding: 4, marginTop: 2 }}><X size={14} /></button>
           </div>))}
+        </div>
+        <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+          <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 8, textTransform: "uppercase" }}>Attached Files</div>
+          {(sd.files || []).length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+              {(sd.files || []).map((f, fi) => (
+                <div key={fi} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 6, background: "var(--bg-sec)", border: "1px solid var(--border)" }}>
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--blue)", textDecoration: "none", overflow: "hidden" }}>
+                    <FileText size={13} /> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{f.size ? '(' + formatStrategyFileSize(f.size) + ')' : ''}</span>
+                  </a>
+                  <button className="btn btn-sm" style={{ padding: "2px 6px", color: "var(--red)" }} onClick={() => removeStrategyFile(f)} title="Remove file"><X size={12} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input ref={fileInputRef} type="file" multiple style={{ display: "none" }} onChange={handleStrategyFileUpload} />
+          <button className="btn btn-sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} style={{ fontSize: 12, gap: 6 }}>
+            {uploading ? <><Loader size={12} className="spin" /> Uploading...</> : <><Upload size={12} /> Upload Files</>}
+          </button>
         </div>
       </Drawer>}
       {confirm && <ConfirmDelete label={confirm.label} onConfirm={() => delStrategy(confirm.id)} onCancel={() => setConfirm(null)} />}
@@ -3281,7 +5473,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","calendar","voice","email","invoices","payments","goals","strategies","instructions","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","mstack","ai_memories","multi_llm","voitra_gate","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
@@ -3304,10 +5496,9 @@ export default function App() {
         tasks: (db.tasks||[]).filter(t=>!t.done).map(t=>({title:t.title,due:t.due,priority:t.priority})),
         contacts: (db.contacts||[]).filter(c=>c.status==="at-risk"||c.score<30).map(c=>({name:c.name,co:c.co,status:c.status,score:c.score})),
         invoices: (db.invoices||[]).filter(i=>i.status!=="paid").map(i=>({client:i.client,amount:i.amount,status:i.status,due:i.due})),
-        instructions: (db.instructions||[]).filter(i=>i.active).map(i=>({title:i.title,body:i.body})),
       };
       const msg = await callClaude(
-        "You are Mendy Ezagui's proactive daily strategist. Projects are typed client/strategic with priorities high/medium/low. Follow active instructions. Be specific with names, amounts, dates.",
+        "You are Mendy Ezagui's proactive daily strategist. Projects are typed client/strategic with priorities high/medium/low. Be specific with names, amounts, dates.",
         "Today is "+today+". Snapshot: "+JSON.stringify(snap)+"\nGenerate Daily Action Plan: TOP PRIORITIES (1-2 urgent items), DEAL MOVES (actions ranked by revenue+urgency), STRATEGIC PLAYS (advance high-priority strategic project), SMART NUDGES (follow-ups, cold relationships, deadlines, billing). Max 8 sentences.",
         800
       );
@@ -3403,21 +5594,24 @@ export default function App() {
   const VIEWS = {
     dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} setShowVoiceLab={setShowVoiceLab} />,
     orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
-    crm:          <CRMView db={db} setDB={setDB} setView={setView} focus={focus} setFocus={setFocus}/>,
-    companies:    <CompaniesView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
-    deals:        <DealsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    crm:          <CRMView db={db} setDB={setDB} setView={setView} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    companies:    <CompaniesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     marketing:    <MarketingView db={db} setDB={setDB}/>,
-    tasks:        <TasksView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB}/>,
-    ai_memories:  <AIMemoriesView db={db} setDB={setDB}/>,
+    documents:   <DocumentsView db={db} setDB={setDB}/>,
+    mstack:      <MstackIntakeView db={db} setDB={setDB}/>,
+    ai_memories: <AIMemoriesView db={db} setDB={setDB}/>,
+    multi_llm:   <MultiLLMView session={session}/>,
     strategies:   <StrategiesView db={db} setDB={setDB}/>,
-    instructions: <InstructionsView db={db} setDB={setDB}/>,
+    voitra_gate:  <VoitraGateView/>,
     payments:      <PaymentsView db={db} setDB={setDB}/>,
-    projects:     <ProjectsView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
-    calendar:     <CalendarView db={db} setDB={setDB}/>,
-    invoices:      <BillingView db={db} setDB={setDB} focus={focus} setFocus={setFocus}/>,
+    projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
-    email:        <EmailView db={db} setDB={setDB}/>,
+    inbox:        <InboxView session={session}/>,
+    gcal:         <GCalView session={session} db={db} setDB={setDB}/>,
     admin:        <AdminView session={session}/>,
   };
 
