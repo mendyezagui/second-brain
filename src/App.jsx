@@ -2748,15 +2748,31 @@ Rules:
 
 /* ────────────────────────────────────────────────────────
    INBOX — unified Gmail across all connected accounts
-   Reads from public.emails, written to by the email-sync edge fn.
-   Does NOT participate in DB_TABLES sync (read-only here).
+   Reads from public.emails (written by email-sync edge fn).
+   Actions go through email-action edge fn (archive/trash/send).
+   AI replies via llm-proxy (Gemini by default).
+   Images stripped by default — banner offers explicit display.
 ──────────────────────────────────────────────────────── */
 const INBOX_ACCOUNT_COLORS = ["var(--blue)","var(--purple)","var(--green)","var(--amber)","var(--red)"];
+const INBOX_REPLY_PROVIDERS = [
+  { id: "google",    label: "Gemini" },
+  { id: "anthropic", label: "Claude" },
+  { id: "openai",    label: "ChatGPT" },
+];
+
+function inboxStripImages(html) {
+  if (!html) return { html: "", imgCount: 0 };
+  let imgCount = 0;
+  let out = html.replace(/<img\b[^>]*>/gi, () => { imgCount++; return ""; });
+  // Neutralize CSS background-image URLs too
+  out = out.replace(/background(-image)?:\s*url\([^)]*\)/gi, "background:none");
+  return { html: out, imgCount };
+}
 
 const InboxView = ({ session }) => {
   const [accounts, setAccounts] = useState([]);
   const [acctColors, setAcctColors] = useState({});
-  const [selectedAcct, setSelectedAcct] = useState(null); // null = all
+  const [selectedAcct, setSelectedAcct] = useState(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -2766,6 +2782,20 @@ const InboxView = ({ session }) => {
   const [syncing, setSyncing] = useState(false);
   const [showHtml, setShowHtml] = useState(true);
   const [error, setError] = useState(null);
+
+  // Image safety: per-message opt-in to load images
+  const [showImagesFor, setShowImagesFor] = useState({});
+
+  // Reply composer state
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyTo, setReplyTo] = useState("");
+  const [replySubject, setReplySubject] = useState("");
+  const [replyBody, setReplyBody] = useState("");
+  const [replyProvider, setReplyProvider] = useState("google");
+  const [generating, setGenerating] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [actionInProgress, setActionInProgress] = useState(false);
+  const [actionMsg, setActionMsg] = useState(null);
 
   const loadAccounts = async () => {
     if (!supabase) return;
@@ -2788,7 +2818,8 @@ const InboxView = ({ session }) => {
     setError(null);
     let q = supabase
       .from("emails")
-      .select("id, account_id, from_addr, from_name, subject, snippet, received_at, is_read, direction")
+      .select("id, account_id, from_addr, from_name, subject, snippet, received_at, is_read, direction, is_archived")
+      .or("is_archived.is.null,is_archived.eq.false")
       .order("received_at", { ascending: false })
       .limit(200);
     if (selectedAcct) q = q.eq("account_id", selectedAcct);
@@ -2805,13 +2836,20 @@ const InboxView = ({ session }) => {
 
   const openEmail = async (id) => {
     if (!supabase) return;
+    setReplyOpen(false);
+    setReplyBody("");
+    setActionMsg(null);
     const { data, error: e } = await supabase.from("emails").select("*").eq("id", id).maybeSingle();
     if (e) { setError(e.message); return; }
     setSelected(data);
-    if (data && !data.is_read) {
-      // Mark as read locally + persist (best-effort, no-op on failure)
-      setEmails(es => es.map(em => em.id === id ? { ...em, is_read: true } : em));
-      supabase.from("emails").update({ is_read: true }).eq("id", id).then(() => {});
+    if (data) {
+      setReplyTo(data.from_addr || "");
+      const subj = (data.subject || "").trim();
+      setReplySubject(/^re:/i.test(subj) ? subj : (subj ? `Re: ${subj}` : "Re:"));
+      if (!data.is_read) {
+        setEmails(es => es.map(em => em.id === id ? { ...em, is_read: true } : em));
+        supabase.from("emails").update({ is_read: true }).eq("id", id).then(() => {});
+      }
     }
   };
 
@@ -2824,12 +2862,93 @@ const InboxView = ({ session }) => {
         fetch(`${SUPA_URL}/functions/v1/email-sync`, { method: "POST", headers }),
         fetch(`${SUPA_URL}/functions/v1/calendar-sync?primary_only=true`, { method: "POST", headers }),
       ]);
-    } catch (e) {
-      setError(String(e));
-    }
+    } catch (e) { setError(String(e)); }
     await loadAccounts();
     await loadEmails();
     setSyncing(false);
+  };
+
+  const callEmailAction = async (payload) => {
+    const r = await fetch(`${SUPA_URL}/functions/v1/email-action`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  };
+
+  const handleArchive = async () => {
+    if (!selected || actionInProgress) return;
+    setActionInProgress(true);
+    setError(null);
+    try {
+      await callEmailAction({ action: "archive", message_id: selected.id });
+      setEmails(es => es.filter(e => e.id !== selected.id));
+      setSelected(null);
+      setActionMsg("Archived.");
+    } catch (e) { setError(String(e.message || e)); }
+    setActionInProgress(false);
+  };
+
+  const handleTrash = async () => {
+    if (!selected || actionInProgress) return;
+    if (!window.confirm("Move this email to Trash?")) return;
+    setActionInProgress(true);
+    setError(null);
+    try {
+      await callEmailAction({ action: "trash", message_id: selected.id });
+      setEmails(es => es.filter(e => e.id !== selected.id));
+      setSelected(null);
+      setActionMsg("Moved to Trash.");
+    } catch (e) { setError(String(e.message || e)); }
+    setActionInProgress(false);
+  };
+
+  const generateReply = async () => {
+    if (!selected || generating) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const orig = (selected.body_text || selected.snippet || "").slice(0, 6000);
+      const r = await fetch(`${SUPA_URL}/functions/v1/llm-proxy`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: replyProvider,
+          system: "You are drafting an email reply on behalf of the user. Write a concise, natural, professional response. Plain text only — no markdown, no salutation if obvious from context, no signature. Match the tone of the original.",
+          messages: [{
+            role: "user",
+            content: `Original email:\nFrom: ${selected.from_name || ""} <${selected.from_addr || ""}>\nSubject: ${selected.subject || ""}\n\n${orig}\n\n---\nDraft a short reply:`,
+          }],
+          maxTokens: 600,
+        }),
+      });
+      const j = await r.json();
+      if (j.text) setReplyBody(j.text.trim());
+      else if (j.error) setError(`AI: ${j.error}`);
+    } catch (e) { setError(`AI: ${String(e.message || e)}`); }
+    setGenerating(false);
+  };
+
+  const sendReply = async () => {
+    if (!selected || !replyBody.trim() || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await callEmailAction({
+        action: "send",
+        message_id: selected.id,
+        to: replyTo,
+        subject: replySubject,
+        body: replyBody,
+      });
+      setActionMsg("Reply sent.");
+      setReplyOpen(false);
+      setReplyBody("");
+    } catch (e) { setError(`Send failed: ${String(e.message || e)}`); }
+    setSending(false);
   };
 
   useEffect(() => { loadAccounts(); }, []);
@@ -2843,12 +2962,8 @@ const InboxView = ({ session }) => {
     if (!iso) return "";
     const d = new Date(iso);
     const now = new Date();
-    if (d.toDateString() === now.toDateString()) {
-      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    }
-    if (d.getFullYear() === now.getFullYear()) {
-      return d.toLocaleDateString([], { month: "short", day: "numeric" });
-    }
+    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString([], { month: "short", day: "numeric" });
     return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
   };
 
@@ -2888,8 +3003,15 @@ const InboxView = ({ session }) => {
       </div>
 
       {error && (
-        <div style={{ padding: "8px 24px", background: "var(--red-dim)", color: "var(--red)", fontSize: 12, borderBottom: "1px solid var(--border)" }}>
-          {error}
+        <div style={{ padding: "8px 24px", background: "var(--red-dim)", color: "var(--red)", fontSize: 12, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertCircle size={13} /> {error}
+          <button className="btn-icon" onClick={() => setError(null)} style={{ marginLeft: "auto" }}><X size={13} /></button>
+        </div>
+      )}
+      {actionMsg && !error && (
+        <div style={{ padding: "6px 24px", background: "var(--green-dim)", color: "var(--green)", fontSize: 12, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+          <CheckCircle size={13} /> {actionMsg}
+          <button className="btn-icon" onClick={() => setActionMsg(null)} style={{ marginLeft: "auto" }}><X size={13} /></button>
         </div>
       )}
 
@@ -2901,9 +3023,7 @@ const InboxView = ({ session }) => {
             </div>
           )}
           {!loading && emails.length === 0 && (
-            <div style={{ padding: 40, textAlign: "center", color: "var(--text-sec)", fontSize: 13 }}>
-              No messages.
-            </div>
+            <div style={{ padding: 40, textAlign: "center", color: "var(--text-sec)", fontSize: 13 }}>No messages.</div>
           )}
           {!loading && emails.map(e => {
             const color = acctColors[e.account_id] || "var(--text-sec)";
@@ -2930,7 +3050,7 @@ const InboxView = ({ session }) => {
           })}
         </div>
 
-        <div style={{ overflowY: "auto", padding: "24px 32px", background: "var(--bg-card)" }}>
+        <div style={{ overflowY: "auto", padding: "20px 32px 32px", background: "var(--bg-card)" }}>
           {!selected && (
             <div style={{ color: "var(--text-dim)", textAlign: "center", marginTop: "30vh", fontSize: 14 }}>
               Select a message to read
@@ -2940,28 +3060,54 @@ const InboxView = ({ session }) => {
             const acct = accounts.find(a => a.id === selected.account_id);
             const acctLabel = acct ? acct.address : "?";
             const dt = selected.received_at ? new Date(selected.received_at).toLocaleString() : "";
+            const showImg = !!showImagesFor[selected.id];
+            const stripped = selected.body_html ? inboxStripImages(selected.body_html) : { html: "", imgCount: 0 };
             return (
               <Fragment>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 8 }}>
-                  <h2 style={{ fontSize: 20, color: "var(--text)", lineHeight: 1.3, fontWeight: 700 }}>
-                    {selected.subject || "(no subject)"}
-                  </h2>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+                  <button className="btn btn-blue" onClick={() => setReplyOpen(o => !o)} disabled={actionInProgress}>
+                    <Send size={13} /> Reply
+                  </button>
+                  <button className="btn btn-ghost" onClick={handleArchive} disabled={actionInProgress}>
+                    <ArrowDown size={13} /> Archive
+                  </button>
+                  <button className="btn btn-danger" onClick={handleTrash} disabled={actionInProgress}>
+                    <Trash2 size={13} /> Trash
+                  </button>
                   {selected.body_html && (
-                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }}
+                    <button className="btn btn-ghost" style={{ marginLeft: "auto", fontSize: 11, padding: "4px 10px" }}
                       onClick={() => setShowHtml(h => !h)}>
                       {showHtml ? "Plain text" : "HTML"}
                     </button>
                   )}
                 </div>
+
+                <h2 style={{ fontSize: 20, color: "var(--text)", lineHeight: 1.3, fontWeight: 700, marginBottom: 8 }}>
+                  {selected.subject || "(no subject)"}
+                </h2>
                 <div style={{ color: "var(--text-sec)", fontSize: 13, marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
                   <div style={{ color: "var(--text)" }}>
                     <strong>{selected.from_name || ""}</strong> &lt;{selected.from_addr || ""}&gt;
                   </div>
                   <div style={{ marginTop: 4 }}>To: {acctLabel} · {dt}</div>
                 </div>
+
+                {showHtml && selected.body_html && stripped.imgCount > 0 && !showImg && (
+                  <div style={{ background: "var(--amber-dim)", border: "1px solid rgba(217,119,6,0.35)", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
+                    <Shield size={16} color="var(--amber)" />
+                    <span style={{ flex: 1 }}>
+                      <strong>{stripped.imgCount}</strong> image{stripped.imgCount > 1 ? "s" : ""} hidden. Loading them tells the sender you opened this email and may track you.
+                    </span>
+                    <button className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}
+                      onClick={() => setShowImagesFor(s => ({ ...s, [selected.id]: true }))}>
+                      Display images
+                    </button>
+                  </div>
+                )}
+
                 <div style={{ color: "var(--text)", lineHeight: 1.7, fontSize: 14 }}>
                   {showHtml && selected.body_html ? (
-                    <iframe sandbox="allow-same-origin" srcDoc={selected.body_html}
+                    <iframe sandbox="allow-same-origin" srcDoc={showImg ? selected.body_html : stripped.html}
                       style={{ width: "100%", minHeight: 600, border: "1px solid var(--border)", background: "#fff", borderRadius: 6 }} />
                   ) : (
                     <pre style={{ whiteSpace: "pre-wrap", wordWrap: "break-word", fontFamily: "var(--font-b)", fontSize: 14 }}>
@@ -2969,6 +3115,41 @@ const InboxView = ({ session }) => {
                     </pre>
                   )}
                 </div>
+
+                {replyOpen && (
+                  <div className="card slide-in" style={{ marginTop: 20, padding: 18 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                      <Send size={14} color="var(--blue)" />
+                      <strong style={{ fontSize: 14 }}>Reply</strong>
+                      <select className="filter-select" value={replyProvider} onChange={e => setReplyProvider(e.target.value)} style={{ marginLeft: "auto" }}>
+                        {INBOX_REPLY_PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                      </select>
+                      <button className="btn btn-ghost" onClick={generateReply} disabled={generating}>
+                        {generating ? <><Loader size={12} className="spin" /> Generating…</> : <><Sparkles size={12} /> Draft with AI</>}
+                      </button>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">To</label>
+                      <input className="input" value={replyTo} onChange={e => setReplyTo(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Subject</label>
+                      <input className="input" value={replySubject} onChange={e => setReplySubject(e.target.value)} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Message</label>
+                      <textarea className="input" value={replyBody} onChange={e => setReplyBody(e.target.value)} style={{ minHeight: 180, fontFamily: "var(--font-b)" }} placeholder="Type your reply, or click Draft with AI…" />
+                    </div>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button className="btn btn-ghost" onClick={() => { setReplyOpen(false); setReplyBody(""); }}>
+                        Cancel
+                      </button>
+                      <button className="btn btn-blue" onClick={sendReply} disabled={sending || !replyBody.trim()}>
+                        {sending ? <><Loader size={13} className="spin" /> Sending…</> : <><Send size={13} /> Send</>}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </Fragment>
             );
           })()}
@@ -2977,6 +3158,7 @@ const InboxView = ({ session }) => {
     </div>
   );
 };
+
 
 /* ────────────────────────────────────────────────────────
    EMAIL LAB
