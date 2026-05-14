@@ -214,6 +214,23 @@ const revenueData = [
 const CONTACT_CATEGORIES = ["customer_lead","partner_lead","customer","partner","vendor"];
 const TASK_STATUSES = ["todo","in_progress","waiting","done","cancelled"];
 const TASK_CATEGORIES = ["follow_up","outreach","admin","research","meeting_prep","deliverable"];
+const MSTACK_COMMANDS = [
+  { id:"discovery-plan", label:"Discovery Plan", group:"Builder", prompt:"Prepare a client discovery call agenda, questions, qualification notes, risks, and next-step control." },
+  { id:"discovery-synthesis", label:"Discovery Synthesis", group:"Builder", prompt:"Turn discovery notes into diagnosis, value, scope options, risks, and next actions." },
+  { id:"pitch-draft", label:"Pitch Draft", group:"Builder", prompt:"Draft targeted outreach, referral asks, follow-ups, and pitch messages for Clarity Operator or Voitra AI." },
+  { id:"pricing-strategy", label:"Pricing Strategy", group:"Builder", prompt:"Price diagnostics, projects, retainers, and change orders based on value, risk, and leverage." },
+  { id:"sow-builder", label:"SOW Builder", group:"Builder", prompt:"Build a tight statement of work with scope, deliverables, exclusions, assumptions, timeline, fees, and change control." },
+  { id:"proposal", label:"Proposal", group:"Delivery", prompt:"Generate a value-based proposal from engagement context." },
+  { id:"project-kickoff", label:"Project Kickoff", group:"Delivery", prompt:"Turn a signed engagement into a kickoff plan, workstreams, client asks, delivery rhythm, and first-week actions." },
+  { id:"project-status", label:"Project Status", group:"Delivery", prompt:"Create a client-ready status update, risks, decisions, and next actions." },
+  { id:"demo-builder", label:"Demo Builder", group:"Builder", prompt:"Plan and script a client demo tied to buyer pain, proof points, and follow-up close." },
+  { id:"plan-voice-agent", label:"Voice Agent Plan", group:"Voitra", prompt:"Design a Retell AI voice agent from scratch: persona, flows, tool calls, prompts, and edge cases." },
+  { id:"retell-review", label:"Retell Review", group:"Voitra", prompt:"Audit an existing Retell AI agent config for gaps, hallucination risks, broken tool paths, and edge cases." },
+  { id:"office-hours", label:"Office Hours", group:"Operator", prompt:"Interrogate this idea, client situation, or decision. Be direct. No cheerleading." },
+  { id:"weekly-retro", label:"Weekly Retro", group:"Operator", prompt:"Review pipeline health, delivery status, risks, revenue tracking, and next week priorities." },
+  { id:"bd-signal", label:"BD Signal", group:"Operator", prompt:"Surface BD opportunities from current context, market signals, conversations, and client situations." },
+  { id:"second-brain-sync", label:"Second Brain Sync", group:"Power", prompt:"Push the key session output into ai_memories and create linked follow-up tasks where useful." },
+];
 const DOCUMENT_ENTITY_TYPES = [
   { type:"contact", key:"contacts", label:"Contact", name:r=>r.name },
   { type:"company", key:"companies", label:"Company", name:r=>r.name },
@@ -242,7 +259,7 @@ const parseAppHash = () => {
   const [head, id] = raw.split("/");
   const type = RECORD_ROUTE_ALIASES[head];
   if (type && id) return { view:"record", record:{ type, id } };
-  const valid = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
+  const valid = ["dashboard","orchestrator","mstack","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
   return { view:valid.includes(head) ? head : "dashboard", record:null };
 };
 const daysBetween = (a,b) => Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
@@ -673,6 +690,7 @@ const LoginScreen = () => {
 /* ── SIDEBAR ── */
 const NAV = [
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
+  {id:"mstack",icon:BookOpen,label:"mstack"},
   {id:"tasks",icon:CheckCircle,label:"Tasks"},
   {divider:true},
   {id:"crm",icon:Users,label:"Contacts"},
@@ -730,7 +748,8 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
 
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
-  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
+  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"mstack",icon:BookOpen,label:"mstack"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
+  const secondary = [{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"inbox",icon:Inbox,label:"Inbox"},{id:"gcal",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -2141,6 +2160,166 @@ const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
         {drawer === "edit" && d.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="invoice" entityId={d.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────
+   MSTACK — Operator Command Center
+──────────────────────────────────────────────────────── */
+const MStackView = ({ db, setDB, navigate }) => {
+  const [selected, setSelected] = useState(MSTACK_COMMANDS[0].id);
+  const [title, setTitle] = useState("");
+  const [context, setContext] = useState("");
+  const [output, setOutput] = useState("");
+  const [contactId, setContactId] = useState("");
+  const [companyId, setCompanyId] = useState("");
+  const [dealId, setDealId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [createTask, setCreateTask] = useState(true);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [savedId, setSavedId] = useState(null);
+  const command = MSTACK_COMMANDS.find(c => c.id === selected) || MSTACK_COMMANDS[0];
+  const recent = (db.ai_memories || []).filter(m => (m.source_context || "").includes("mstack")).slice(0, 8);
+  const saveToMemory = () => {
+    const subject = title || command.label;
+    const summary = [context && `Context:\n${context}`, output && `Output:\n${output}`].filter(Boolean).join("\n\n");
+    if (!summary.trim()) return;
+    setDB(prev => {
+      const memoryId = nextId(prev.ai_memories || []);
+      const nextMemory = {
+        id:memoryId,
+        subject,
+        ai_system:"codex",
+        memory_summary:summary,
+        memory_type:"context",
+        source_context:`mstack/${command.id}`,
+        companyId:companyId || null,
+        contactId:contactId || null,
+        dealId:dealId || null,
+        projectId:projectId || null,
+        strategyId:null,
+        files:[],
+        created_at:new Date().toISOString(),
+      };
+      const next = { ...prev, ai_memories:[nextMemory, ...(prev.ai_memories || [])] };
+      if (createTask && (taskTitle || subject)) {
+        next.tasks = [...(prev.tasks || []), {
+          ...blankTask(),
+          id:nextId(prev.tasks || []),
+          title:taskTitle || `Follow up: ${subject}`,
+          due:today(),
+          priority:"high",
+          status:"todo",
+          category:"follow_up",
+          source:"agent:mstack",
+          contactId:contactId || null,
+          companyId:companyId || null,
+          dealId:dealId || null,
+          projectId:projectId || null,
+          notes:`Created from mstack/${command.id}. Memory #${memoryId}`,
+        }];
+      }
+      return next;
+    });
+    setSavedId(nextId(db.ai_memories || []));
+  };
+  const resetDraft = () => {
+    setTitle("");
+    setContext("");
+    setOutput("");
+    setTaskTitle("");
+    setSavedId(null);
+  };
+  return (
+    <div style={{ padding:24, maxWidth:1180, margin:"0 auto", display:"flex", flexDirection:"column", gap:18 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", gap:16, alignItems:"flex-start", flexWrap:"wrap" }}>
+        <div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+            <BookOpen size={18} color="var(--blue)"/>
+            <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>MENDY'S AI OPERATOR STACK</span>
+          </div>
+          <div className="display" style={{ fontSize:26, fontWeight:800 }}>mstack</div>
+          <div style={{ fontSize:13, color:"var(--text-sec)", marginTop:6, maxWidth:680, lineHeight:1.6 }}>
+            Builder, delivery, operator, and power workflows. Save the output into Second Brain so it compounds instead of disappearing in chat.
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button className="btn btn-ghost" onClick={()=>navigate("ai_memories")}><Sparkles size={13}/>AI Memories</button>
+          <button className="btn btn-blue" onClick={saveToMemory}><Save size={13}/>Save Output</button>
+        </div>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"320px minmax(0,1fr)", gap:18 }}>
+        <div className="card" style={{ padding:14, alignSelf:"start" }}>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:10 }}>COMMANDS</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {MSTACK_COMMANDS.map(c => (
+              <button key={c.id} onClick={()=>setSelected(c.id)} className="row-hover" style={{ textAlign:"left", border:"1px solid "+(selected===c.id ? "rgba(0,119,204,0.25)" : "var(--border)"), background:selected===c.id ? "var(--blue-dim)" : "var(--bg-card)", borderRadius:8, padding:"10px 12px", cursor:"pointer" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"center" }}>
+                  <span style={{ fontSize:13, fontWeight:700, color:selected===c.id ? "var(--blue)" : "var(--text)" }}>{c.label}</span>
+                  <span className="mono" style={{ fontSize:9, color:"var(--text-sec)" }}>{c.group}</span>
+                </div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:4 }}>/{c.id}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+          <div className="card" style={{ padding:18 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"center", marginBottom:14 }}>
+              <div>
+                <div className="display" style={{ fontSize:17, fontWeight:800 }}>{command.label}</div>
+                <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.5, marginTop:3 }}>{command.prompt}</div>
+              </div>
+              <button className="btn btn-ghost" onClick={() => navigator.clipboard?.writeText(`/${command.id}\n\n${context}`)}><Copy size={13}/>Copy Prompt</button>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+              <Field label="Title"><Inp value={title} onChange={setTitle} placeholder={`${command.label} - client / deal / project`}/></Field>
+              <Field label="Follow-up Task"><Inp value={taskTitle} onChange={setTaskTitle} placeholder="Optional task title"/></Field>
+            </div>
+            <Field label="Input Context"><Tex value={context} onChange={setContext} placeholder="Paste notes, call transcript, client situation, pricing constraints, or raw draft here."/></Field>
+            <Field label="Final Output"><Tex value={output} onChange={setOutput} placeholder="Paste the completed mstack output here before saving to Second Brain."/></Field>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,minmax(0,1fr))", gap:10 }}>
+              <Field label="Contact"><SearchSelect value={contactId} onChange={setContactId} options={(db.contacts || []).map(c => ({ value:c.id, label:c.name }))} placeholder="Link contact..."/></Field>
+              <Field label="Company"><SearchSelect value={companyId} onChange={setCompanyId} options={(db.companies || []).map(c => ({ value:c.id, label:c.name }))} placeholder="Link company..."/></Field>
+              <Field label="Deal"><SearchSelect value={dealId} onChange={setDealId} options={(db.deals || []).map(d => ({ value:d.id, label:d.name }))} placeholder="Link deal..."/></Field>
+              <Field label="Project"><SearchSelect value={projectId} onChange={setProjectId} options={(db.projects || []).map(p => ({ value:p.id, label:p.name }))} placeholder="Link project..."/></Field>
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"center", marginTop:8 }}>
+              <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"var(--text-sec)", cursor:"pointer" }}>
+                <input type="checkbox" checked={createTask} onChange={e=>setCreateTask(e.target.checked)}/>
+                Create linked follow-up task
+              </label>
+              <div style={{ display:"flex", gap:8 }}>
+                {savedId && <button className="btn btn-ghost" onClick={()=>navigate("record",{type:"ai_memory",id:savedId})}><Sparkles size={13}/>Open Saved Memory</button>}
+                <button className="btn btn-ghost" onClick={resetDraft}><X size={13}/>Clear</button>
+                <button className="btn btn-blue" onClick={saveToMemory}><Save size={13}/>Save to Second Brain</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding:18 }}>
+            <div className="display" style={{ fontSize:15, fontWeight:800, marginBottom:12 }}>Recent mstack Outputs</div>
+            {recent.length === 0 ? <div className="mono" style={{ fontSize:11, color:"var(--text-dim)" }}>No mstack outputs saved yet.</div> : (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {recent.map(m => (
+                  <div key={m.id} className="card-el" style={{ padding:"10px 12px", display:"flex", alignItems:"center", gap:10 }}>
+                    <Sparkles size={13} color="var(--purple)"/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:700 }}>{recordLink("ai_memory", m.id, db, navigate) || m.subject}</div>
+                      <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{m.source_context}</div>
+                    </div>
+                    {m.projectId && recordLink("project", m.projectId, db, navigate)}
+                    {m.dealId && recordLink("deal", m.dealId, db, navigate)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -5440,7 +5619,7 @@ const RecordDetailView = ({ db, setDB, record, navigate }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin","record"];
+  const VALID_VIEWS = ["dashboard","orchestrator","mstack","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin","record"];
   const routeFromHash = () => {
     const route = parseAppHash();
     return VALID_VIEWS.includes(route.view) ? route : { view:"dashboard", record:null };
@@ -5581,6 +5760,7 @@ export default function App() {
   const VIEWS = {
     dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} setShowVoiceLab={setShowVoiceLab} />,
     orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
+    mstack:       <MStackView db={db} setDB={setDB} navigate={navigate}/>,
     crm:          <CRMView db={db} setDB={setDB} setView={setView} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     companies:    <CompaniesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
