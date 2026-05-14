@@ -322,27 +322,39 @@ const Sel = ({ value, onChange, options }) => (
 const Tex = ({ value, onChange, placeholder }) => (
   <textarea className="input" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} />
 );
-const SearchSelect = ({ value, onChange, options, placeholder }) => {
+const SearchSelect = ({ value, onChange, options, placeholder, entityType, navigate }) => {
   // options: [{value:"1", label:"Name"}, ...]. value is the selected value string.
+  // entityType + navigate (optional): when both provided and a value is selected,
+  // the displayed label becomes a clickable EntityLink that navigates to that record.
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const selected = options.find(o => String(o.value) === String(value));
   const filtered = q ? options.filter(o => o.label.toLowerCase().includes(q.toLowerCase())) : options;
   const hasValue = !open && selected;
+  const linkable = hasValue && entityType && navigate && ENTITY_NAV[entityType];
   return (
     <div style={{ position:"relative" }}>
-      <input className="input" value={open ? q : (selected?.label || "")} placeholder={placeholder || "Search…"}
-        onFocus={() => { setOpen(true); setQ(""); }}
-        onChange={e => { setQ(e.target.value); setOpen(true); }}
-        style={{ fontSize:13, paddingRight: hasValue ? 28 : undefined }}
-      />
+      {linkable ? (
+        <div className="input" style={{ fontSize:13, paddingRight:28, display:"flex", alignItems:"center", minHeight:36, cursor:"pointer" }}
+             onClick={() => { setOpen(true); setQ(""); }}>
+          <EntityLink type={entityType} id={value} navigate={navigate} style={{ fontSize:13, color:"var(--blue)", flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            {selected.label}
+          </EntityLink>
+        </div>
+      ) : (
+        <input className="input" value={open ? q : (selected?.label || "")} placeholder={placeholder || "Search…"}
+          onFocus={() => { setOpen(true); setQ(""); }}
+          onChange={e => { setQ(e.target.value); setOpen(true); }}
+          style={{ fontSize:13, paddingRight: hasValue ? 28 : undefined }}
+        />
+      )}
       {hasValue && (
         <button
           type="button"
           title="Clear"
           onMouseDown={e => e.preventDefault()}
-          onClick={() => { onChange(""); setQ(""); setOpen(false); }}
-          style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", width:18, height:18, borderRadius:4, border:"none", background:"transparent", cursor:"pointer", color:"var(--text-sec)", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}
+          onClick={(e) => { e.stopPropagation(); onChange(""); setQ(""); setOpen(false); }}
+          style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", width:18, height:18, borderRadius:4, border:"none", background:"transparent", cursor:"pointer", color:"var(--text-sec)", display:"flex", alignItems:"center", justifyContent:"center", padding:0, zIndex:2 }}
         ><X size={12}/></button>
       )}
       {open && (
@@ -1786,10 +1798,10 @@ const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
           <Field label="Priority"><Sel value={td.priority} onChange={v=>setTD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
           <Field label="Category"><Sel value={td.category} onChange={v=>setTD(p=>({...p,category:v}))} options={TASK_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
           <Field label="Due Date"><Inp type="date" value={td.due} onChange={v=>setTD(p=>({...p,due:v}))}/></Field>
-          <Field label="Person"><SearchSelect value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…"/></Field>
-          <Field label="Company"><SearchSelect value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
-          <Field label="Project"><SearchSelect value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search projects…"/></Field>
-          <Field label="Deal"><SearchSelect value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search deals…"/></Field>
+          <Field label="Person"><SearchSelect value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…" entityType="contact" navigate={navigate}/></Field>
+          <Field label="Company"><SearchSelect value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…" entityType="company" navigate={navigate}/></Field>
+          <Field label="Project"><SearchSelect value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search projects…" entityType="project" navigate={navigate}/></Field>
+          <Field label="Deal"><SearchSelect value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search deals…" entityType="deal" navigate={navigate}/></Field>
           <Field label="Assigned To"><Inp value={td.assignedTo} onChange={v=>setTD(p=>({...p,assignedTo:v}))}/></Field>
           <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","user:voice","agent:orchestrator","agent:news_engine","agent:gmail_scan","agent:ai_sweep","agent:signal-engine","agent:claude_assist"]}/></Field>
         </div>
@@ -2795,7 +2807,6 @@ const InboxView = ({ session }) => {
 
   const handleTrash = async () => {
     if (!selected || actionInProgress) return;
-    if (!window.confirm("Move this email to Trash?")) return;
     setActionInProgress(true);
     setError(null);
     try {
@@ -2858,6 +2869,8 @@ const InboxView = ({ session }) => {
     const t = setTimeout(() => setDebounced(search), 250);
     return () => clearTimeout(t);
   }, [search]);
+  // Auto-sync once when this view mounts
+  useEffect(() => { triggerSync(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const fmtTime = (iso) => {
     if (!iso) return "";
@@ -3106,10 +3119,23 @@ const blankGCalEvent = (defaults = {}) => {
   };
 };
 
-const gcalDaysInWeek = (anchorYmd) => {
+const gcalDaysInWeek = (anchorYmd, mode = "week") => {
+  // mode: "week" (Sun-Sat, 7 days), "workWeek" (Mon-Fri, 5 days), "day" (1 day)
+  if (mode === "day") return [anchorYmd];
   const d = new Date(anchorYmd + "T12:00:00");
   const day = d.getDay();
-  const start = new Date(d); start.setDate(d.getDate() - day);
+  const start = new Date(d);
+  if (mode === "workWeek") {
+    // Anchor to Monday: if Sunday, jump forward to Mon; else back to Mon
+    const offset = day === 0 ? 1 : 1 - day;
+    start.setDate(d.getDate() + offset);
+    return Array.from({ length: 5 }, (_, i) => {
+      const x = new Date(start); x.setDate(start.getDate() + i);
+      return x.toISOString().split("T")[0];
+    });
+  }
+  // Full week — Sun to Sat
+  start.setDate(d.getDate() - day);
   return Array.from({ length: 7 }, (_, i) => {
     const x = new Date(start); x.setDate(start.getDate() + i);
     return x.toISOString().split("T")[0];
@@ -3127,7 +3153,7 @@ const GCalView = ({ session, db, setDB }) => {
   const [accounts, setAccounts] = useState([]);
   const [acctColors, setAcctColors] = useState({});
   const [selectedAcct, setSelectedAcct] = useState(null);
-  const [mode, setMode] = useState("week");          // "week" | "day"
+  const [mode, setMode] = useState("day");           // "day" | "workWeek" | "week"
   const [date, setDate] = useState(today());          // YYYY-MM-DD anchor
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -3143,7 +3169,7 @@ const GCalView = ({ session, db, setDB }) => {
   const [error, setError] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
 
-  const visibleDays = useMemo(() => mode === "week" ? gcalDaysInWeek(date) : [date], [mode, date]);
+  const visibleDays = useMemo(() => gcalDaysInWeek(date, mode), [mode, date]);
 
   const loadAccounts = async () => {
     if (!supabase) return;
@@ -3320,6 +3346,8 @@ const GCalView = ({ session, db, setDB }) => {
 
   useEffect(() => { loadAccounts(); }, []);
   useEffect(() => { loadEvents(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedAcct, date, mode]);
+  // Auto-sync once when this view mounts
+  useEffect(() => { triggerSync(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const eventsByDay = useMemo(() => {
     const buckets = {};
@@ -3349,10 +3377,10 @@ const GCalView = ({ session, db, setDB }) => {
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <div style={{ display: "flex", background: "var(--bg-el)", borderRadius: 8, padding: 3 }}>
-            {["week", "day"].map(v => (
+            {[["day","Day"],["workWeek","Work week"],["week","Week"]].map(([v,lbl]) => (
               <button key={v} onClick={() => setMode(v)}
                 style={{ padding: "5px 12px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 500, cursor: "pointer", background: mode === v ? "#fff" : "transparent", color: mode === v ? "var(--text)" : "var(--text-sec)", boxShadow: mode === v ? "var(--shadow)" : "none" }}>
-                {v}
+                {lbl}
               </button>
             ))}
           </div>
@@ -3404,7 +3432,7 @@ const GCalView = ({ session, db, setDB }) => {
             const isToday = dayStr === today();
             return (
               <div key={dayStr} className="card"
-                style={{ padding: 14, minHeight: mode === "week" ? 340 : 500, display: "flex", flexDirection: "column", background: isToday ? "rgba(0,119,204,0.03)" : "var(--bg-card)", borderTop: isToday ? "3px solid var(--blue)" : "none" }}>
+                style={{ padding: 14, minHeight: mode === "day" ? 500 : 340, display: "flex", flexDirection: "column", background: isToday ? "rgba(0,119,204,0.03)" : "var(--bg-card)", borderTop: isToday ? "3px solid var(--blue)" : "none" }}>
                 <div style={{ fontWeight: 600, fontSize: 12, color: isToday ? "var(--blue)" : "var(--text)", marginBottom: 10 }}>
                   {d.toLocaleDateString("en-US", { weekday: "short" })} {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                 </div>
