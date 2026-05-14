@@ -2705,6 +2705,7 @@ const InboxView = ({ session }) => {
   const [replySubject, setReplySubject] = useState("");
   const [replyBody, setReplyBody] = useState("");
   const [replyProvider, setReplyProvider] = useState("google");
+  const [replyFromAccount, setReplyFromAccount] = useState(""); // account_id to send from; defaults to email's inbox account
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
@@ -2759,6 +2760,8 @@ const InboxView = ({ session }) => {
       setReplyTo(data.from_addr || "");
       const subj = (data.subject || "").trim();
       setReplySubject(/^re:/i.test(subj) ? subj : (subj ? `Re: ${subj}` : "Re:"));
+      // Default From to the inbox account this email arrived in
+      setReplyFromAccount(data.account_id || "");
       if (!data.is_read) {
         setEmails(es => es.map(em => em.id === id ? { ...em, is_read: true } : em));
         supabase.from("emails").update({ is_read: true }).eq("id", id).then(() => {});
@@ -2849,14 +2852,16 @@ const InboxView = ({ session }) => {
     setSending(true);
     setError(null);
     try {
+      const sentFrom = accounts.find(a => a.id === replyFromAccount)?.address;
       await callEmailAction({
         action: "send",
         message_id: selected.id,
         to: replyTo,
         subject: replySubject,
         body: replyBody,
+        from_account_id: replyFromAccount || undefined,
       });
-      setActionMsg("Reply sent.");
+      setActionMsg(`Reply sent${sentFrom ? ` from ${sentFrom}` : ""}.`);
       setReplyOpen(false);
       setReplyBody("");
     } catch (e) { setError(`Send failed: ${String(e.message || e)}`); }
@@ -3003,7 +3008,20 @@ const InboxView = ({ session }) => {
                   <div style={{ color: "var(--text)" }}>
                     <strong>{selected.from_name || ""}</strong> &lt;{selected.from_addr || ""}&gt;
                   </div>
-                  <div style={{ marginTop: 4 }}>To: {acctLabel} · {dt}</div>
+                  {(() => {
+                    const fmtAddrs = (a) => Array.isArray(a) && a.length > 0
+                      ? a.map(x => x.name ? `${x.name} <${x.addr}>` : x.addr).join(", ")
+                      : null;
+                    const toLine = fmtAddrs(selected.to_addrs);
+                    const ccLine = fmtAddrs(selected.cc_addrs);
+                    return (
+                      <Fragment>
+                        <div style={{ marginTop: 4 }}><span style={{ color: "var(--text-dim)" }}>To:</span> {toLine || acctLabel}</div>
+                        {ccLine && <div style={{ marginTop: 4 }}><span style={{ color: "var(--text-dim)" }}>Cc:</span> {ccLine}</div>}
+                        <div style={{ marginTop: 4, color: "var(--text-dim)", fontSize: 11 }}>In: {acctLabel} · {dt}</div>
+                      </Fragment>
+                    );
+                  })()}
                 </div>
 
                 {showHtml && selected.body_html && stripped.imgCount > 0 && !showImg && (
@@ -3041,6 +3059,21 @@ const InboxView = ({ session }) => {
                       <button className="btn btn-ghost" onClick={generateReply} disabled={generating}>
                         {generating ? <><Loader size={12} className="spin" /> Generating…</> : <><Sparkles size={12} /> Draft with AI</>}
                       </button>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">From</label>
+                      <select className="input" value={replyFromAccount} onChange={e => setReplyFromAccount(e.target.value)}>
+                        {accounts.map(a => (
+                          <option key={a.id} value={a.id}>
+                            {a.display_name ? `${a.display_name} <${a.address}>` : a.address}
+                          </option>
+                        ))}
+                      </select>
+                      {replyFromAccount && selected && replyFromAccount !== selected.account_id && (
+                        <div style={{ fontSize: 11, color: "var(--amber)", marginTop: 4 }}>
+                          Sending from a different account — won't thread with the original conversation.
+                        </div>
+                      )}
                     </div>
                     <div className="form-group">
                       <label className="form-label">To</label>
