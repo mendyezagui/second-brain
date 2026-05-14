@@ -663,6 +663,7 @@ const NAV = [
   {id:"invoices",icon:FileText,label:"Invoices",parent:"_fin"},
   {id:"payments",icon:CreditCard,label:"Payments",parent:"_fin"},
   {divider:true},
+  {id:"inbox",icon:Inbox,label:"Inbox"},
   {id:"email",icon:Mail,label:"Email Lab"},
   {divider:true},
   {id:"ai_memories",icon:Sparkles,label:"AI Memories"},
@@ -708,7 +709,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
 const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"deals",icon:Target,label:"Deals"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"inbox",icon:Inbox,label:"Inbox"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"calendar",icon:Calendar,label:"Calendar"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"marketing",icon:Megaphone,label:"Marketing"},{id:"email",icon:Mail,label:"Email"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -2746,6 +2747,238 @@ Rules:
 };
 
 /* ────────────────────────────────────────────────────────
+   INBOX — unified Gmail across all connected accounts
+   Reads from public.emails, written to by the email-sync edge fn.
+   Does NOT participate in DB_TABLES sync (read-only here).
+──────────────────────────────────────────────────────── */
+const INBOX_ACCOUNT_COLORS = ["var(--blue)","var(--purple)","var(--green)","var(--amber)","var(--red)"];
+
+const InboxView = ({ session }) => {
+  const [accounts, setAccounts] = useState([]);
+  const [acctColors, setAcctColors] = useState({});
+  const [selectedAcct, setSelectedAcct] = useState(null); // null = all
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [emails, setEmails] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [showHtml, setShowHtml] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadAccounts = async () => {
+    if (!supabase) return;
+    const { data, error: e } = await supabase
+      .from("email_accounts")
+      .select("id, address, display_name, provider, is_active")
+      .eq("is_active", true)
+      .order("address");
+    if (e) { setError(e.message); return; }
+    const list = data || [];
+    setAccounts(list);
+    const colors = {};
+    list.forEach((a, i) => { colors[a.id] = INBOX_ACCOUNT_COLORS[i % INBOX_ACCOUNT_COLORS.length]; });
+    setAcctColors(colors);
+  };
+
+  const loadEmails = async () => {
+    if (!supabase) return;
+    setLoading(true);
+    setError(null);
+    let q = supabase
+      .from("emails")
+      .select("id, account_id, from_addr, from_name, subject, snippet, received_at, is_read, direction")
+      .order("received_at", { ascending: false })
+      .limit(200);
+    if (selectedAcct) q = q.eq("account_id", selectedAcct);
+    if (unreadOnly) q = q.eq("is_read", false);
+    if (debounced.trim()) {
+      const s = debounced.trim().replace(/[%_\\]/g, m => "\\" + m);
+      q = q.or(`subject.ilike.%${s}%,from_addr.ilike.%${s}%,from_name.ilike.%${s}%,snippet.ilike.%${s}%`);
+    }
+    const { data, error: e } = await q;
+    if (e) { setError(e.message); setLoading(false); return; }
+    setEmails(data || []);
+    setLoading(false);
+  };
+
+  const openEmail = async (id) => {
+    if (!supabase) return;
+    const { data, error: e } = await supabase.from("emails").select("*").eq("id", id).maybeSingle();
+    if (e) { setError(e.message); return; }
+    setSelected(data);
+    if (data && !data.is_read) {
+      // Mark as read locally + persist (best-effort, no-op on failure)
+      setEmails(es => es.map(em => em.id === id ? { ...em, is_read: true } : em));
+      supabase.from("emails").update({ is_read: true }).eq("id", id).then(() => {});
+    }
+  };
+
+  const triggerSync = async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      const headers = { Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
+      await Promise.all([
+        fetch(`${SUPA_URL}/functions/v1/email-sync`, { method: "POST", headers }),
+        fetch(`${SUPA_URL}/functions/v1/calendar-sync?primary_only=true`, { method: "POST", headers }),
+      ]);
+    } catch (e) {
+      setError(String(e));
+    }
+    await loadAccounts();
+    await loadEmails();
+    setSyncing(false);
+  };
+
+  useEffect(() => { loadAccounts(); }, []);
+  useEffect(() => { loadEmails(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [selectedAcct, unreadOnly, debounced]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const fmtTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+    if (d.getFullYear() === now.getFullYear()) {
+      return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    }
+    return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 24px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)", flexWrap: "wrap" }}>
+        <div className="display" style={{ fontSize: 18, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+          <Inbox size={18} color="var(--blue)" /> Inbox
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <button onClick={() => setSelectedAcct(null)} className="filter-chip"
+            style={selectedAcct === null ? { background: "var(--blue-dim)", color: "var(--blue)", borderColor: "var(--blue)" } : {}}>
+            All
+          </button>
+          {accounts.map(a => {
+            const color = acctColors[a.id];
+            const active = selectedAcct === a.id;
+            return (
+              <button key={a.id} onClick={() => setSelectedAcct(a.id)} className="filter-chip"
+                style={{ background: active ? color : "var(--bg-card)", color: active ? "#fff" : "var(--text-sec)", borderColor: active ? color : "var(--border)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: active ? "#fff" : color }} />
+                {a.address}
+              </button>
+            );
+          })}
+        </div>
+        <input className="input" placeholder="Search subject, sender, snippet…"
+          value={search} onChange={e => setSearch(e.target.value)}
+          style={{ flex: 1, maxWidth: 320, marginLeft: "auto" }} />
+        <button className="btn btn-ghost" onClick={() => setUnreadOnly(u => !u)}
+          style={unreadOnly ? { background: "var(--blue-dim)", color: "var(--blue)", borderColor: "var(--blue)" } : {}}>
+          Unread
+        </button>
+        <button className="btn btn-blue" onClick={triggerSync} disabled={syncing}>
+          {syncing ? <><Loader size={13} className="spin" /> Syncing…</> : <><RefreshCw size={13} /> Sync now</>}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ padding: "8px 24px", background: "var(--red-dim)", color: "var(--red)", fontSize: 12, borderBottom: "1px solid var(--border)" }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(360px, 460px) 1fr", flex: 1, overflow: "hidden" }}>
+        <div style={{ borderRight: "1px solid var(--border)", overflowY: "auto", background: "var(--bg)" }}>
+          {loading && (
+            <div style={{ padding: 40, textAlign: "center", color: "var(--text-sec)", fontSize: 13 }}>
+              <Loader size={16} className="spin" /> Loading…
+            </div>
+          )}
+          {!loading && emails.length === 0 && (
+            <div style={{ padding: 40, textAlign: "center", color: "var(--text-sec)", fontSize: 13 }}>
+              No messages.
+            </div>
+          )}
+          {!loading && emails.map(e => {
+            const color = acctColors[e.account_id] || "var(--text-sec)";
+            const isSel = selected?.id === e.id;
+            const fromName = e.from_name || e.from_addr || "Unknown";
+            return (
+              <div key={e.id} onClick={() => openEmail(e.id)}
+                style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", cursor: "pointer", background: isSel ? "var(--bg-card)" : "transparent", borderLeft: isSel ? `3px solid ${color}` : "3px solid transparent", transition: "background 0.1s" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: e.is_read ? 500 : 700, color: e.is_read ? "var(--text-sec)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                    {fromName}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0 }}>{fmtTime(e.received_at)}</span>
+                </div>
+                <div style={{ fontSize: 13, marginTop: 3, color: e.is_read ? "var(--text-sec)" : "var(--text)", fontWeight: e.is_read ? 400 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {e.subject || "(no subject)"}
+                </div>
+                <div style={{ fontSize: 12, marginTop: 3, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {e.snippet || ""}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ overflowY: "auto", padding: "24px 32px", background: "var(--bg-card)" }}>
+          {!selected && (
+            <div style={{ color: "var(--text-dim)", textAlign: "center", marginTop: "30vh", fontSize: 14 }}>
+              Select a message to read
+            </div>
+          )}
+          {selected && (() => {
+            const acct = accounts.find(a => a.id === selected.account_id);
+            const acctLabel = acct ? acct.address : "?";
+            const dt = selected.received_at ? new Date(selected.received_at).toLocaleString() : "";
+            return (
+              <Fragment>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 8 }}>
+                  <h2 style={{ fontSize: 20, color: "var(--text)", lineHeight: 1.3, fontWeight: 700 }}>
+                    {selected.subject || "(no subject)"}
+                  </h2>
+                  {selected.body_html && (
+                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => setShowHtml(h => !h)}>
+                      {showHtml ? "Plain text" : "HTML"}
+                    </button>
+                  )}
+                </div>
+                <div style={{ color: "var(--text-sec)", fontSize: 13, marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ color: "var(--text)" }}>
+                    <strong>{selected.from_name || ""}</strong> &lt;{selected.from_addr || ""}&gt;
+                  </div>
+                  <div style={{ marginTop: 4 }}>To: {acctLabel} · {dt}</div>
+                </div>
+                <div style={{ color: "var(--text)", lineHeight: 1.7, fontSize: 14 }}>
+                  {showHtml && selected.body_html ? (
+                    <iframe sandbox="allow-same-origin" srcDoc={selected.body_html}
+                      style={{ width: "100%", minHeight: 600, border: "1px solid var(--border)", background: "#fff", borderRadius: 6 }} />
+                  ) : (
+                    <pre style={{ whiteSpace: "pre-wrap", wordWrap: "break-word", fontFamily: "var(--font-b)", fontSize: 14 }}>
+                      {selected.body_text || "(no plain text)"}
+                    </pre>
+                  )}
+                </div>
+              </Fragment>
+            );
+          })()}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────
    EMAIL LAB
 ──────────────────────────────────────────────────────── */
 const EmailView = ({ db, setDB }) => {
@@ -4446,7 +4679,7 @@ const AdminView = ({ session }) => {
    APP ROOT
 ──────────────────────────────────────────────────────── */
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","calendar","voice","email","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
+  const VALID_VIEWS = ["dashboard","orchestrator","crm","companies","deals","marketing","tasks","projects","documents","calendar","voice","email","inbox","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
   const viewFromHash = () => { const h = window.location.hash.replace("#/","").split("?")[0]; return VALID_VIEWS.includes(h) ? h : "dashboard"; };
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
@@ -4584,6 +4817,7 @@ export default function App() {
     invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
     email:        <EmailView db={db} setDB={setDB}/>,
+    inbox:        <InboxView session={session}/>,
     admin:        <AdminView session={session}/>,
   };
 
