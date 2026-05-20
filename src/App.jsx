@@ -282,7 +282,10 @@ const parseAppHash = () => {
   const raw = window.location.hash.replace(/^#\/?/, "").split("?")[0];
   const [head, id] = raw.split("/");
   const type = RECORD_ROUTE_ALIASES[head];
-  if (type && id) return { view:"record", record:{ type, id } };
+  if (type && id) {
+    const num = Number(id);
+    return { view:"record", record:{ type, id: Number.isFinite(num) ? num : id } };
+  }
   const valid = ["dashboard","orchestrator","associates","mstack","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
   return { view:valid.includes(head) ? head : "dashboard", record:null };
 };
@@ -1128,7 +1131,7 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
                 <ScoreBadge score={c.score}/>
-                <RowActions onEdit={()=>setDrawer({mode:"edit",data:{...c}})} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
+                <RowActions onEdit={()=>navigate("record",{type:"contact",id:c.id})} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
               </div>
             </div>
           ))}
@@ -1275,10 +1278,18 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [editCompany, setEditCompany] = useState(null);
 
   useEffect(() => {
     if(focus?.type==="company" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
   }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const c = db.companies.find(c => c.id === sel);
+      if (c) setEditCompany({...c});
+    } else setEditCompany(null);
+  }, [sel, db.companies]);
 
   const filtered = db.companies.filter(c => {
     if (query && !c.name.toLowerCase().includes(query.toLowerCase())) return false;
@@ -1330,7 +1341,7 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
                 </div>
                 <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                   <Tag label={c.status}/>
-                  <RowActions onEdit={()=>setDrawer({mode:"edit",data:{...c}})} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
+                  <RowActions onEdit={()=>navigate("record",{type:"company",id:c.id})} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
                 </div>
               </div>
             );
@@ -1339,19 +1350,30 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
       </div>
 
       <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
-        {company ? (
+        {(company && editCompany) ? (
           <div className="slide-in">
             <button className="mobile-back" onClick={()=>{setSel(null);navigate("companies");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to companies</button>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, flexWrap:"wrap", gap:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
               <div style={{ minWidth:0 }}>
                 <div className="display" style={{ fontSize:20, fontWeight:800 }}>{company.name}</div>
                 <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{company.industry}</div>
               </div>
-              <div className="header-actions" style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
                 <Tag label={company.status}/>
-                <button className="btn btn-blue" style={{ padding:"6px 14px", fontSize:12 }} onClick={()=>setDrawer({mode:"edit",data:{...company}})}><Pencil size={12}/>Edit Company</button>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={()=>{
+                  setDB(d=>({...d,companies:d.companies.map(c=>c.id===editCompany.id?editCompany:c)}));
+                }}><Save size={12}/>Save</button>
+                <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:company.id,label:company.name})}><Trash2 size={12}/></button>
               </div>
             </div>
+
+            {/* Clickable links */}
+            {(editCompany.website || editCompany.linkedin_url) && (
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
+                {editCompany.website && <a href={editCompany.website.startsWith("http")?editCompany.website:`https://${editCompany.website}`} target="_blank" rel="noopener noreferrer" className="card-el" style={{ padding:"8px 12px", display:"flex", gap:6, alignItems:"center", fontSize:12, color:"var(--blue)", textDecoration:"none" }}><Globe size={13}/>{editCompany.website}</a>}
+                {editCompany.linkedin_url && <a href={editCompany.linkedin_url} target="_blank" rel="noopener noreferrer" className="card-el" style={{ padding:"8px 12px", display:"flex", gap:6, alignItems:"center", fontSize:12, color:"#0A66C2", textDecoration:"none" }}><Linkedin size={13}/>LinkedIn</a>}
+              </div>
+            )}
 
             <div className="grid-resp-4" style={{ marginBottom:20 }}>
               <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--blue)" }}>{companyContacts.length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Contacts</div></div>
@@ -1360,9 +1382,18 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
               <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--purple)" }}>{companyTasks.filter(t=>!t.done).length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Open Tasks</div></div>
             </div>
 
-            {company.website && <div className="card-el" style={{ padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"center" }}><Globe size={13} color="var(--text-sec)"/><a href={company.website.startsWith("http")?company.website:`https://${company.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize:13, color:"var(--blue)" }}>{company.website}</a></div>}
-            {company.linkedin_url && <div className="card-el" style={{ padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"center" }}><Linkedin size={13} color="#0A66C2"/><a href={company.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ fontSize:13, color:"#0A66C2" }}>LinkedIn Page</a></div>}
-            {company.notes && <div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{company.notes}</p></div>}
+            {/* Inline editable form */}
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <Field label="Company Name"><Inp value={editCompany.name} onChange={v=>setEditCompany(c=>({...c,name:v}))}/></Field>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <Field label="Industry"><Inp value={editCompany.industry||""} onChange={v=>setEditCompany(c=>({...c,industry:v}))}/></Field>
+                <Field label="Status"><Sel value={editCompany.status} onChange={v=>setEditCompany(c=>({...c,status:v}))} options={["prospect","customer","partner","parked","churned"]}/></Field>
+                <Field label="Website"><Inp value={editCompany.website||""} onChange={v=>setEditCompany(c=>({...c,website:v}))} placeholder="example.com"/></Field>
+                <Field label="LinkedIn URL"><Inp value={editCompany.linkedin_url||""} onChange={v=>setEditCompany(c=>({...c,linkedin_url:v}))} placeholder="https://linkedin.com/company/..."/></Field>
+              </div>
+              <Field label="News Keywords (for monitoring)"><Inp value={editCompany.news_keywords||""} onChange={v=>setEditCompany(c=>({...c,news_keywords:v}))} placeholder="e.g. funding, acquisition"/></Field>
+              <Field label="Notes"><Tex value={editCompany.notes||""} onChange={v=>setEditCompany(c=>({...c,notes:v}))}/></Field>
+            </div>
 
             {companyContacts.length>0 && <div style={{ marginBottom:16 }}><div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>PEOPLE ({companyContacts.length})</div>
               {companyContacts.map(c=><div key={c.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}><div><div style={{ fontSize:13, fontWeight:500 }}><EntityLink type="contact" id={c.id} navigate={navigate}>{c.name}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{c.role} · {c.category?.replace(/_/g," ")}</div></div><div style={{ display:"flex", gap:6 }}><Tag label={c.status}/><ScoreBadge score={c.score}/></div></div>)}
@@ -1387,7 +1418,7 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
         )}
       </div>
 
-      {drawer&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Company`} onClose={()=>setDrawer(null)} onSave={save}>
+      {drawer&&drawer.mode==="add"&&<Drawer title="New Company" onClose={()=>setDrawer(null)} onSave={save}>
         <Field label="Company Name"><Inp value={drawer.data.name} onChange={v=>setDrawer(d=>({...d,data:{...d.data,name:v}}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Industry"><Inp value={drawer.data.industry} onChange={v=>setDrawer(d=>({...d,data:{...d.data,industry:v}}))}/></Field>
@@ -1542,10 +1573,18 @@ const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [d, setD] = useState(blankCampaign());
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [editCampaign, setEditCampaign] = useState(null);
 
   useEffect(() => {
     if(focus?.type==="campaign" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
   }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const c = db.campaigns.find(c => c.id === sel);
+      if (c) setEditCampaign({...c, leads:String(c.leads), opens:String(c.opens), conversions:String(c.conversions)});
+    } else setEditCampaign(null);
+  }, [sel, db.campaigns]);
 
   const filtered = (db.campaigns||[]).filter(c => {
     if (query && !c.name.toLowerCase().includes(query.toLowerCase())) return false;
@@ -1594,7 +1633,7 @@ const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
               </div>
               <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                 <Tag label={c.status}/>
-                <RowActions onEdit={()=>{setD({...c,leads:String(c.leads),opens:String(c.opens),conversions:String(c.conversions)});setDrawer("edit");}} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
+                <RowActions onEdit={()=>navigate("record",{type:"campaign",id:c.id})} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
               </div>
             </div>
           ))}
@@ -1603,17 +1642,21 @@ const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
 
       {/* RIGHT DETAIL */}
       <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
-        {campaign ? (
+        {(campaign && editCampaign) ? (
           <div className="slide-in">
             <button className="mobile-back" onClick={()=>{setSel(null);navigate("marketing");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to marketing</button>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, flexWrap:"wrap", gap:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
               <div style={{ minWidth:0 }}>
                 <div className="display" style={{ fontSize:20, fontWeight:800 }}>{campaign.name}</div>
                 <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{campaign.type} · Started {campaign.startDate || "—"}</div>
               </div>
-              <div className="header-actions" style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
                 <Tag label={campaign.status}/>
-                <button className="btn btn-blue" style={{ padding:"6px 14px", fontSize:12 }} onClick={()=>{setD({...campaign,leads:String(campaign.leads),opens:String(campaign.opens),conversions:String(campaign.conversions)});setDrawer("edit");}}><Pencil size={12}/>Edit Campaign</button>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={()=>{
+                  const rec = {...editCampaign, leads:parseInt(editCampaign.leads)||0, opens:parseInt(editCampaign.opens)||0, conversions:parseInt(editCampaign.conversions)||0};
+                  setDB(d=>({...d,campaigns:d.campaigns.map(x=>x.id===rec.id?rec:x)}));
+                }}><Save size={12}/>Save</button>
+                <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:campaign.id,label:campaign.name})}><Trash2 size={12}/></button>
               </div>
             </div>
 
@@ -1624,7 +1667,19 @@ const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
               <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--purple)" }}>{campaign.leads>0?Math.round((campaign.conversions/campaign.leads)*100):0}%</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Conv. Rate</div></div>
             </div>
 
-            {campaign.notes && <div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{campaign.notes}</p></div>}
+            {/* Inline editable form */}
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <Field label="Campaign Name"><Inp value={editCampaign.name} onChange={v=>setEditCampaign(p=>({...p,name:v}))}/></Field>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <Field label="Type"><Sel value={editCampaign.type} onChange={v=>setEditCampaign(p=>({...p,type:v}))} options={["Email","Social","Referral","Paid","Event","Other"]}/></Field>
+                <Field label="Status"><Sel value={editCampaign.status} onChange={v=>setEditCampaign(p=>({...p,status:v}))} options={["draft","active","paused","complete"]}/></Field>
+                <Field label="Start Date"><Inp type="date" value={editCampaign.startDate||""} onChange={v=>setEditCampaign(p=>({...p,startDate:v}))}/></Field>
+                <Field label="Leads"><Inp type="number" value={editCampaign.leads} onChange={v=>setEditCampaign(p=>({...p,leads:v}))}/></Field>
+                <Field label="Impressions"><Inp type="number" value={editCampaign.opens} onChange={v=>setEditCampaign(p=>({...p,opens:v}))}/></Field>
+                <Field label="Conversions"><Inp type="number" value={editCampaign.conversions} onChange={v=>setEditCampaign(p=>({...p,conversions:v}))}/></Field>
+              </div>
+              <Field label="Notes"><Tex value={editCampaign.notes||""} onChange={v=>setEditCampaign(p=>({...p,notes:v}))}/></Field>
+            </div>
 
             {campaignLeads.length>0 && <div style={{ marginBottom:16 }}>
               <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ASSOCIATED LEADS ({campaignLeads.length})</div>
@@ -1663,7 +1718,7 @@ const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
         )}
       </div>
 
-      {drawer&&<Drawer title={drawer==="add"?"New Campaign":"Edit Campaign"} onClose={()=>setDrawer(null)} onSave={save}>
+      {drawer==="add"&&<Drawer title="New Campaign" onClose={()=>setDrawer(null)} onSave={save}>
         <Field label="Campaign Name"><Inp value={d.name} onChange={v=>setD(p=>({...p,name:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Type"><Sel value={d.type} onChange={v=>setD(p=>({...p,type:v}))} options={["Email","Social","Referral","Paid","Event","Other"]}/></Field>
