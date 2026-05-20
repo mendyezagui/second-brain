@@ -5765,8 +5765,16 @@ const recordLink = (type, id, db, navigate) => {
   return <EntityLink type={type} id={id} navigate={navigate}>{cfg.name(rec) || `${cfg.label} #${id}`}</EntityLink>;
 };
 
-const RecordDetailView = ({ db, setDB, record, navigate }) => {
+const RecordDetailView = ({ db, setDB, record, navigate, setFocus }) => {
   const type = record?.type;
+  // For types that have a master+detail view, render that view with focus pre-set.
+  // This keeps the left selector list visible while showing the record's detail,
+  // and uses the master view's inline-editable form instead of the read-only generic view.
+  if (type === "contact")  return <CRMView        db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "company")  return <CompaniesView  db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "campaign") return <MarketingView  db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "project")  return <ProjectsView   db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+
   const id = record?.id;
   const cfg = DOCUMENT_ENTITY_TYPES.find(c => c.type === type);
   const rec = cfg ? (db[cfg.key] || []).find(r => String(r.id) === String(id)) : null;
@@ -5811,11 +5819,9 @@ const RecordDetailView = ({ db, setDB, record, navigate }) => {
             <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>ID {rec.id}</span>
           </div>
           <div className="display" style={{ fontSize:26, fontWeight:800, lineHeight:1.15 }}>{title}</div>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:8 }}>{sourceUrl}</div>
         </div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
-          <button className="btn btn-ghost" onClick={copyUrl}><Copy size={13}/>Copy Link</button>
-          <button className="btn btn-blue" onClick={()=>navigate(recordListViewFor(type))}>Open Module</button>
+          <button className="btn btn-ghost" onClick={()=>navigate(recordListViewFor(type))}>← Back to {cfg.label}s</button>
         </div>
       </div>
 
@@ -6030,7 +6036,7 @@ export default function App() {
     tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB} navigate={navigate}/>,
     documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate}/>,
-    record:      <RecordDetailView db={db} setDB={setDB} record={recordTarget} navigate={navigate}/>,
+    record:      <RecordDetailView db={db} setDB={setDB} record={recordTarget} navigate={navigate} setFocus={setFocus}/>,
     ai_memories: <AIMemoriesView db={db} setDB={setDB} navigate={navigate}/>,
     multi_llm:   <MultiLLMView session={session}/>,
     strategies:   <StrategiesView db={db} setDB={setDB} navigate={navigate}/>,
