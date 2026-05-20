@@ -88,7 +88,9 @@ const GlobalStyle = () => (
       .view-shell:not(.has-selection) .detail-pane{display:none}
       .mobile-back{display:inline-flex}
       .grid-resp-4{grid-template-columns:repeat(2,1fr)}
-      .fab-stack{bottom:78px!important;right:14px!important}
+      .fab-stack{bottom:calc(78px + env(safe-area-inset-bottom, 0px))!important;right:14px!important}
+      main{padding-bottom:calc(64px + env(safe-area-inset-bottom, 0px))!important}
+      .header-actions{flex-wrap:wrap!important;justify-content:flex-end!important}
     }
   `}</style>
 );
@@ -777,7 +779,7 @@ const BottomNav = ({ view, setView }) => {
     <>
       {showMore && <div style={{ position:"fixed", inset:0, zIndex:998 }} onClick={()=>setShowMore(false)}/>}
       {showMore && (
-        <div style={{ position:"fixed", bottom:56, left:0, right:0, background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"8px 6px", display:"flex", flexWrap:"wrap", gap:4, zIndex:999, boxShadow:"0 -4px 20px rgba(0,0,0,0.15)" }}>
+        <div style={{ position:"fixed", bottom:"calc(56px + env(safe-area-inset-bottom, 0px))", left:0, right:0, background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"8px 6px", display:"flex", flexWrap:"wrap", gap:4, zIndex:999, boxShadow:"0 -4px 20px rgba(0,0,0,0.15)" }}>
           {secondary.map(n=>(
             <button key={n.id} onClick={()=>{setView(n.id);setShowMore(false);}} style={{ flex:"1 1 30%", display:"flex", alignItems:"center", gap:6, background:view===n.id?"var(--blue-dim)":"transparent", border:view===n.id?"1px solid rgba(0,119,204,0.2)":"1px solid transparent", borderRadius:8, cursor:"pointer", padding:"8px 10px" }}>
               <n.icon size={15} color={view===n.id?"var(--blue)":"var(--text-sec)"}/>
@@ -786,7 +788,7 @@ const BottomNav = ({ view, setView }) => {
           ))}
         </div>
       )}
-      <div style={{ display:"flex", background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"6px 0 10px", flexShrink:0 }}>
+      <div style={{ position:"fixed", left:0, right:0, bottom:0, display:"flex", background:"var(--bg-card)", borderTop:"1px solid var(--border)", padding:"6px 0 calc(10px + env(safe-area-inset-bottom, 0px))", flexShrink:0, zIndex:997, boxShadow:"0 -2px 12px rgba(0,0,0,0.08)" }}>
         {primary.map(n=>(
           <button key={n.id} onClick={()=>{setView(n.id);setShowMore(false);}} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2, background:"transparent", border:"none", cursor:"pointer", padding:"4px 0" }}>
             <n.icon size={17} color={view===n.id?"var(--blue)":"var(--text-sec)"}/>
@@ -1144,7 +1146,7 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
                 <div className="display" style={{ fontSize:20, fontWeight:800 }}>{contact.name}</div>
                 <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{contact.co} · {contact.role}</div>
               </div>
-              <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center" }}>
                 <Tag label={contact.category?.replace(/_/g," ")||"lead"} color={sc(contact.category)}/>
                 <Tag label={contact.status}/><ScoreBadge score={contact.score}/>
                 <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={()=>{
@@ -1345,7 +1347,7 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
                 <div className="display" style={{ fontSize:20, fontWeight:800 }}>{company.name}</div>
                 <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{company.industry}</div>
               </div>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              <div className="header-actions" style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                 <Tag label={company.status}/>
                 <button className="btn btn-blue" style={{ padding:"6px 14px", fontSize:12 }} onClick={()=>setDrawer({mode:"edit",data:{...company}})}><Pencil size={12}/>Edit Company</button>
               </div>
