@@ -68,6 +68,28 @@ const GlobalStyle = () => (
     .filter-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--bg-card);color:var(--text-sec);transition:all .15s}
     .filter-chip:hover,.filter-chip.active{background:var(--blue-dim);color:var(--blue);border-color:var(--blue)}
     .filter-select{padding:4px 8px;border-radius:6px;font-size:11px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-sec);cursor:pointer;font-family:var(--font-m)}
+
+    /* ── Mobile responsiveness (≤768px) ── */
+    .mobile-back{display:none;align-items:center;gap:6px;background:transparent;border:none;color:var(--blue);font-size:13px;cursor:pointer;padding:6px 0;margin-bottom:12px}
+    .view-shell{display:flex;height:100%;overflow:hidden}
+    .grid-resp-4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    @media (max-width:768px){
+      .btn{padding:10px 16px;min-height:40px;font-size:13px}
+      .btn-icon{width:36px;height:36px}
+      .filter-chip{padding:6px 12px;font-size:12px}
+      .input{padding:11px 13px;font-size:14px}
+      .drawer{width:100vw}
+      .confirm-box{width:min(340px,92vw);padding:22px}
+      .card{border-radius:10px}
+      .view-shell{flex-direction:column}
+      .view-shell .list-pane{width:100%!important;border-right:none!important;border-bottom:1px solid var(--border);max-height:none}
+      .view-shell .detail-pane{padding:16px!important}
+      .view-shell.has-selection .list-pane{display:none}
+      .view-shell:not(.has-selection) .detail-pane{display:none}
+      .mobile-back{display:inline-flex}
+      .grid-resp-4{grid-template-columns:repeat(2,1fr)}
+      .fab-stack{bottom:78px!important;right:14px!important}
+    }
   `}</style>
 );
 
@@ -1070,9 +1092,9 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
   };
 
   return (
-    <div style={{ display:"flex", height:"100%", overflow:"hidden" }}>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
       {/* LEFT LIST */}
-      <div style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
         <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Contacts</div>
@@ -1112,12 +1134,13 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
       </div>
 
       {/* RIGHT PANEL */}
-      <div style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
         {(contact && editContact) ? (
           <div className="slide-in">
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("crm");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to contacts</button>
             {/* Header with name and actions */}
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
-              <div style={{ flex:1 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div style={{ flex:1, minWidth:0 }}>
                 <div className="display" style={{ fontSize:20, fontWeight:800 }}>{contact.name}</div>
                 <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{contact.co} · {contact.role}</div>
               </div>
@@ -1276,8 +1299,8 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const del = (id) => { setDB(d=>({...d,companies:d.companies.filter(c=>c.id!==id)})); if(sel===id) setSel(null); setConfirm(null); };
 
   return (
-    <div style={{ display:"flex", height:"100%", overflow:"hidden" }}>
-      <div style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
         <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Companies</div>
@@ -1313,21 +1336,22 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
         </div>
       </div>
 
-      <div style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
         {company ? (
           <div className="slide-in">
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
-              <div>
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("companies");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to companies</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, flexWrap:"wrap", gap:8 }}>
+              <div style={{ minWidth:0 }}>
                 <div className="display" style={{ fontSize:20, fontWeight:800 }}>{company.name}</div>
                 <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{company.industry}</div>
               </div>
-              <div style={{ display:"flex", gap:6 }}>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                 <Tag label={company.status}/>
                 <button className="btn btn-blue" style={{ padding:"6px 14px", fontSize:12 }} onClick={()=>setDrawer({mode:"edit",data:{...company}})}><Pencil size={12}/>Edit Company</button>
               </div>
             </div>
 
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10, marginBottom:20 }}>
+            <div className="grid-resp-4" style={{ marginBottom:20 }}>
               <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--blue)" }}>{companyContacts.length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Contacts</div></div>
               <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--amber)" }}>{companyDeals.length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Deals</div></div>
               <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--green)" }}>{fmt(companyDeals.reduce((a,d)=>a+d.value,0))}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Pipeline</div></div>
@@ -5969,7 +5993,7 @@ export default function App() {
         </div>
       </div>}
       {/* Floating Action Buttons */}
-      <div style={{position:"fixed",bottom:24,right:24,zIndex:9990,display:"flex",flexDirection:"column",gap:12,alignItems:"flex-end"}}>
+      <div className="fab-stack" style={{position:"fixed",bottom:24,right:24,zIndex:9990,display:"flex",flexDirection:"column",gap:12,alignItems:"flex-end"}}>
         <button title="AI Sweep" onClick={()=>{if(!sweepRunning){runSweep();setShowVoiceLab(true)}}} style={{width:52,height:52,borderRadius:"50%",background:sweepRunning?"var(--amber)":"linear-gradient(135deg,#667eea,#764ba2)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",transition:"transform 0.2s",animation:sweepRunning?"pulse 1.5s infinite":"none"}}><Zap size={22} color="#fff"/></button>
         <button title="Voice Lab" onClick={()=>{setShowVoiceLab(v=>!v);setAutoRecord(true)}} style={{width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#cc77ff,#aaafff)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",animation:"pulse 2s infinite"}}><Mic size={24} color="#fff"/></button>
       </div>
