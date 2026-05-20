@@ -277,6 +277,12 @@ const RECORD_ROUTE_ALIASES = {
   payment:"payments", payments:"payment", strategy:"strategies", strategies:"strategy",
   goal:"goals", goals:"goal", ai_memory:"ai-memories", ai_memories:"ai_memory", "ai-memories":"ai_memory",
 };
+// For these record types, clicking a record stays inside its master view (no remount) — focus changes, view doesn't.
+const MASTER_VIEW_FOR_TYPE = {
+  contact:"crm", company:"companies", campaign:"marketing", project:"projects",
+  deal:"deals", task:"tasks", goal:"goals", strategy:"strategies",
+  invoice:"invoices", payment:"payments", document:"documents", ai_memory:"ai_memories",
+};
 const recordPath = (type, id) => `#/${RECORD_ROUTE_ALIASES[type] || `${type}s`}/${id}`;
 const parseAppHash = () => {
   const raw = window.location.hash.replace(/^#\/?/, "").split("?")[0];
@@ -284,10 +290,13 @@ const parseAppHash = () => {
   const type = RECORD_ROUTE_ALIASES[head];
   if (type && id) {
     const num = Number(id);
-    return { view:"record", record:{ type, id: Number.isFinite(num) ? num : id } };
+    const numId = Number.isFinite(num) ? num : id;
+    const masterView = MASTER_VIEW_FOR_TYPE[type];
+    if (masterView) return { view: masterView, record: null, focus: { type, id: numId } };
+    return { view:"record", record:{ type, id: numId }, focus:null };
   }
   const valid = ["dashboard","orchestrator","associates","mstack","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin"];
-  return { view:valid.includes(head) ? head : "dashboard", record:null };
+  return { view:valid.includes(head) ? head : "dashboard", record:null, focus:null };
 };
 const daysBetween = (a,b) => Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
 const today = () => new Date().toISOString().split("T")[0];
@@ -1046,7 +1055,7 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
   }, [sel, db.contacts]);
 
   useEffect(() => {
-    if(focus?.type==="contact" && focus.id) { setCatFilter("all"); setSel(focus.id); setFocus(null); }
+    if(focus?.type==="contact" && focus.id) { setCatFilter("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   const filtered = db.contacts.filter(c => {
@@ -1281,7 +1290,7 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [editCompany, setEditCompany] = useState(null);
 
   useEffect(() => {
-    if(focus?.type==="company" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+    if(focus?.type==="company" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -1449,7 +1458,7 @@ const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [stageFilter, setStageFilter] = useState("all");
 
   useEffect(() => {
-    if(focus?.type==="deal" && focus.id) { setStageFilter("all"); setSel(focus.id); setFocus(null); }
+    if(focus?.type==="deal" && focus.id) { setStageFilter("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -1650,7 +1659,7 @@ const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [editCampaign, setEditCampaign] = useState(null);
 
   useEffect(() => {
-    if(focus?.type==="campaign" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+    if(focus?.type==="campaign" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -1834,7 +1843,7 @@ const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sortBy, setSortBy] = useState("due");
 
   useEffect(() => {
-    if(focus?.type==="task" && focus.id) { setFStatus("all"); setSel(focus.id); setFocus(null); }
+    if(focus?.type==="task" && focus.id) { setFStatus("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -2042,7 +2051,7 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const inlineFileInputRef = useRef(null);
 
   useEffect(() => {
-    if(focus?.type==="project" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+    if(focus?.type==="project" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -2356,7 +2365,7 @@ const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
-    if(focus?.type==="invoice" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+    if(focus?.type==="invoice" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -5035,7 +5044,7 @@ const PaymentsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [filterMethod, setFilterMethod] = useState("all");
 
   useEffect(() => {
-    if (focus?.type === "payment" && focus.id) { setFilterMethod("all"); setSel(focus.id); setFocus(null); }
+    if (focus?.type === "payment" && focus.id) { setFilterMethod("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -5196,7 +5205,7 @@ const DocumentsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const inlineFileInputRef = useRef(null);
 
   useEffect(() => {
-    if (focus?.type === "document" && focus.id) { setFilterType("all"); setSel(focus.id); setFocus(null); }
+    if (focus?.type === "document" && focus.id) { setFilterType("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -5385,7 +5394,7 @@ const AIMemoriesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const systemIcons = { claude:"\u2728", chatgpt:"\ud83e\udd16", gemini:"\ud83d\udc8e", copilot:"\u2708\ufe0f", other:"\ud83d\udccc" };
 
   useEffect(() => {
-    if (focus?.type === "ai_memory" && focus.id) { setFilterType("all"); setSel(focus.id); setFocus(null); }
+    if (focus?.type === "ai_memory" && focus.id) { setFilterType("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -5576,7 +5585,7 @@ const StrategiesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const goals = (db.goals || []);
 
   useEffect(() => {
-    if (focus?.type === "strategy" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+    if (focus?.type === "strategy" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -5846,7 +5855,7 @@ const GoalsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [statusFilter, setStatusFilter] = useState("active");
 
   useEffect(() => {
-    if (focus?.type === "goal" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+    if (focus?.type === "goal" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -6359,25 +6368,39 @@ export default function App() {
   const VALID_VIEWS = ["dashboard","orchestrator","associates","mstack","crm","companies","deals","marketing","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin","record"];
   const routeFromHash = () => {
     const route = parseAppHash();
-    return VALID_VIEWS.includes(route.view) ? route : { view:"dashboard", record:null };
+    return VALID_VIEWS.includes(route.view) ? route : { view:"dashboard", record:null, focus:null };
   };
   const initialRoute = routeFromHash();
   const [session, setSession] = useState(undefined);
   const [db, setDB] = useState(null);
   const [view, setView] = useState(initialRoute.view);
   const [recordTarget, setRecordTarget] = useState(initialRoute.record);
-    const [focus, setFocus] = useState(null); // {type:"task"|"contact"|"deal"|"invoice"|"project"|"company", id:number}
+  const [focus, setFocus] = useState(initialRoute.focus);
   const navigate = (targetView, focusTarget) => {
     if (targetView === "record" || focusTarget?.type) {
       const target = targetView === "record" ? focusTarget : { type:focusTarget.type, id:focusTarget.id };
+      const masterView = MASTER_VIEW_FOR_TYPE[target.type];
+      if (masterView) {
+        // Route to master view without remounting — just update focus + URL.
+        setRecordTarget(null);
+        setFocus(target);
+        if (view !== masterView) setView(masterView);
+        const hash = recordPath(target.type, target.id);
+        if (window.location.hash !== hash) window.location.hash = hash;
+        return;
+      }
+      // Legacy fallback for types without a master view.
       setRecordTarget(target);
       setView("record");
       window.location.hash = recordPath(target.type, target.id);
       return;
     }
+    // Top-level navigation (sidebar / bottom nav). Clear focus so master views reset to list mode.
     setRecordTarget(null);
+    setFocus(null);
     setView(targetView);
-    if(focusTarget) setFocus(focusTarget);
+    const hash = "#/" + targetView;
+    if (window.location.hash !== hash) window.location.hash = hash;
   };
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(window.innerWidth < 768);
@@ -6410,12 +6433,16 @@ export default function App() {
 
   // Sync view ↔ URL hash; reset autoRecord when leaving voice
   useEffect(() => {
-    const nextHash = view === "record" && recordTarget ? recordPath(recordTarget.type, recordTarget.id) : "#/" + view;
-    if (window.location.hash !== nextHash) window.location.hash = nextHash;
+    // Skip URL clobber when the current hash already corresponds to this view (e.g., #/tasks/42 while view=tasks).
+    const parsed = parseAppHash();
+    if (parsed.view !== view) {
+      const nextHash = view === "record" && recordTarget ? recordPath(recordTarget.type, recordTarget.id) : "#/" + view;
+      if (window.location.hash !== nextHash) window.location.hash = nextHash;
+    }
     if (view !== "voice") setAutoRecord(false);
   }, [view, recordTarget]);
   useEffect(() => {
-    const onHash = () => { const r = routeFromHash(); setView(r.view); setRecordTarget(r.record); };
+    const onHash = () => { const r = routeFromHash(); setView(r.view); setRecordTarget(r.record); setFocus(r.focus); };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -6541,7 +6568,7 @@ export default function App() {
           </div>
         </div>
         <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
-          {!mobile && <Sidebar view={view} setView={setView} collapsed={collapsed} setCollapsed={setCollapsed} alerts={alerts} db={db}/>}
+          {!mobile && <Sidebar view={view} setView={(v)=>navigate(v)} collapsed={collapsed} setCollapsed={setCollapsed} alerts={alerts} db={db}/>}
           <main style={{ flex:1, overflowY:"auto" }}>{VIEWS[view] || VIEWS.dashboard}</main>
         </div>
         {/* Voice Lab Overlay */}
@@ -6556,7 +6583,7 @@ export default function App() {
         <button title="AI Sweep" onClick={()=>{if(!sweepRunning){runSweep();setShowVoiceLab(true)}}} style={{width:52,height:52,borderRadius:"50%",background:sweepRunning?"var(--amber)":"linear-gradient(135deg,#667eea,#764ba2)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",transition:"transform 0.2s",animation:sweepRunning?"pulse 1.5s infinite":"none"}}><Zap size={22} color="#fff"/></button>
         <button title="Voice Lab" onClick={()=>{setShowVoiceLab(v=>!v);setAutoRecord(true)}} style={{width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#cc77ff,#aaafff)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",animation:"pulse 2s infinite"}}><Mic size={24} color="#fff"/></button>
       </div>
-        {mobile && <BottomNav view={view} setView={setView}/>}
+        {mobile && <BottomNav view={view} setView={(v)=>navigate(v)}/>}
       </div>
     </>
   );
