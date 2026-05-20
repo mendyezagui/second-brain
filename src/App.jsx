@@ -2258,52 +2258,128 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
 const blankInvoice = () => ({ number:"", client:"", amount:0, status:"draft", issued:"", due:"", notes:"" });
 
 const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankInvoice());
+  const [editInv, setEditInv] = useState(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
-    if(focus?.type==="invoice" && focus.id) { const inv=db.invoices.find(x=>x.id===focus.id); if(inv) { setD({...inv}); setDrawer("edit"); } setFocus(null); }
+    if(focus?.type==="invoice" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
   }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const inv = db.invoices.find(x => x.id === sel);
+      if (inv) setEditInv({...inv, amount: String(inv.amount)});
+    } else setEditInv(null);
+  }, [sel, db.invoices]);
+
+  const filtered = db.invoices.filter(inv => {
+    if (query && !(`${inv.number} ${inv.client}`.toLowerCase().includes(query.toLowerCase()))) return false;
+    if (statusFilter !== "all" && inv.status !== statusFilter) return false;
+    return true;
+  });
+  const invoice = sel ? db.invoices.find(x => x.id === sel) : null;
+
+  const saveInline = () => {
+    if (!editInv) return;
+    const rec = {...editInv, amount: parseFloat(editInv.amount)||0};
+    setDB(d => ({...d, invoices: d.invoices.map(x => x.id === rec.id ? rec : x)}));
+  };
   const save = () => {
-    const rec = {...d,amount:parseFloat(d.amount)||0};
-    if(drawer==="add") setDB(db=>({...db,invoices:[...db.invoices,{...rec,id:nextId(db.invoices)}]}));
-    else setDB(db=>({...db,invoices:db.invoices.map(x=>x.id===rec.id?rec:x)}));
+    const rec = {...d, amount:parseFloat(d.amount)||0};
+    setDB(db => ({...db, invoices:[...db.invoices, {...rec, id:nextId(db.invoices)}]}));
     setDrawer(null);
   };
-  const del = (id) => { setDB(db=>({...db,invoices:db.invoices.filter(x=>x.id!==id)})); setConfirm(null); };
+  const del = (id) => { setDB(db=>({...db,invoices:db.invoices.filter(x=>x.id!==id)})); if (sel === id) setSel(null); setConfirm(null); };
   const paid = db.invoices.filter(i=>i.status==="paid").reduce((a,i)=>a+i.amount,0);
   const overdue = db.invoices.filter(i=>i.status==="overdue").reduce((a,i)=>a+i.amount,0);
-  const pending = db.invoices.filter(i=>i.status==="pending").reduce((a,i)=>a+i.amount,0);
+
   return (
-    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Invoices</div>
-        <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setD(blankInvoice());setDrawer("add");}}><Plus size={12}/>New Invoice</button>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12 }}>
-        <MetricCard icon={CheckCircle} label="Collected" value={fmt(paid)} color="--green"/>
-        <MetricCard icon={Clock} label="Pending" value={fmt(pending)} color="--amber"/>
-        <MetricCard icon={AlertCircle} label="Overdue" value={fmt(overdue)} color="--red"/>
-        <MetricCard icon={TrendingUp} label="ARR Run Rate" value={fmt(Math.round(paid*12/3))} sub={`toward ${fmt(db.goals[0]?.target_value||800000)}`} color="--blue"/>
-      </div>
-      {overdue>0&&<div className="card" style={{ padding:16, borderLeft:"3px solid var(--red)" }}>
-        <div style={{ display:"flex", gap:7, alignItems:"center", marginBottom:6 }}><AlertCircle size={14} color="var(--red)"/><span style={{ fontSize:12, fontWeight:700, color:"var(--red)" }}>INVOICE AGENT ALERT</span></div>
-        <p style={{ fontSize:13, lineHeight:1.5 }}>{db.invoices.filter(i=>i.status==="overdue").length} invoices totaling {fmt(overdue)} overdue. Escalation recommended.</p>
-      </div>}
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {db.invoices.map(inv=>(
-          <div key={inv.id} className="card row-hover" onClick={()=>navigate("record",{type:"invoice",id:inv.id})} style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
-            <div style={{ flex:1 }}>
-              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}><span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{inv.number}</span><span style={{ fontSize:13, fontWeight:600 }}>{inv.contactId ? <EntityLink type="contact" id={inv.contactId} navigate={navigate}>{inv.client}</EntityLink> : inv.client}</span></div>
-              {inv.due&&<div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due: {inv.due}</div>}
-            </div>
-            <div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontFamily:"var(--font-d)", fontSize:15, fontWeight:700 }}>{fmt(inv.amount)}</div><Tag label={inv.status}/></div>
-            <RowActions onEdit={()=>{setD({...inv,amount:String(inv.amount)});setDrawer("edit");}} onDelete={()=>setConfirm({id:inv.id,label:inv.number})}/>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+        <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Invoices</div>
+            <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setD(blankInvoice());setDrawer("add");}}><Plus size={12}/>Add</button>
           </div>
-        ))}
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+            {["all","draft","pending","paid","overdue","void"].map(s=>(
+              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
+            ))}
+          </div>
+          <div style={{ position:"relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+            <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+          </div>
+          {overdue>0 && <div className="mono" style={{ fontSize:10, color:"var(--red)", marginTop:6 }}>{db.invoices.filter(i=>i.status==="overdue").length} overdue · {fmt(overdue)}</div>}
+        </div>
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {filtered.map(inv => (
+            <div key={inv.id} className="row-hover" onClick={()=>navigate("record",{type:"invoice",id:inv.id})}
+              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===inv.id?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center", gap:6 }}>
+              <div style={{ minWidth:0 }}>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{inv.number}</div>
+                <div style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{inv.client}</div>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2 }}>
+                <div className="mono" style={{ fontSize:11, fontWeight:600 }}>{fmt(inv.amount)}</div>
+                <Tag label={inv.status}/>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-      {drawer&&<Drawer title={drawer==="add"?"New Invoice":"Edit Invoice"} onClose={()=>setDrawer(null)} onSave={save}>
+
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+        {(invoice && editInv) ? (
+          <div className="slide-in">
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("invoices");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to invoices</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div style={{ minWidth:0 }}>
+                <div className="display" style={{ fontSize:20, fontWeight:800 }}>{invoice.number || `Invoice #${invoice.id}`}</div>
+                <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{invoice.client}</div>
+              </div>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                <Tag label={invoice.status}/>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={saveInline}><Save size={12}/>Save</button>
+                <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:invoice.id,label:invoice.number})}><Trash2 size={12}/></button>
+              </div>
+            </div>
+
+            <div className="grid-resp-4" style={{ marginBottom:20 }}>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--blue)" }}>{fmt(invoice.amount)}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Amount</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:13, fontWeight:600 }}>{invoice.issued||"—"}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Issued</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:13, fontWeight:600 }}>{invoice.due||"—"}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Due</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:13, fontWeight:600 }}>{invoice.status}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Status</div></div>
+            </div>
+
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <Field label="Invoice #"><Inp value={editInv.number||""} onChange={v=>setEditInv(p=>({...p,number:v}))}/></Field>
+                <Field label="Client"><Inp value={editInv.client||""} onChange={v=>setEditInv(p=>({...p,client:v}))}/></Field>
+                <Field label="Amount ($)"><Inp type="number" value={editInv.amount} onChange={v=>setEditInv(p=>({...p,amount:v}))}/></Field>
+                <Field label="Status"><Sel value={editInv.status} onChange={v=>setEditInv(p=>({...p,status:v}))} options={["draft","pending","paid","overdue","void"]}/></Field>
+                <Field label="Issued"><Inp type="date" value={editInv.issued||""} onChange={v=>setEditInv(p=>({...p,issued:v}))}/></Field>
+                <Field label="Due Date"><Inp type="date" value={editInv.due||""} onChange={v=>setEditInv(p=>({...p,due:v}))}/></Field>
+              </div>
+              <Field label="Notes"><Tex value={editInv.notes||""} onChange={v=>setEditInv(p=>({...p,notes:v}))}/></Field>
+            </div>
+
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="invoice" entityId={invoice.id}/>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+            <DollarSign size={44} style={{ opacity:.15, marginBottom:14 }}/>
+            <p style={{ fontSize:14 }}>Select an invoice</p>
+          </div>
+        )}
+      </div>
+
+      {drawer==="add" && <Drawer title="New Invoice" onClose={()=>setDrawer(null)} onSave={save}>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Invoice #"><Inp value={d.number} onChange={v=>setD(p=>({...p,number:v}))}/></Field>
           <Field label="Client"><Inp value={d.client} onChange={v=>setD(p=>({...p,client:v}))}/></Field>
@@ -2313,7 +2389,6 @@ const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
           <Field label="Due Date"><Inp type="date" value={d.due} onChange={v=>setD(p=>({...p,due:v}))}/></Field>
         </div>
         <Field label="Notes"><Tex value={d.notes} onChange={v=>setD(p=>({...p,notes:v}))}/></Field>
-        {drawer === "edit" && d.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="invoice" entityId={d.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -4861,138 +4936,212 @@ const VoitraGateView = () => {
 
 const PAYMENT_METHODS = ["check","wire","ach","card","cash","other"];
 const blankPayment = () => ({ amount:0, date:today(), payer:"", payer_type:"company", method:"check", reference:"", notes:"", allocations:[] });
-const PaymentsView = ({ db, setDB, navigate }) => {
+const PaymentsView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [pd, setPD] = useState(blankPayment());
+  const [editPay, setEditPay] = useState(null);
+  const [query, setQuery] = useState("");
   const [filterMethod, setFilterMethod] = useState("all");
-  const payments = useMemo(() => { let p = [...(db.payments || [])]; if (filterMethod !== "all") p = p.filter(x => x.method === filterMethod); return p.sort((a, b) => (b.date || "").localeCompare(a.date || "")); }, [db.payments, filterMethod]);
+
+  useEffect(() => {
+    if (focus?.type === "payment" && focus.id) { setFilterMethod("all"); setSel(focus.id); setFocus(null); }
+  }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const p = (db.payments||[]).find(x => x.id === sel);
+      if (p) {
+        const allocs = (db.payment_allocations||[]).filter(a => a.payment_id === p.id).map(a => ({invoice_id: a.invoice_id, amount: a.amount}));
+        setEditPay({...p, amount: String(p.amount), allocations: allocs});
+      }
+    } else setEditPay(null);
+  }, [sel, db.payments, db.payment_allocations]);
+
+  const payments = useMemo(() => { let p = [...(db.payments || [])]; if (filterMethod !== "all") p = p.filter(x => x.method === filterMethod); if (query) p = p.filter(x => `${x.payer||""} ${x.reference||""}`.toLowerCase().includes(query.toLowerCase())); return p.sort((a, b) => (b.date || "").localeCompare(a.date || "")); }, [db.payments, filterMethod, query]);
   const invoices = db.invoices || [];
   const totalReceived = (db.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
   const totalAllocated = (db.payment_allocations || []).reduce((s, a) => s + (a.amount || 0), 0);
   const unallocated = totalReceived - totalAllocated;
-  const openInvoices = invoices.filter(inv => { const paid = (db.payment_allocations || []).filter(a => a.invoice_id === inv.id).reduce((s, a) => s + a.amount, 0); return inv.amount - paid > 0 && inv.status !== "cancelled"; });
-  const savePayment = (d) => { const rec = { ...d, amount: parseInt(d.amount) || 0 }; const allocs = rec.allocations || []; delete rec.allocations; if (drawer.mode === "add") { const newId = nextId(db.payments || []); setDB(db => { const newAllocs = allocs.filter(a => a.amount > 0).map(a => ({ ...a, id: nextId([...(db.payment_allocations || []), ...allocs]), payment_id: newId })); return { ...db, payments: [...(db.payments || []), { ...rec, id: newId }], payment_allocations: [...(db.payment_allocations || []), ...newAllocs] }; }); } else { setDB(db => { const cleaned = (db.payment_allocations || []).filter(a => a.payment_id !== rec.id); const newAllocs = allocs.filter(a => a.amount > 0).map((a, i) => ({ id: nextId([...cleaned]), payment_id: rec.id, invoice_id: a.invoice_id, amount: parseInt(a.amount) || 0 })); return { ...db, payments: (db.payments || []).map(x => x.id === rec.id ? rec : x), payment_allocations: [...cleaned, ...newAllocs] }; }); } setDrawer(null); };
-  const delPayment = (id) => { setDB(db => ({ ...db, payments: (db.payments || []).filter(x => x.id !== id), payment_allocations: (db.payment_allocations || []).filter(a => a.payment_id !== id) })); setConfirm(null); };
+  const payment = sel ? (db.payments||[]).find(p => p.id === sel) : null;
+
+  const saveInline = () => {
+    if (!editPay) return;
+    const rec = {...editPay, amount: parseInt(editPay.amount)||0};
+    const allocs = (rec.allocations || []).filter(a => a.amount > 0);
+    delete rec.allocations;
+    setDB(d => {
+      const cleaned = (d.payment_allocations || []).filter(a => a.payment_id !== rec.id);
+      let nextAllocId = nextId(cleaned);
+      const newAllocs = allocs.map(a => ({id: nextAllocId++, payment_id: rec.id, invoice_id: parseInt(a.invoice_id), amount: parseInt(a.amount)||0}));
+      return {...d, payments: d.payments.map(x => x.id === rec.id ? rec : x), payment_allocations: [...cleaned, ...newAllocs]};
+    });
+  };
+  const savePayment = (d) => {
+    const rec = { ...d, amount: parseInt(d.amount) || 0 };
+    const allocs = rec.allocations || [];
+    delete rec.allocations;
+    const newId = nextId(db.payments || []);
+    setDB(db => {
+      const newAllocs = allocs.filter(a => a.amount > 0).map((a,i) => ({ id: nextId(db.payment_allocations || [])+i, payment_id: newId, invoice_id: parseInt(a.invoice_id), amount: parseInt(a.amount)||0 }));
+      return { ...db, payments: [...(db.payments || []), { ...rec, id: newId }], payment_allocations: [...(db.payment_allocations || []), ...newAllocs] };
+    });
+    setDrawer(null);
+  };
+  const delPayment = (id) => { setDB(db => ({ ...db, payments: (db.payments || []).filter(x => x.id !== id), payment_allocations: (db.payment_allocations || []).filter(a => a.payment_id !== id) })); if (sel === id) setSel(null); setConfirm(null); };
   const getAllocs = (pid) => (db.payment_allocations || []).filter(a => a.payment_id === pid);
   const getInvLabel = (iid) => { const inv = invoices.find(x => x.id === iid); return inv ? inv.number + " - " + inv.client : "Invoice #" + iid; };
-  return (<div style={{padding:"2rem 2.5rem",maxWidth:1100,margin:"0 auto"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.5rem"}}>
-      <h2 style={{margin:0,fontSize:"1.5rem"}}>Payments</h2>
-      <button onClick={()=>{setPD(blankPayment());setDrawer({mode:"add"})}} style={{background:"var(--accent)",color:"#fff",border:"none",borderRadius:8,padding:"0.5rem 1.2rem",cursor:"pointer",fontWeight:600}}>+ Record Payment</button>
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1rem",marginBottom:"1.5rem"}}>
-      {[["Total Received","$"+(totalReceived/100).toLocaleString()],["Payments",(db.payments||[]).length],["Allocated","$"+(totalAllocated/100).toLocaleString()],["Unallocated","$"+(unallocated/100).toLocaleString()]].map(([l,v],i)=>(<div key={i} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",textAlign:"center"}}><div style={{fontSize:"1.5rem",fontWeight:700}}>{v}</div><div style={{fontSize:"0.85rem",color:"var(--text-sec)"}}>{l}</div></div>))}
-    </div>
-    <div style={{display:"flex",gap:"0.75rem",marginBottom:"1.5rem"}}>
-      <select value={filterMethod} onChange={e=>setFilterMethod(e.target.value)} style={{padding:"0.4rem 0.8rem",borderRadius:8,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)"}}>
-        <option value="all">All Methods</option>{PAYMENT_METHODS.map(m=>(<option key={m} value={m}>{m.toUpperCase()}</option>))}
-      </select>
-    </div>
-    <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
-      {payments.length===0&&<div style={{textAlign:"center",padding:"3rem",color:"var(--text-sec)"}}>No payments recorded yet.</div>}
-      {payments.map(p=>{const allocs=getAllocs(p.id);return(<div key={p.id} className="row-hover" onClick={()=>navigate("record",{type:"payment",id:p.id})} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",border:"1px solid var(--border)",cursor:"pointer"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.4rem"}}>
-          <div style={{display:"flex",alignItems:"center",gap:"0.75rem"}}>
-            <span style={{fontWeight:700,fontSize:"1.1rem",color:"var(--green)"}}>{"$"+(p.amount/100).toLocaleString()}</span>
-            <span style={{fontWeight:600}}>{p.payer}</span>
-            <span style={{fontSize:"0.75rem",padding:"2px 8px",borderRadius:20,background:"var(--blue)22",color:"var(--blue)",fontWeight:600}}>{p.method}</span>
-          </div>
-          <div style={{display:"flex",gap:"0.5rem"}}>
-            <button onClick={(e)=>{e.stopPropagation();setPD({...p,allocations:allocs.map(a=>({invoice_id:a.invoice_id,amount:a.amount}))});setDrawer({mode:"edit"})}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--text)"}}>Edit</button>
-            <button onClick={(e)=>{e.stopPropagation();setConfirm(p)}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--red,#e53e3e)"}}>Del</button>
-          </div>
+  return (<div className={`view-shell${sel ? " has-selection" : ""}`}>
+    <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+      <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div className="display" style={{ fontSize:16, fontWeight:700 }}>Payments</div>
+          <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setPD(blankPayment());setDrawer({mode:"add"});}}><Plus size={12}/>Add</button>
         </div>
-        <div style={{display:"flex",gap:"1rem",fontSize:"0.78rem",color:"var(--text-dim)",flexWrap:"wrap"}}>
-          <span>Date: {p.date}</span>
-          {p.reference&&<span>Ref: {p.reference}</span>}
-          {allocs.length>0&&<span>Applied to: {allocs.map(a=>getInvLabel(a.invoice_id)+" ($"+(a.amount/100).toLocaleString()+")").join(", ")}</span>}
-          {p.notes&&<span>Notes: {p.notes.substring(0,60)}{p.notes.length>60?"...":""}</span>}
+        <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>{"$"+(totalReceived/100).toLocaleString()} received · {"$"+(unallocated/100).toLocaleString()} unallocated</div>
+        <select className="filter-select" value={filterMethod} onChange={e=>setFilterMethod(e.target.value)} style={{ width:"100%", marginBottom:8 }}>
+          <option value="all">All Methods</option>
+          {PAYMENT_METHODS.map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
+        </select>
+        <div style={{ position:"relative" }}>
+          <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+          <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
         </div>
-      </div>)})}
-    </div>
-    {drawer&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",justifyContent:"flex-end"}} onClick={e=>{if(e.target===e.currentTarget)setDrawer(null)}}>
-      <div style={{width:480,maxWidth:"90vw",background:"var(--card)",height:"100%",overflowY:"auto",padding:"1.5rem",boxShadow:"-4px 0 24px rgba(0,0,0,0.2)"}}>
-        <h3 style={{marginTop:0}}>{drawer.mode==="add"?"Record Payment":"Edit Payment"}</h3>
-        <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.75rem"}}>
-            <label>Amount (cents)<input type="number" value={pd.amount} onChange={e=>setPD({...pd,amount:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-            <label>Date<input type="date" value={pd.date} onChange={e=>setPD({...pd,date:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.75rem"}}>
-            <label>Payer<input value={pd.payer} onChange={e=>setPD({...pd,payer:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-            <label>Method<select value={pd.method} onChange={e=>setPD({...pd,method:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}}>{PAYMENT_METHODS.map(m=>(<option key={m} value={m}>{m.toUpperCase()}</option>))}</select></label>
-          </div>
-          <label>Reference #<input value={pd.reference} onChange={e=>setPD({...pd,reference:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-          <label>Notes<textarea value={pd.notes} onChange={e=>setPD({...pd,notes:e.target.value})} rows={2} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4,resize:"vertical"}} /></label>
-          {drawer.mode==="edit"&&pd.id&&<AssociatedDocumentsPanel db={db} setDB={setDB} entityType="payment" entityId={pd.id}/>}
-          <div style={{borderTop:"1px solid var(--border)",paddingTop:"0.75rem",marginTop:"0.25rem"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.5rem"}}>
-              <strong style={{fontSize:"0.9rem"}}>Apply to Invoices</strong>
-              <button onClick={()=>setPD({...pd,allocations:[...(pd.allocations||[]),{invoice_id:openInvoices[0]?.id||0,amount:0}]})} style={{background:"none",border:"1px solid var(--border)",borderRadius:6,padding:"2px 10px",cursor:"pointer",fontSize:"0.8rem",color:"var(--accent)"}}>+ Add</button>
+      </div>
+      <div style={{ overflowY:"auto", flex:1 }}>
+        {payments.map(p=>(
+          <div key={p.id} className="row-hover" onClick={()=>navigate("record",{type:"payment",id:p.id})}
+            style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===p.id?"var(--bg-hover)":"transparent" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div style={{ fontSize:13, fontWeight:600 }}>{p.payer}</div>
+              <div className="mono" style={{ fontSize:11, fontWeight:600, color:"var(--green)" }}>${(p.amount/100).toLocaleString()}</div>
             </div>
-            {(pd.allocations||[]).map((a,ai)=>(<div key={ai} style={{display:"flex",gap:"0.5rem",alignItems:"center",marginBottom:"0.4rem"}}>
-              <select value={a.invoice_id} onChange={e=>{const allocs=[...pd.allocations];allocs[ai]={...allocs[ai],invoice_id:parseInt(e.target.value)};setPD({...pd,allocations:allocs})}} style={{flex:2,padding:"0.35rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontSize:"0.82rem"}}>
-                <option value={0}>Select invoice...</option>{invoices.map(inv=>(<option key={inv.id} value={inv.id}>{inv.number} - {inv.client} ({"$"+(inv.amount/100).toLocaleString()})</option>))}
-              </select>
-              <input type="number" placeholder="Amount" value={a.amount} onChange={e=>{const allocs=[...pd.allocations];allocs[ai]={...allocs[ai],amount:parseInt(e.target.value)||0};setPD({...pd,allocations:allocs})}} style={{flex:1,padding:"0.35rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontSize:"0.82rem"}} />
-              <button onClick={()=>{const allocs=[...pd.allocations];allocs.splice(ai,1);setPD({...pd,allocations:allocs})}} style={{background:"none",border:"none",color:"var(--red,#e53e3e)",cursor:"pointer",fontSize:"1rem"}}>x</button>
-            </div>))}
-            {(pd.allocations||[]).length>0&&<div style={{fontSize:"0.8rem",color:"var(--text-dim)",marginTop:4}}>Total allocated: {"$"+((pd.allocations||[]).reduce((s,a)=>s+(parseInt(a.amount)||0),0)/100).toLocaleString()} of {"$"+((parseInt(pd.amount)||0)/100).toLocaleString()}</div>}
+            <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.date} · {p.method}</div>
           </div>
-          <div style={{display:"flex",gap:"0.75rem",marginTop:"0.5rem"}}>
-            <button onClick={()=>savePayment(pd)} style={{flex:1,padding:"0.5rem",background:"var(--accent)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Save</button>
-            <button onClick={()=>setDrawer(null)} style={{flex:1,padding:"0.5rem",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",color:"var(--text)"}}>Cancel</button>
+        ))}
+      </div>
+    </div>
+
+    <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+      {(payment && editPay) ? (
+        <div className="slide-in">
+          <button className="mobile-back" onClick={()=>{setSel(null);navigate("payments");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to payments</button>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+            <div style={{ minWidth:0 }}>
+              <div className="display" style={{ fontSize:20, fontWeight:800 }}>${(payment.amount/100).toLocaleString()} from {payment.payer}</div>
+              <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{payment.date} · {payment.method}</div>
+            </div>
+            <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+              <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={saveInline}><Save size={12}/>Save</button>
+              <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm(payment)}><Trash2 size={12}/></button>
+            </div>
           </div>
+
+          <div className="card" style={{ padding:20, marginBottom:16 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+              <Field label="Amount (cents)"><Inp type="number" value={editPay.amount} onChange={v=>setEditPay(p=>({...p,amount:v}))}/></Field>
+              <Field label="Date"><Inp type="date" value={editPay.date||""} onChange={v=>setEditPay(p=>({...p,date:v}))}/></Field>
+              <Field label="Payer"><Inp value={editPay.payer||""} onChange={v=>setEditPay(p=>({...p,payer:v}))}/></Field>
+              <Field label="Method"><Sel value={editPay.method} onChange={v=>setEditPay(p=>({...p,method:v}))} options={PAYMENT_METHODS}/></Field>
+            </div>
+            <Field label="Reference #"><Inp value={editPay.reference||""} onChange={v=>setEditPay(p=>({...p,reference:v}))}/></Field>
+            <Field label="Notes"><Tex value={editPay.notes||""} onChange={v=>setEditPay(p=>({...p,notes:v}))}/></Field>
+
+            <div style={{ borderTop:"1px solid var(--border)", paddingTop:14, marginTop:6 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                <span style={{ fontSize:12, fontWeight:600, color:"var(--text-sec)" }}>Apply to Invoices</span>
+                <button type="button" className="btn btn-ghost" style={{ fontSize:11, padding:"3px 8px" }} onClick={()=>setEditPay(p=>({...p, allocations:[...(p.allocations||[]),{invoice_id:invoices[0]?.id||0,amount:0}]}))}>+ Add</button>
+              </div>
+              {(editPay.allocations||[]).map((a,ai)=>(
+                <div key={ai} style={{ display:"flex", gap:6, alignItems:"center", marginBottom:6 }}>
+                  <select className="input" value={a.invoice_id} onChange={e=>{const all=[...editPay.allocations];all[ai]={...all[ai],invoice_id:parseInt(e.target.value)};setEditPay(p=>({...p,allocations:all}));}} style={{ flex:2, fontSize:12 }}>
+                    <option value={0}>Select invoice…</option>
+                    {invoices.map(inv=><option key={inv.id} value={inv.id}>{inv.number} – {inv.client}</option>)}
+                  </select>
+                  <input className="input" type="number" placeholder="Amount" value={a.amount} onChange={e=>{const all=[...editPay.allocations];all[ai]={...all[ai],amount:parseInt(e.target.value)||0};setEditPay(p=>({...p,allocations:all}));}} style={{ flex:1, fontSize:12 }}/>
+                  <button onClick={()=>setEditPay(p=>({...p,allocations:p.allocations.filter((_,i)=>i!==ai)}))} style={{ background:"none", border:"none", color:"var(--red)", cursor:"pointer" }}><X size={14}/></button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="payment" entityId={payment.id}/>
         </div>
-      </div>
-    </div>}
-    {confirm&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1001,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirm(null)}}>
-      <div style={{background:"var(--card)",borderRadius:12,padding:"1.5rem",maxWidth:400,width:"90%"}}>
-        <h3 style={{marginTop:0}}>Delete Payment?</h3>
-        <p>Delete payment of <strong>{"$"+(confirm.amount/100).toLocaleString()}</strong> from <strong>{confirm.payer}</strong>? This will also remove all invoice allocations.</p>
-        <div style={{display:"flex",gap:"0.75rem"}}>
-          <button onClick={()=>delPayment(confirm.id)} style={{flex:1,padding:"0.5rem",background:"var(--red,#e53e3e)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Delete</button>
-          <button onClick={()=>setConfirm(null)} style={{flex:1,padding:"0.5rem",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",color:"var(--text)"}}>Cancel</button>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+          <CreditCard size={44} style={{ opacity:.15, marginBottom:14 }}/>
+          <p style={{ fontSize:14 }}>Select a payment</p>
         </div>
+      )}
+    </div>
+
+    {drawer?.mode==="add" && <Drawer title="Record Payment" onClose={()=>setDrawer(null)} onSave={()=>savePayment(pd)}>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+        <Field label="Amount (cents)"><Inp type="number" value={pd.amount} onChange={v=>setPD(p=>({...p,amount:v}))}/></Field>
+        <Field label="Date"><Inp type="date" value={pd.date||""} onChange={v=>setPD(p=>({...p,date:v}))}/></Field>
+        <Field label="Payer"><Inp value={pd.payer} onChange={v=>setPD(p=>({...p,payer:v}))}/></Field>
+        <Field label="Method"><Sel value={pd.method} onChange={v=>setPD(p=>({...p,method:v}))} options={PAYMENT_METHODS}/></Field>
       </div>
-    </div>}
+      <Field label="Reference #"><Inp value={pd.reference} onChange={v=>setPD(p=>({...p,reference:v}))}/></Field>
+      <Field label="Notes"><Tex value={pd.notes} onChange={v=>setPD(p=>({...p,notes:v}))}/></Field>
+    </Drawer>}
+    {confirm && <ConfirmDelete label={`Payment $${(confirm.amount/100).toLocaleString()} from ${confirm.payer}`} onConfirm={()=>delPayment(confirm.id)} onCancel={()=>setConfirm(null)}/>}
   </div>);
 };
 
 /* ────────────────────────────────────────────────────────
    DOCUMENTS VIEW
 ──────────────────────────────────────────────────────── */
-const DocumentsView = ({ db, setDB, navigate }) => {
+const DocumentsView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
+  const [confirm, setConfirm] = useState(null);
   const [doc, setDoc] = useState(blankDocument());
+  const [editDoc, setEditDoc] = useState(null);
   const [query, setQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
   const drawerFileInputRef = useRef(null);
+  const inlineFileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (focus?.type === "document" && focus.id) { setFilterType("all"); setSel(focus.id); setFocus(null); }
+  }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const d = (db.documents||[]).find(x => x.id === sel);
+      if (d) setEditDoc({...d, associations: d.associations || []});
+    } else setEditDoc(null);
+  }, [sel, db.documents]);
 
   const docs = (db.documents || []).filter(d => {
     const q = query.toLowerCase();
-    const matchesSearch = !q || [d.title, d.file_name, d.description, d.url].some(v => (v || "").toLowerCase().includes(q))
-      || (d.associations || []).some(a => getDocEntityLabel(db, a).toLowerCase().includes(q));
+    const matchesSearch = !q || [d.title, d.file_name, d.description, d.url].some(v => (v || "").toLowerCase().includes(q));
     const matchesType = filterType === "all" || (d.associations || []).some(a => a.type === filterType);
     return matchesSearch && matchesType;
   }).sort((a,b) => (b.id || 0) - (a.id || 0));
+  const selDoc = sel ? (db.documents||[]).find(d => d.id === sel) : null;
+
+  const saveInline = () => {
+    if (!editDoc) return;
+    const rec = {...editDoc, associations: editDoc.associations || []};
+    setDB(prev => ({...prev, documents: (prev.documents||[]).map(d => d.id === rec.id ? rec : d)}));
+  };
 
   const saveDoc = () => {
     if (!doc.title && !doc.file_name && !doc.url) return;
     const rec = { ...doc, title:doc.title || doc.file_name || (doc.kind === "link" ? doc.url : "Untitled document"), associations:doc.associations || [] };
-    setDB(prev => drawer === "add"
-      ? { ...prev, documents:[{ ...rec, id:nextId(prev.documents || []) }, ...(prev.documents || [])] }
-      : { ...prev, documents:(prev.documents || []).map(d => d.id === rec.id ? rec : d) }
-    );
+    setDB(prev => ({ ...prev, documents:[{ ...rec, id:nextId(prev.documents || []) }, ...(prev.documents || [])] }));
     setDrawer(null);
   };
   const delDoc = async (d) => {
     if (d.storage_path) await supabase.storage.from("memory-files").remove([d.storage_path]);
     setDB(prev => ({ ...prev, documents:(prev.documents || []).filter(x => x.id !== d.id) }));
-    setDrawer(null);
+    if (sel === d.id) setSel(null);
+    setConfirm(null);
   };
   const uploadDocs = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -5001,109 +5150,122 @@ const DocumentsView = ({ db, setDB, navigate }) => {
     try {
       const uploaded = [];
       for (const file of files) {
-        try {
-          uploaded.push({ ...blankDocument(), ...(await uploadDocumentFile(file)) });
-        } catch (error) { console.error("Upload error:", error); }
+        try { uploaded.push({ ...blankDocument(), ...(await uploadDocumentFile(file)) }); } catch {}
       }
       if (uploaded.length) setDB(prev => { let id = nextId(prev.documents || []); return { ...prev, documents:[...uploaded.map(d => ({ ...d, id:id++ })), ...(prev.documents || [])] }; });
-    } catch (err) { console.error("Document upload failed:", err); }
-    setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
   };
   const attachFileToDraft = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    try {
-      const uploaded = await uploadDocumentFile(file);
-      setDoc(p => ({ ...p, ...uploaded, title:p.title || uploaded.title }));
-    } catch (err) { console.error("Document upload failed:", err); }
-    setUploading(false);
-    if (drawerFileInputRef.current) drawerFileInputRef.current.value = "";
+    try { const u = await uploadDocumentFile(file); setDoc(p => ({ ...p, ...u, title:p.title || u.title })); }
+    finally { setUploading(false); if (drawerFileInputRef.current) drawerFileInputRef.current.value = ""; }
+  };
+  const attachToExisting = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try { const u = await uploadDocumentFile(file); setEditDoc(p => ({...p, ...u, title:p.title || u.title})); }
+    finally { setUploading(false); if (inlineFileInputRef.current) inlineFileInputRef.current.value = ""; }
   };
 
   return (
-    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div>
-          <div className="display" style={{ fontSize:18, fontWeight:700 }}>Documents</div>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginTop:2 }}>{(db.documents || []).length} shared repository item{(db.documents || []).length === 1 ? "" : "s"}</div>
-        </div>
-        <div style={{ display:"flex", gap:8 }}>
-          <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={uploadDocs}/>
-          <button className="btn btn-ghost" disabled={uploading} onClick={() => fileInputRef.current?.click()}>{uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Upload size={13}/>Upload Attachments</>}</button>
-          <button className="btn btn-blue" onClick={() => { setDoc(blankDocument()); setDrawer("add"); }}><Plus size={13}/>New Document</button>
-        </div>
-      </div>
-      <div className="card" style={{ padding:"10px 14px" }}>
-        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-          <div style={{ position:"relative", flex:1, minWidth:220 }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:9 }}/>
-            <input className="input" placeholder="Search documents and associations..." value={query} onChange={e => setQuery(e.target.value)} style={{ paddingLeft:30 }}/>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+        <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Documents</div>
+            <div style={{ display:"flex", gap:4 }}>
+              <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={uploadDocs}/>
+              <button className="btn btn-ghost" style={{ padding:"5px 8px", fontSize:11 }} disabled={uploading} onClick={()=>fileInputRef.current?.click()} title="Quick upload"><Upload size={11}/></button>
+              <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setDoc(blankDocument());setDrawer("add");}}><Plus size={12}/>Add</button>
+            </div>
           </div>
-          <select className="filter-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
+          <select className="filter-select" value={filterType} onChange={e=>setFilterType(e.target.value)} style={{ width:"100%", marginBottom:8 }}>
             <option value="all">All associations</option>
-            {DOCUMENT_ENTITY_TYPES.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
+            {DOCUMENT_ENTITY_TYPES.map(t=><option key={t.type} value={t.type}>{t.label}</option>)}
           </select>
-          <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{docs.length} shown</span>
+          <div style={{ position:"relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+            <input className="input" placeholder="Search documents…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+          </div>
+        </div>
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {docs.map(d => (
+            <div key={d.id} className="row-hover" onClick={()=>navigate("record",{type:"document",id:d.id})}
+              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===d.id?"var(--bg-hover)":"transparent" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                {(d.file_name || d.storage_path) ? <Paperclip size={12} color="var(--blue)"/> : <ExternalLink size={12} color="var(--blue)"/>}
+                <div style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flex:1 }}>{d.title || d.file_name || "Untitled"}</div>
+              </div>
+              <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{getDocKindLabel(d)}{d.file_size?` · ${formatDocSize(d.file_size)}`:""}</div>
+            </div>
+          ))}
         </div>
       </div>
-      {docs.length === 0 ? (
-        <div className="card" style={{ padding:42, textAlign:"center" }}>
-          <FileText size={34} color="var(--text-dim)" style={{ marginBottom:12 }}/>
-          <div style={{ fontSize:14, color:"var(--text-sec)" }}>No documents found</div>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:4 }}>Upload or create a document, then associate it anywhere in the system.</div>
-          <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:8 }}>Supports attachments like PDF, images, markdown, HTML, ZIP, Office files, text, CSV, and links.</div>
-        </div>
-      ) : (
-        <div className="card" style={{ overflow:"hidden" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-            <tbody>
-              {docs.map(d => (
-                <tr key={d.id} className="row-hover" onClick={()=>navigate("record",{type:"document",id:d.id})} style={{ borderBottom:"1px solid var(--border)", cursor:"pointer" }}>
-                  <td style={{ padding:"12px 14px" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      {(d.file_name || d.storage_path) ? <Paperclip size={14} color="var(--blue)"/> : <ExternalLink size={14} color="var(--blue)"/>}
-                      <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{ fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
-                    </div>
-                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{getDocKindLabel(d)}{d.file_name ? ` · ${d.file_name}` : ""}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
-                    {d.description && <div style={{ fontSize:12, color:"var(--text-sec)", marginTop:5, lineHeight:1.4 }}>{d.description}</div>}
-                  </td>
-                  <td style={{ padding:"12px 14px" }}>
-                    <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
-                      {(d.associations || []).length === 0 ? <span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>Unassociated</span> : (d.associations || []).map(a => (
-                        <EntityLink key={docAssociationKey(a)} type={a.type} id={a.id} db={db} navigate={navigate}/>
-                      ))}
-                    </div>
-                  </td>
-                  <td style={{ padding:"12px 14px", textAlign:"right", width:70 }}>
-                    <button className="btn-icon" title="Edit document" onClick={(e) => { e.stopPropagation(); setDoc({ ...d, associations:d.associations || [] }); setDrawer("edit"); }}><Pencil size={13}/></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {drawer && <Drawer title={drawer === "add" ? "New Document" : "Edit Document"} onClose={() => setDrawer(null)} onSave={saveDoc}>
-        <Field label="Title"><Inp value={doc.title || ""} onChange={v => setDoc(p => ({ ...p, title:v }))} placeholder="Document title"/></Field>
-        <Field label="Description"><Tex value={doc.description || ""} onChange={v => setDoc(p => ({ ...p, description:v }))} placeholder="Purpose, contents, or notes"/></Field>
+
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+        {(selDoc && editDoc) ? (
+          <div className="slide-in">
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("documents");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to documents</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div style={{ minWidth:0 }}>
+                <div className="display" style={{ fontSize:20, fontWeight:800 }}>{selDoc.title || "Untitled"}</div>
+                <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{getDocKindLabel(selDoc)} · ID {selDoc.id}</div>
+              </div>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={saveInline}><Save size={12}/>Save</button>
+                <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:selDoc.id,label:selDoc.title})}><Trash2 size={12}/></button>
+              </div>
+            </div>
+
+            {selDoc.url && <div className="card-el" style={{ padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"center" }}>
+              {selDoc.file_name ? <Paperclip size={13} color="var(--blue)"/> : <ExternalLink size={13} color="var(--blue)"/>}
+              <a href={selDoc.url} target="_blank" rel="noopener noreferrer" style={{ fontSize:13, color:"var(--blue)", overflow:"hidden", textOverflow:"ellipsis" }}>{selDoc.file_name || selDoc.url}</a>
+              {selDoc.file_size>0 && <span className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginLeft:"auto" }}>{formatDocSize(selDoc.file_size)}</span>}
+            </div>}
+
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <Field label="Title"><Inp value={editDoc.title||""} onChange={v=>setEditDoc(p=>({...p,title:v}))}/></Field>
+              <Field label="Description (keep short — long content belongs in an attachment)"><Inp value={editDoc.description||""} onChange={v=>setEditDoc(p=>({...p,description:v}))} placeholder="One-liner: what this is and why it matters"/></Field>
+              <Field label="Link"><Inp value={editDoc.kind === "link" || !editDoc.file_name ? (editDoc.url||"") : ""} onChange={v=>setEditDoc(p=>({...p,url:v,kind:v?"link":p.kind}))} placeholder="https://..."/></Field>
+              <Field label="Attachment">
+                <input ref={inlineFileInputRef} type="file" style={{display:"none"}} onChange={attachToExisting}/>
+                <button type="button" className="btn btn-ghost" disabled={uploading} onClick={()=>inlineFileInputRef.current?.click()}>
+                  {uploading ? <><Loader size={13} className="spin"/>Uploading…</> : <><Paperclip size={13}/>Upload attachment</>}
+                </button>
+                {editDoc.file_name && <div className="card-el" style={{ padding:"8px 10px", marginTop:8, display:"flex", alignItems:"center", gap:8 }}>
+                  <Paperclip size={13} color="var(--blue)"/>
+                  <span style={{ flex:1, fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{editDoc.file_name}</span>
+                  <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{formatDocSize(editDoc.file_size)}</span>
+                </div>}
+              </Field>
+              <Field label="Associations"><DocumentAssociationEditor db={db} value={editDoc.associations||[]} onChange={v=>setEditDoc(p=>({...p,associations:v}))}/></Field>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+            <FileText size={44} style={{ opacity:.15, marginBottom:14 }}/>
+            <p style={{ fontSize:14 }}>Select a document</p>
+          </div>
+        )}
+      </div>
+
+      {drawer==="add" && <Drawer title="New Document" onClose={()=>setDrawer(null)} onSave={saveDoc}>
+        <Field label="Title"><Inp value={doc.title||""} onChange={v=>setDoc(p=>({...p,title:v}))}/></Field>
+        <Field label="Description (short)"><Inp value={doc.description||""} onChange={v=>setDoc(p=>({...p,description:v}))} placeholder="What this is, in one line"/></Field>
         <Field label="Attachment">
-          <input ref={drawerFileInputRef} type="file" style={{ display:"none" }} onChange={attachFileToDraft}/>
-          <button type="button" className="btn btn-ghost" disabled={uploading} onClick={() => drawerFileInputRef.current?.click()}>
-            {uploading ? <><Loader size={13} className="spin"/>Uploading...</> : <><Paperclip size={13}/>Upload attachment</>}
+          <input ref={drawerFileInputRef} type="file" style={{display:"none"}} onChange={attachFileToDraft}/>
+          <button type="button" className="btn btn-ghost" disabled={uploading} onClick={()=>drawerFileInputRef.current?.click()}>
+            {uploading ? <><Loader size={13} className="spin"/>Uploading…</> : <><Paperclip size={13}/>Upload attachment</>}
           </button>
-          <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:6 }}>PDF, image, markdown, HTML, ZIP, Office files, text, CSV, and other file types.</div>
-          {doc.file_name && <div className="card-el" style={{ padding:"8px 10px", marginTop:8, display:"flex", alignItems:"center", gap:8 }}>
-            <Paperclip size={13} color="var(--blue)"/>
-            <span style={{ flex:1, fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{doc.file_name}</span>
-            <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{formatDocSize(doc.file_size)}</span>
-          </div>}
+          {doc.file_name && <div className="card-el" style={{ padding:"8px 10px", marginTop:8 }}><Paperclip size={13} color="var(--blue)"/><span style={{ marginLeft:8, fontSize:12 }}>{doc.file_name}</span></div>}
         </Field>
-        <Field label="Link"><Inp value={doc.kind === "link" || !doc.file_name ? (doc.url || "") : ""} onChange={v => setDoc(p => ({ ...p, url:v, kind:v ? "link" : p.kind, file_name:v ? "" : p.file_name, file_type:v ? "" : p.file_type, file_size:v ? 0 : p.file_size, storage_path:v ? "" : p.storage_path }))} placeholder="https://..."/></Field>
-        <Field label="Associations"><DocumentAssociationEditor db={db} value={doc.associations || []} onChange={v => setDoc(p => ({ ...p, associations:v }))}/></Field>
-        {drawer === "edit" && <button className="btn btn-danger" style={{ marginTop:14 }} onClick={() => delDoc(doc)}><Trash2 size={13}/>Delete Document</button>}
+        <Field label="Or Link"><Inp value={doc.kind==="link"||!doc.file_name?(doc.url||""):""} onChange={v=>setDoc(p=>({...p,url:v,kind:v?"link":p.kind}))} placeholder="https://..."/></Field>
+        <Field label="Associations"><DocumentAssociationEditor db={db} value={doc.associations||[]} onChange={v=>setDoc(p=>({...p,associations:v}))}/></Field>
       </Drawer>}
+      {confirm && <ConfirmDelete label={confirm.label} onConfirm={()=>delDoc(selDoc)} onCancel={()=>setConfirm(null)}/>}
     </div>
   );
 };
@@ -5115,44 +5277,65 @@ const MEMORY_TYPES = ["general","preference","feedback","context","decision","re
 const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
 const blankMemory = () => ({ subject:"", ai_system:"claude", memory_summary:"", memory_type:"general", source_context:"", companyId:"", contactId:"", dealId:"", projectId:"", strategyId:"" });
 
-const AIMemoriesView = ({ db, setDB, navigate }) => {
+const AIMemoriesView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [md, setMd] = useState({});
+  const [editMem, setEditMem] = useState(null);
+  const [query, setQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterSystem, setFilterSystem] = useState("all");
-  const [search, setSearch] = useState("");
-  const [expandedId, setExpandedId] = useState(null);
-  const [copiedId, setCopiedId] = useState(null);
+  const [copied, setCopied] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
-  const typeColors = { general:"var(--blue)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--green)", decision:"var(--red)", relationship:"var(--pink)", insight:"var(--teal)" };
-  const systemIcons = { claude:"\u2728", chatgpt:"\ud83e\udd16", gemini:"\ud83d\udc8e", copilot:"\u2708\ufe0f", other:"\ud83d\udccc" };
   const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
   const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
+  const typeColors = { general:"var(--blue)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--green)", decision:"var(--red)", relationship:"var(--purple)", insight:"var(--blue)" };
+  const systemIcons = { claude:"\u2728", chatgpt:"\ud83e\udd16", gemini:"\ud83d\udc8e", copilot:"\u2708\ufe0f", other:"\ud83d\udccc" };
 
-  const items = (db.ai_memories||[]).filter(m => {
+  useEffect(() => {
+    if (focus?.type === "ai_memory" && focus.id) { setFilterType("all"); setSel(focus.id); setFocus(null); }
+  }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const m = (db.ai_memories||[]).find(x => x.id === sel);
+      if (m) setEditMem({...m, contactId: m.contactId||"", companyId: m.companyId||"", dealId: m.dealId||"", projectId: m.projectId||"", strategyId: m.strategyId||"", files: m.files||[]});
+    } else setEditMem(null);
+  }, [sel, db.ai_memories]);
+
+  const filtered = (db.ai_memories||[]).filter(m => {
     if (filterType !== "all" && m.memory_type !== filterType) return false;
     if (filterSystem !== "all" && m.ai_system !== filterSystem) return false;
-    if (search) { const s = search.toLowerCase(); return (m.subject||"").toLowerCase().includes(s) || (m.memory_summary||"").toLowerCase().includes(s) || (m.source_context||"").toLowerCase().includes(s); }
+    if (query) {
+      const s = query.toLowerCase();
+      if (!(m.subject||"").toLowerCase().includes(s) && !(m.memory_summary||"").toLowerCase().includes(s)) return false;
+    }
     return true;
   }).sort((a,b) => (b.id||0)-(a.id||0));
+  const memory = sel ? (db.ai_memories||[]).find(m => m.id === sel) : null;
+
+  const saveInline = () => {
+    if (!editMem) return;
+    const rec = {...editMem, contactId: parseInt(editMem.contactId)||null, companyId: parseInt(editMem.companyId)||null, dealId: parseInt(editMem.dealId)||null, projectId: parseInt(editMem.projectId)||null, strategyId: parseInt(editMem.strategyId)||null};
+    setDB(d => ({...d, ai_memories: (d.ai_memories||[]).map(m => m.id === rec.id ? rec : m)}));
+  };
 
   const save = () => {
     if (!md.subject) return;
     setDB(prev => {
       const mem = prev.ai_memories || [];
-      if (drawer === "add") {
-        const id = Math.max(0, ...mem.map(x=>x.id||0)) + 1;
-        return { ...prev, ai_memories: [{ ...md, id, created_at: new Date().toISOString(), files: md.files||[] }, ...mem] };
-      }
-      return { ...prev, ai_memories: mem.map(x => x.id === md.id ? { ...md } : x) };
+      const id = Math.max(0, ...mem.map(x => x.id||0)) + 1;
+      return {...prev, ai_memories: [{...md, id, created_at: new Date().toISOString(), files: md.files||[]}, ...mem]};
     });
     setDrawer(null);
   };
 
-  const handleFileUpload = async (e) => {
+  const del = (id) => { setDB(d => ({...d, ai_memories: (d.ai_memories||[]).filter(m => m.id !== id)})); if (sel === id) setSel(null); setConfirm(null); };
+
+  const inlineFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
     setUploading(true);
@@ -5161,202 +5344,133 @@ const AIMemoriesView = ({ db, setDB, navigate }) => {
       for (const file of files) {
         const ext = file.name.split('.').pop();
         const path = Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
-        const { data, error } = await supabase.storage.from('memory-files').upload(path, file);
-        if (error) { console.error('Upload error:', error); continue; }
+        const { error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) continue;
         const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
         uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
       }
-      setMd(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
-    } catch(err) { console.error('Upload failed:', err); }
-    setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+      setEditMem(p => ({...p, files: [...(p.files||[]), ...uploaded]}));
+    } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
-
-  const removeFile = async (fileObj) => {
-    await supabase.storage.from('memory-files').remove([fileObj.path]);
-    setMd(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
+  const removeInlineFile = async (f) => {
+    if (f.path) await supabase.storage.from('memory-files').remove([f.path]);
+    setEditMem(p => ({...p, files: (p.files||[]).filter(x => x.path !== f.path)}));
   };
-
-  const copyToClipboard = (text, id) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const formatSize = (bytes) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
-    return (bytes/1048576).toFixed(1) + ' MB';
-  };
+  const copyMemory = () => { navigator.clipboard.writeText(memory?.memory_summary||""); setCopied(true); setTimeout(()=>setCopied(false), 2000); };
+  const formatSize = (bytes) => { if (!bytes) return ''; if (bytes < 1024) return bytes + ' B'; if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB'; return (bytes/1048576).toFixed(1) + ' MB'; };
 
   return (
-    <div style={{ padding:24 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <Brain size={18} color="var(--purple)"/>
-          <span style={{ fontFamily:"var(--font-d)", fontSize:18, fontWeight:700 }}>AI Memories</span>
-          <span className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginLeft:4 }}>{items.length}</span>
-        </div>
-        <button className="btn btn-primary" onClick={() => { setMd({ subject:"", memory_summary:"", ai_system:"claude", memory_type:"general", source_context:"", companyId:null, contactId:null, dealId:null, projectId:null, strategyId:null, files:[] }); setDrawer("add"); }}><Plus size={13}/> New Memory</button>
-      </div>
-
-      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
-        <div style={{ position:"relative", flex:1, minWidth:200 }}>
-          <Search size={13} style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:"var(--text-dim)" }}/>
-          <input className="input" placeholder="Search memories..." value={search} onChange={e=>setSearch(e.target.value)} style={{ paddingLeft:32, width:"100%" }}/>
-        </div>
-        <select className="input" value={filterType} onChange={e=>setFilterType(e.target.value)} style={{ width:140 }}>
-          <option value="all">All Types</option>
-          {MEMORY_TYPES.map(t=><option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
-        </select>
-        <select className="input" value={filterSystem} onChange={e=>setFilterSystem(e.target.value)} style={{ width:140 }}>
-          <option value="all">All Systems</option>
-          {AI_SYSTEMS.map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
-        </select>
-      </div>
-
-      {items.length === 0 ? (
-        <div className="card" style={{ padding:40, textAlign:"center" }}>
-          <Brain size={32} color="var(--text-dim)" style={{ marginBottom:12 }}/>
-          <div style={{ fontSize:14, color:"var(--text-sec)" }}>No memories found</div>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:4 }}>Create your first AI memory to get started</div>
-        </div>
-      ) : (
-        <div className="card" style={{ overflow:"hidden" }}>
-          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-            <thead>
-              <tr style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-sec)" }}>
-                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px" }}>Title</th>
-                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>Type</th>
-                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>System</th>
-                <th style={{ textAlign:"left", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:90 }}>Date</th>
-                <th style={{ textAlign:"center", padding:"10px 14px", fontFamily:"var(--font-d)", fontSize:11, fontWeight:600, color:"var(--text-sec)", textTransform:"uppercase", letterSpacing:"0.5px", width:100 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(m => (
-                <Fragment key={m.id}>
-                  <tr onClick={()=>navigate("record",{type:"ai_memory",id:m.id})} style={{ borderBottom: expandedId===m.id ? "none" : "1px solid var(--border)", cursor:"pointer", transition:"background 0.15s" }} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-sec)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                    <td style={{ padding:"12px 14px" }}>
-                      <div style={{ fontWeight:600, fontSize:13, lineHeight:1.4 }}>{m.subject || "Untitled Memory"}</div>
-                      {(m.files||[]).length > 0 && <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", display:"flex", alignItems:"center", gap:3, marginTop:2 }}><Paperclip size={10}/> {(m.files||[]).length} file{(m.files||[]).length>1?"s":""}</span>}
-                    </td>
-                    <td style={{ padding:"12px 14px" }}>
-                      <span style={{ fontSize:11, padding:"2px 8px", borderRadius:10, background: (typeColors[m.memory_type]||"var(--text-dim)")+"20", color: typeColors[m.memory_type]||"var(--text-dim)", fontWeight:500 }}>{m.memory_type}</span>
-                    </td>
-                    <td style={{ padding:"12px 14px" }}>
-                      <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{systemIcons[m.ai_system]||""} {m.ai_system}</span>
-                    </td>
-                    <td style={{ padding:"12px 14px" }}>
-                      <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{m.created_at ? new Date(m.created_at).toLocaleDateString() : "\u2014"}</span>
-                    </td>
-                    <td style={{ padding:"12px 14px", textAlign:"center" }}>
-                      <div style={{ display:"flex", gap:4, justifyContent:"center" }}>
-                        <button className="btn btn-sm" title="Expand / Collapse" onClick={(e)=>{e.stopPropagation();setExpandedId(expandedId===m.id?null:m.id)}} style={{ padding:"4px 6px" }}>
-                          {expandedId===m.id ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
-                        </button>
-                        <button className="btn btn-sm" title="Copy prompt / summary" onClick={(e)=>{e.stopPropagation();copyToClipboard(m.memory_summary||"",m.id)}} style={{ padding:"4px 6px", color: copiedId===m.id?"var(--green)":"inherit" }}>
-                          {copiedId===m.id ? <Check size={13}/> : <Copy size={13}/>}
-                        </button>
-                        <button className="btn btn-sm" title="Edit" onClick={(e)=>{e.stopPropagation();setMd({...m});setDrawer("edit")}} style={{ padding:"4px 6px" }}>
-                          <Pencil size={13}/>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  {expandedId===m.id && (
-                    <tr style={{ borderBottom:"1px solid var(--border)" }}>
-                      <td colSpan={5} style={{ padding:"0 14px 14px 14px", background:"var(--bg-sec)" }}>
-                        <div style={{ padding:14, borderRadius:8, background:"var(--bg)", border:"1px solid var(--border)", marginTop:4 }}>
-                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                            <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", textTransform:"uppercase", letterSpacing:"0.5px" }}>Summary / Prompt</span>
-                            <button className="btn btn-sm" onClick={(e)=>{e.stopPropagation();copyToClipboard(m.memory_summary||"",m.id)}} style={{ fontSize:10, padding:"2px 8px", gap:4 }}>
-                              {copiedId===m.id ? <><Check size={10}/> Copied</> : <><Copy size={10}/> Copy</>}
-                            </button>
-                          </div>
-                          <div style={{ fontSize:13, lineHeight:1.7, whiteSpace:"pre-wrap", color:"var(--text)" }}>{m.memory_summary || "No summary"}</div>
-                          {m.source_context && <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:10, paddingTop:8, borderTop:"1px solid var(--border)" }}>Source: {m.source_context}</div>}
-                          {(m.files||[]).length > 0 && (
-                            <div style={{ marginTop:10, paddingTop:8, borderTop:"1px solid var(--border)" }}>
-                              <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginBottom:6, textTransform:"uppercase" }}>Attached Files</div>
-                              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                                {(m.files||[]).map((f,i) => (
-                                  <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:4, padding:"4px 10px", borderRadius:6, background:"var(--bg-sec)", border:"1px solid var(--border)", fontSize:11, color:"var(--blue)", textDecoration:"none" }}>
-                                    <FileText size={12}/> {f.name}
-                                  </a>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="ai_memory" entityId={m.id}/>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {confirm!==null && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }} onClick={()=>setConfirm(null)}>
-          <div className="card" style={{ padding:24, maxWidth:380 }} onClick={e=>e.stopPropagation()}>
-            <div style={{ fontSize:14, fontWeight:600, marginBottom:12 }}>Delete this memory?</div>
-            <div style={{ fontSize:13, color:"var(--text-sec)", marginBottom:20 }}>This action cannot be undone.</div>
-            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-              <button className="btn" onClick={()=>setConfirm(null)}>Cancel</button>
-              <button className="btn" style={{ background:"var(--red)", color:"#fff" }} onClick={()=>{setDB(p=>({...p,ai_memories:(p.ai_memories||[]).filter(x=>x.id!==confirm)}));setConfirm(null)}}>Delete</button>
-            </div>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+        <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>AI Memories</div>
+            <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setMd({subject:"",memory_summary:"",ai_system:"claude",memory_type:"general",source_context:"",files:[]});setDrawer("add");}}><Plus size={12}/>Add</button>
+          </div>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:6 }}>
+            {["all",...MEMORY_TYPES].map(t=>(
+              <button key={t} className={`filter-chip${filterType===t?" active":""}`} onClick={()=>setFilterType(t)}>{t}</button>
+            ))}
+          </div>
+          <select className="filter-select" value={filterSystem} onChange={e=>setFilterSystem(e.target.value)} style={{ marginBottom:8, width:"100%" }}>
+            <option value="all">All Systems</option>
+            {AI_SYSTEMS.map(s=><option key={s} value={s}>{systemIcons[s]} {s}</option>)}
+          </select>
+          <div style={{ position:"relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+            <input className="input" placeholder="Search memories…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
           </div>
         </div>
-      )}
-
-      {drawer && <Drawer title={drawer==="add"?"New AI Memory":"Edit AI Memory"} onClose={()=>setDrawer(null)} onSave={save}>
-        <Field label="Subject"><Inp value={md.subject||""} onChange={v=>setMd(p=>({...p,subject:v}))} placeholder="e.g. Brand voice guidelines"/></Field>
-        <Field label="Memory Summary / Prompt">
-          <textarea className="input" rows={6} value={md.memory_summary||""} onChange={e=>setMd(p=>({...p,memory_summary:e.target.value}))} placeholder="The AI detail, prompt, or context to remember..." style={{ width:"100%", resize:"vertical", fontFamily:"inherit", fontSize:13, lineHeight:1.6 }}/>
-        </Field>
-        <Field label="AI System"><Sel value={md.ai_system||"claude"} onChange={v=>setMd(p=>({...p,ai_system:v}))} options={AI_SYSTEMS}/></Field>
-        <Field label="Memory Type"><Sel value={md.memory_type||"general"} onChange={v=>setMd(p=>({...p,memory_type:v}))} options={MEMORY_TYPES}/></Field>
-        <Field label="Source / Context"><Inp value={md.source_context||""} onChange={v=>setMd(p=>({...p,source_context:v}))} placeholder="Where this memory came from"/></Field>
-        <Field label="Contact"><Sel value={md.contactId||""} onChange={v=>setMd(p=>({...p,contactId:v||null}))} options={[{value:"",label:"None"},...(db.contacts||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
-        <Field label="Company"><Sel value={md.companyId||""} onChange={v=>setMd(p=>({...p,companyId:v||null}))} options={[{value:"",label:"None"},...(db.companies||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
-        <Field label="Deal"><Sel value={md.dealId||""} onChange={v=>setMd(p=>({...p,dealId:v||null}))} options={[{value:"",label:"None"},...(db.deals||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
-        <Field label="Project"><Sel value={md.projectId||""} onChange={v=>setMd(p=>({...p,projectId:v||null}))} options={[{value:"",label:"None"},...(db.projects||[]).map(c=>({value:c.id,label:c.name}))]}/></Field>
-        <Field label="Strategy"><Sel value={md.strategyId||""} onChange={v=>setMd(p=>({...p,strategyId:v||null}))} options={[{value:"",label:"None"},...(db.strategies||[]).map(c=>({value:c.id,label:c.name||c.title}))]}/></Field>
-
-        <div style={{ marginTop:14, borderTop:"1px solid var(--border)", paddingTop:14 }}>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8, textTransform:"uppercase" }}>Attached Files</div>
-          {(md.files||[]).length > 0 && (
-            <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:10 }}>
-              {(md.files||[]).map((f,i) => (
-                <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 10px", borderRadius:6, background:"var(--bg-sec)", border:"1px solid var(--border)" }}>
-                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--blue)", textDecoration:"none", overflow:"hidden" }}>
-                    <FileText size={13}/> <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</span>
-                    <span className="mono" style={{ fontSize:10, color:"var(--text-dim)", flexShrink:0 }}>{f.size ? '('+formatSize(f.size)+')' : ''}</span>
-                  </a>
-                  <button className="btn btn-sm" style={{ padding:"2px 6px", color:"var(--red)" }} onClick={()=>removeFile(f)} title="Remove file"><X size={12}/></button>
-                </div>
-              ))}
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {filtered.map(m=>(
+            <div key={m.id} className="row-hover" onClick={()=>navigate("record",{type:"ai_memory",id:m.id})}
+              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===m.id?"var(--bg-hover)":"transparent" }}>
+              <div style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.subject || "Untitled"}</div>
+              <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2, display:"flex", gap:4, alignItems:"center" }}>
+                <span style={{ color:typeColors[m.memory_type]||"var(--text-sec)" }}>{m.memory_type}</span>
+                <span>· {systemIcons[m.ai_system]} {m.ai_system}</span>
+                {(m.files||[]).length > 0 && <><span>· <Paperclip size={9}/> {(m.files||[]).length}</span></>}
+              </div>
             </div>
-          )}
-          <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={handleFileUpload}/>
-          <button className="btn btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{ fontSize:12, gap:6 }}>
-            {uploading ? <><Loader size={12} className="spin"/> Uploading...</> : <><Upload size={12}/> Upload Files</>}
-          </button>
+          ))}
         </div>
+      </div>
 
-        {drawer==="edit" && (
-          <div style={{ marginTop:16, paddingTop:12, borderTop:"1px solid var(--border)" }}>
-            <button className="btn btn-sm" style={{ color:"var(--red)", fontSize:11 }} onClick={()=>{setDrawer(null);setConfirm(md.id)}}><Trash2 size={12}/> Delete Memory</button>
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+        {(memory && editMem) ? (
+          <div className="slide-in">
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("ai_memories");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to memories</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div style={{ minWidth:0 }}>
+                <div className="display" style={{ fontSize:20, fontWeight:800 }}>{memory.subject}</div>
+                <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{systemIcons[memory.ai_system]} {memory.ai_system} · ID {memory.id}</div>
+              </div>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                <Tag label={memory.memory_type}/>
+                <button className="btn btn-ghost" style={{ padding:"5px 10px", fontSize:12 }} onClick={copyMemory}>{copied ? <Check size={12}/> : <Copy size={12}/>}{copied?"Copied":"Copy"}</button>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={saveInline}><Save size={12}/>Save</button>
+                <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:memory.id,label:memory.subject})}><Trash2 size={12}/></button>
+              </div>
+            </div>
+
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <Field label="Subject"><Inp value={editMem.subject||""} onChange={v=>setEditMem(p=>({...p,subject:v}))}/></Field>
+              <Field label="Memory Summary / Prompt"><Tex value={editMem.memory_summary||""} onChange={v=>setEditMem(p=>({...p,memory_summary:v}))} placeholder="The detail, prompt, or context…"/></Field>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <Field label="AI System"><Sel value={editMem.ai_system} onChange={v=>setEditMem(p=>({...p,ai_system:v}))} options={AI_SYSTEMS}/></Field>
+                <Field label="Memory Type"><Sel value={editMem.memory_type} onChange={v=>setEditMem(p=>({...p,memory_type:v}))} options={MEMORY_TYPES}/></Field>
+              </div>
+              <Field label="Source / Context"><Inp value={editMem.source_context||""} onChange={v=>setEditMem(p=>({...p,source_context:v}))} placeholder="Where this memory came from"/></Field>
+
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <Field label="Contact"><Sel value={editMem.contactId} onChange={v=>setEditMem(p=>({...p,contactId:v}))} options={[{value:"",label:"None"},...(db.contacts||[]).map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+                <Field label="Company"><Sel value={editMem.companyId} onChange={v=>setEditMem(p=>({...p,companyId:v}))} options={[{value:"",label:"None"},...(db.companies||[]).map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+                <Field label="Deal"><Sel value={editMem.dealId} onChange={v=>setEditMem(p=>({...p,dealId:v}))} options={[{value:"",label:"None"},...(db.deals||[]).map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+                <Field label="Project"><Sel value={editMem.projectId} onChange={v=>setEditMem(p=>({...p,projectId:v}))} options={[{value:"",label:"None"},...(db.projects||[]).map(c=>({value:String(c.id),label:c.name}))]}/></Field>
+                <Field label="Strategy"><Sel value={editMem.strategyId} onChange={v=>setEditMem(p=>({...p,strategyId:v}))} options={[{value:"",label:"None"},...(db.strategies||[]).map(s=>({value:String(s.id),label:s.name}))]}/></Field>
+              </div>
+
+              <div style={{ marginTop:14, borderTop:"1px solid var(--border)", paddingTop:14 }}>
+                <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ATTACHED FILES</div>
+                {(editMem.files||[]).map((f,fi)=>(
+                  <div key={fi} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 10px", borderRadius:6, background:"var(--bg-el)", border:"1px solid var(--border)", marginBottom:4 }}>
+                    <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--blue)", textDecoration:"none", overflow:"hidden" }}>
+                      <FileText size={13}/><span style={{ overflow:"hidden", textOverflow:"ellipsis" }}>{f.name}</span>
+                      <span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>{f.size?'('+formatSize(f.size)+')':''}</span>
+                    </a>
+                    <button onClick={()=>removeInlineFile(f)} style={{ background:"none", border:"none", color:"var(--red)", cursor:"pointer" }}><X size={12}/></button>
+                  </div>
+                ))}
+                <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={inlineFileUpload}/>
+                <button className="btn btn-ghost" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{ fontSize:12, marginTop:6 }}>
+                  {uploading ? <><Loader size={12} className="spin"/>Uploading…</> : <><Upload size={12}/>Upload Files</>}
+                </button>
+              </div>
+            </div>
+
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="ai_memory" entityId={memory.id}/>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+            <Brain size={44} style={{ opacity:.15, marginBottom:14 }}/>
+            <p style={{ fontSize:14 }}>Select a memory</p>
           </div>
         )}
+      </div>
+
+      {drawer==="add" && <Drawer title="New AI Memory" onClose={()=>setDrawer(null)} onSave={save}>
+        <Field label="Subject"><Inp value={md.subject||""} onChange={v=>setMd(p=>({...p,subject:v}))}/></Field>
+        <Field label="Memory Summary"><Tex value={md.memory_summary||""} onChange={v=>setMd(p=>({...p,memory_summary:v}))}/></Field>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+          <Field label="AI System"><Sel value={md.ai_system||"claude"} onChange={v=>setMd(p=>({...p,ai_system:v}))} options={AI_SYSTEMS}/></Field>
+          <Field label="Memory Type"><Sel value={md.memory_type||"general"} onChange={v=>setMd(p=>({...p,memory_type:v}))} options={MEMORY_TYPES}/></Field>
+        </div>
+        <Field label="Source / Context"><Inp value={md.source_context||""} onChange={v=>setMd(p=>({...p,source_context:v}))}/></Field>
       </Drawer>}
+      {confirm && <ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
   );
-}
+};
 const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"medium", notes:"", links:[], files:[] });
 const StrategiesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
@@ -6037,6 +6151,10 @@ const RecordDetailView = ({ db, setDB, record, navigate, setFocus }) => {
   if (type === "deal")     return <DealsView      db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
   if (type === "goal")     return <GoalsView      db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
   if (type === "strategy") return <StrategiesView db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "invoice")  return <BillingView    db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "payment")  return <PaymentsView   db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "document") return <DocumentsView  db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "ai_memory")return <AIMemoriesView db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
 
   const id = record?.id;
   const cfg = DOCUMENT_ENTITY_TYPES.find(c => c.type === type);
@@ -6298,13 +6416,13 @@ export default function App() {
     marketing:    <MarketingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate}/>,
+    documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     record:      <RecordDetailView db={db} setDB={setDB} record={recordTarget} navigate={navigate} setFocus={setFocus}/>,
-    ai_memories: <AIMemoriesView db={db} setDB={setDB} navigate={navigate}/>,
+    ai_memories: <AIMemoriesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     multi_llm:   <MultiLLMView session={session}/>,
     strategies:   <StrategiesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voitra_gate:  <VoitraGateView/>,
-    payments:      <PaymentsView db={db} setDB={setDB} navigate={navigate}/>,
+    payments:      <PaymentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
