@@ -750,7 +750,7 @@ const NAV = [
 ];
 
 const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
-  const [collGroups, setCollGroups] = useState({});
+  const [collGroups, setCollGroups] = useState({ _fin: true });
   return (<div style={{ width:collapsed?60:210, background:"var(--bg-card)", borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 8px", gap:2, transition:"width .25s", flexShrink:0 }}>
     <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 6px 18px", cursor:"pointer" }} onClick={()=>setCollapsed(!collapsed)}>
       <div style={{ width:32, height:32, borderRadius:8, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -760,7 +760,7 @@ const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
     </div>
     {NAV.map((n,i)=>{
               if(!n.id) return <div key={i} style={{marginTop:8,marginBottom:8,borderTop:"1px solid var(--border)"}} />;
-              if(n.group) { const open=!collGroups[n.id]; const childActive=n.children&&n.children.includes(view); return <div key={i}>
+              if(n.group) { const childActive=n.children&&n.children.includes(view); const open=childActive || !collGroups[n.id]; return <div key={i}>
                 <button onClick={()=>setCollGroups(g=>({...g,[n.id]:!g[n.id]}))} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 12px",border:"none",background:childActive?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:childActive?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.85rem"}}>
                   <n.icon size={16}/><span style={{flex:1,textAlign:"left"}}>{n.label}</span><ChevronRight size={14} style={{transform:open?"rotate(90deg)":"none",transition:"transform 0.2s"}}/>
                 </button>
