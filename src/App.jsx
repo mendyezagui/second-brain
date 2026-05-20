@@ -1535,41 +1535,134 @@ const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
 ──────────────────────────────────────────────────────── */
 const blankCampaign = () => ({ name:"", type:"Email", status:"draft", leads:0, opens:0, conversions:0, startDate:"" });
 
-const MarketingView = ({ db, setDB }) => {
+const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankCampaign());
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  useEffect(() => {
+    if(focus?.type==="campaign" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+  }, [focus]);
+
+  const filtered = (db.campaigns||[]).filter(c => {
+    if (query && !c.name.toLowerCase().includes(query.toLowerCase())) return false;
+    if (statusFilter !== "all" && c.status !== statusFilter) return false;
+    return true;
+  });
+
+  const campaign = sel ? db.campaigns.find(c=>c.id===sel) : null;
+  const campaignLeads = campaign ? (db.contacts||[]).filter(c=>c.campaignId===campaign.id) : [];
+  const campaignDeals = campaign ? (db.deals||[]).filter(deal=>campaignLeads.some(l=>l.id===deal.contactId)) : [];
+
   const save = () => {
     const rec = { ...d, leads:parseInt(d.leads)||0, opens:parseInt(d.opens)||0, conversions:parseInt(d.conversions)||0 };
     if (drawer==="add") setDB(db=>({...db,campaigns:[...db.campaigns,{...rec,id:nextId(db.campaigns)}]}));
     else setDB(db=>({...db,campaigns:db.campaigns.map(x=>x.id===rec.id?rec:x)}));
     setDrawer(null);
   };
-  const del = (id) => { setDB(db=>({...db,campaigns:db.campaigns.filter(x=>x.id!==id)})); setConfirm(null); };
+  const del = (id) => { setDB(db=>({...db,campaigns:db.campaigns.filter(x=>x.id!==id)})); if(sel===id) setSel(null); setConfirm(null); };
+
   return (
-    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Marketing</div>
-        <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setD(blankCampaign());setDrawer("add");}}><Plus size={12}/>New Campaign</button>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12 }}>
-        <MetricCard icon={Megaphone} label="Active" value={db.campaigns.filter(c=>c.status==="active").length} color="--amber"/>
-        <MetricCard icon={Users} label="Total Leads" value={db.campaigns.reduce((a,c)=>a+c.leads,0)} color="--blue" trend={22}/>
-        <MetricCard icon={TrendingUp} label="Conversions" value={db.campaigns.reduce((a,c)=>a+c.conversions,0)} color="--green"/>
-      </div>
-      {db.campaigns.map(c=>(
-        <div key={c.id} className="card row-hover" style={{ padding:"16px 18px" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
-            <div><div style={{ fontSize:13, fontWeight:600 }}>{c.name}</div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{c.type} · {c.startDate}</div></div>
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}><Tag label={c.status}/><RowActions onEdit={()=>{setD({...c,leads:String(c.leads),opens:String(c.opens),conversions:String(c.conversions)});setDrawer("edit");}} onDelete={()=>setConfirm({id:c.id,label:c.name})}/></div>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
+      {/* LEFT LIST */}
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+        <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Marketing</div>
+            <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setD(blankCampaign());setDrawer("add");}}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:24 }}>
-            {[["Leads",c.leads],["Impressions",c.opens],["Conversions",c.conversions]].map(([l,v])=>(
-              <div key={l}><div className="mono" style={{ fontSize:18, fontWeight:600 }}>{(v||0).toLocaleString()}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>{l}</div></div>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+            {["all","draft","active","paused","complete"].map(s=>(
+              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
             ))}
           </div>
+          <div style={{ position:"relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+            <input className="input" placeholder="Search campaigns…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+          </div>
         </div>
-      ))}
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {filtered.map(c=>(
+            <div key={c.id} className="row-hover" onClick={()=>navigate("record",{type:"campaign",id:c.id})}
+              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.name}</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{c.type} · {c.startDate||"—"}</div>
+              </div>
+              <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                <Tag label={c.status}/>
+                <RowActions onEdit={()=>{setD({...c,leads:String(c.leads),opens:String(c.opens),conversions:String(c.conversions)});setDrawer("edit");}} onDelete={()=>setConfirm({id:c.id,label:c.name})}/>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* RIGHT DETAIL */}
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+        {campaign ? (
+          <div className="slide-in">
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("marketing");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to marketing</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, flexWrap:"wrap", gap:8 }}>
+              <div style={{ minWidth:0 }}>
+                <div className="display" style={{ fontSize:20, fontWeight:800 }}>{campaign.name}</div>
+                <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{campaign.type} · Started {campaign.startDate || "—"}</div>
+              </div>
+              <div className="header-actions" style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                <Tag label={campaign.status}/>
+                <button className="btn btn-blue" style={{ padding:"6px 14px", fontSize:12 }} onClick={()=>{setD({...campaign,leads:String(campaign.leads),opens:String(campaign.opens),conversions:String(campaign.conversions)});setDrawer("edit");}}><Pencil size={12}/>Edit Campaign</button>
+              </div>
+            </div>
+
+            <div className="grid-resp-4" style={{ marginBottom:20 }}>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--blue)" }}>{(campaign.leads||0).toLocaleString()}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Leads</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--amber)" }}>{(campaign.opens||0).toLocaleString()}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Impressions</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--green)" }}>{(campaign.conversions||0).toLocaleString()}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Conversions</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--purple)" }}>{campaign.leads>0?Math.round((campaign.conversions/campaign.leads)*100):0}%</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Conv. Rate</div></div>
+            </div>
+
+            {campaign.notes && <div className="card-el" style={{ padding:14, marginBottom:16 }}><div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:5 }}>NOTES</div><p style={{ fontSize:13, lineHeight:1.6 }}>{campaign.notes}</p></div>}
+
+            {campaignLeads.length>0 && <div style={{ marginBottom:16 }}>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ASSOCIATED LEADS ({campaignLeads.length})</div>
+              {campaignLeads.map(c=>(
+                <div key={c.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500 }}><EntityLink type="contact" id={c.id} navigate={navigate}>{c.name}</EntityLink></div>
+                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{c.co}{c.role?` · ${c.role}`:""}</div>
+                  </div>
+                  <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                    <Tag label={c.status}/>
+                    <ScoreBadge score={c.score}/>
+                  </div>
+                </div>
+              ))}
+            </div>}
+
+            {campaignDeals.length>0 && <div style={{ marginBottom:16 }}>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>DEALS FROM THIS CAMPAIGN ({campaignDeals.length})</div>
+              {campaignDeals.map(deal=>(
+                <div key={deal.id} className="card-el" style={{ padding:"10px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
+                  <div><div style={{ fontSize:13, fontWeight:500 }}><EntityLink type="deal" id={deal.id} navigate={navigate}>{deal.name}</EntityLink></div><div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{deal.probability}% · Close {deal.closeDate}</div></div>
+                  <div style={{ textAlign:"right" }}><div style={{ fontFamily:"var(--font-d)", fontWeight:700, color:"var(--blue)" }}>{fmt(deal.value)}</div><Tag label={deal.stage}/></div>
+                </div>
+              ))}
+            </div>}
+
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="campaign" entityId={campaign.id}/>
+            <ActivityTimeline events={db.events} entityType="campaign" entityId={campaign.id}/>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+            <Megaphone size={44} style={{ opacity:.15, marginBottom:14 }}/>
+            <p style={{ fontSize:14 }}>Select a campaign</p>
+          </div>
+        )}
+      </div>
+
       {drawer&&<Drawer title={drawer==="add"?"New Campaign":"Edit Campaign"} onClose={()=>setDrawer(null)} onSave={save}>
         <Field label="Campaign Name"><Inp value={d.name} onChange={v=>setD(p=>({...p,name:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
@@ -1579,30 +1672,8 @@ const MarketingView = ({ db, setDB }) => {
           <Field label="Leads"><Inp type="number" value={d.leads} onChange={v=>setD(p=>({...p,leads:v}))}/></Field>
           <Field label="Impressions"><Inp type="number" value={d.opens} onChange={v=>setD(p=>({...p,opens:v}))}/></Field>
           <Field label="Conversions"><Inp type="number" value={d.conversions} onChange={v=>setD(p=>({...p,conversions:v}))}/></Field>
-        {drawer==="edit"&&d.id&&(()=>{
-          const leads = (db.contacts||[]).filter(c=>c.campaignId===d.id);
-          return leads.length > 0 ? (
-            <div style={{ marginTop:18, borderTop:"1px solid var(--border)", paddingTop:14 }}>
-              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ASSOCIATED LEADS — {leads.length}</div>
-              {leads.map(c=>(
-                <div key={c.id} className="card-el" style={{ padding:"10px 12px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer" }}>
-                  <div>
-                    <div style={{ fontSize:13, fontWeight:600 }}>{c.name}</div>
-                    <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{c.co}{c.role?(" · "+c.role):""}</div>
-                  </div>
-                  <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-                    <span className="tag" style={{ background:c.status==="prospect"?"var(--blue-dim)":c.status==="client"?"var(--green-dim)":"var(--amber-dim)", color:c.status==="prospect"?"var(--blue)":c.status==="client"?"var(--green)":"var(--amber)" }}>{c.status}</span>
-                    <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Score: {c.score}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mono" style={{ fontSize:11, color:"var(--text-dim)", marginTop:16, fontStyle:"italic" }}>No leads associated with this campaign yet.</div>
-          );
-        })()}
-        {drawer==="edit"&&d.id&&<div style={{ gridColumn:"1 / -1" }}><AssociatedDocumentsPanel db={db} setDB={setDB} entityType="campaign" entityId={d.id}/></div>}
         </div>
+        <Field label="Notes"><Tex value={d.notes||""} onChange={v=>setD(p=>({...p,notes:v}))}/></Field>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1806,8 +1877,7 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
 
   useEffect(() => {
     if(focus?.type==="project" && focus.id) {
-      const p = db.projects.find(p=>p.id===focus.id);
-      if(p) { setPD({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:p.links||[], files:p.files||[]}); setDrawer({mode:"edit",type:"project"}); }
+      setExpandedId(focus.id);
       setFocus(null);
     }
   }, [focus]);
@@ -1902,16 +1972,17 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
         const isExpanded = expandedId === p.id;
         return (
           <div key={p.id}>
-            <div className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}`, cursor:"pointer", borderRadius:isExpanded?"12px 12px 0 0":undefined }} onClick={()=>navigate("record",{type:"project",id:p.id})}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
-                <div>
+            <div className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}`, cursor:"pointer", borderRadius:isExpanded?"12px 12px 0 0":undefined }} onClick={()=>{setExpandedId(isExpanded?null:p.id); navigate("record",{type:"project",id:p.id});}}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12, flexWrap:"wrap", gap:8 }}>
+                <div style={{ minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{p.name} <span style={{ fontSize:9, padding:"1px 6px", borderRadius:8, background: (p.type||"client")==="strategic"?"var(--purple-dim)":"var(--blue-dim)", color:(p.type||"client")==="strategic"?"var(--purple)":"var(--blue)", fontWeight:500 }}>{(p.type||"client")}</span></div>
                   <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.companyId ? <EntityLink type="company" id={p.companyId} navigate={navigate}>{p.client}</EntityLink> : p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
                   {(p.files||[]).length > 0 && <div className="mono" style={{fontSize:9,color:"var(--text-dim)",marginTop:1,display:"flex",alignItems:"center",gap:3}}><Paperclip size={9}/> {(p.files||[]).length} file{(p.files||[]).length>1?"s":""}</div>}
                   {p.strategyId && (db.strategies||[]).find(s=>s.id===p.strategyId) && <div className="mono" style={{fontSize:9,color:"var(--purple)",marginTop:1}}>Strategy: {(db.strategies||[]).find(s=>s.id===p.strategyId)?.name}</div>}
                 </div>
-                <div style={{ display:"flex", gap:6, alignItems:"center" }} onClick={e=>e.stopPropagation()}>
+                <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }} onClick={e=>e.stopPropagation()}>
                   <Tag label={p.priority}/><Tag label={p.status}/>
+                  <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[],files:p.files||[]});setDrawer({mode:"edit",type:"project"});}}><Pencil size={12}/>Edit</button>
                   <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[],files:p.files||[]});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
                 </div>
               </div>
@@ -1924,6 +1995,16 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
 
             {isExpanded && (
               <div className="card-el" style={{ padding:16, borderRadius:"0 0 12px 12px", borderTop:"1px dashed var(--border)" }}>
+                {/* COMPANY SNAPSHOT */}
+                {(()=>{ const co = p.companyId ? db.companies.find(c=>c.id===p.companyId) : null; return co ? (
+                  <div className="card-el" style={{ padding:"10px 14px", marginBottom:14, background:"var(--bg-card)", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+                    <Building2 size={14} color="var(--text-sec)"/>
+                    <span style={{ fontSize:13, fontWeight:600 }}><EntityLink type="company" id={co.id} navigate={navigate}>{co.name}</EntityLink></span>
+                    {co.industry && <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{co.industry}</span>}
+                    <Tag label={co.status}/>
+                    {co.website && <a href={co.website.startsWith("http")?co.website:`https://${co.website}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft:"auto", fontSize:11, color:"var(--blue)", display:"flex", gap:4, alignItems:"center" }} onClick={e=>e.stopPropagation()}><Globe size={11}/>Website</a>}
+                  </div>
+                ) : null; })()}
 {/* PROJECT LINKS */}
                 {(p.links||[]).length > 0 && <div style={{marginBottom:14}}>
                   <div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginBottom:6}}>LINKS</div>
@@ -5945,7 +6026,7 @@ export default function App() {
     crm:          <CRMView db={db} setDB={setDB} setView={setView} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     companies:    <CompaniesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    marketing:    <MarketingView db={db} setDB={setDB}/>,
+    marketing:    <MarketingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB} navigate={navigate}/>,
     documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate}/>,
