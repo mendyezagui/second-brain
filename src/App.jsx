@@ -1819,22 +1819,30 @@ const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", d
    TASKS VIEW (standalone)
 ──────────────────────────────────────────────────────── */
 const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [td, setTD] = useState(blankTask());
+  const [editTask, setEditTask] = useState(null);
 
   // Task filters
-  const [fStatus, setFStatus] = useState("open"); // open = not done/cancelled
+  const [fStatus, setFStatus] = useState("open");
   const [fPriority, setFPriority] = useState("all");
   const [fCategory, setFCategory] = useState("all");
-  const [fSource, setFSource] = useState("mine"); // mine = user-created, agent = auto-generated, all = everything
-  const [searchQ, setSearchQ] = useState(""); // free-text search across title, contact, company, project
-  const [sortBy, setSortBy] = useState("due"); // priority, due
-  const [groupBy, setGroupBy] = useState("none"); // none, project, company, person, status
+  const [fSource, setFSource] = useState("all");
+  const [searchQ, setSearchQ] = useState("");
+  const [sortBy, setSortBy] = useState("due");
 
   useEffect(() => {
-    if(focus?.type==="task" && focus.id) { setFStatus("all"); const t=db.tasks.find(t=>t.id===focus.id); if(t) { setTD({...t,projectId:String(t.projectId||""),contactId:String(t.contactId||""),companyId:String(t.companyId||""),dealId:String(t.dealId||"")}); setDrawer({mode:"edit",type:"task"}); } setFocus(null); }
+    if(focus?.type==="task" && focus.id) { setFStatus("all"); setSel(focus.id); setFocus(null); }
   }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const t = db.tasks.find(x => x.id === sel);
+      if (t) setEditTask({...t, projectId: String(t.projectId||""), contactId: String(t.contactId||""), companyId: String(t.companyId||""), dealId: String(t.dealId||"")});
+    } else setEditTask(null);
+  }, [sel, db.tasks]);
 
   const filteredTasks = useMemo(() => {
     let tasks = db.tasks;
@@ -1863,126 +1871,151 @@ const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
     return tasks;
   }, [db.tasks, fStatus, fPriority, fCategory, fSource, searchQ, sortBy, db.contacts, db.companies, db.projects]);
 
-  const grouped = useMemo(() => {
-    if (groupBy === "none") return [{ label:null, tasks:filteredTasks }];
-    const groups = {};
-    filteredTasks.forEach(t => {
-      let key = "Ungrouped";
-      if (groupBy === "project") { const p = db.projects.find(p=>p.id===t.projectId); key = p?.name || "No Project"; }
-      else if (groupBy === "company") { const c = db.companies.find(c=>c.id===t.companyId); key = c?.name || "No Company"; }
-      else if (groupBy === "person") { const c = db.contacts.find(c=>c.id===t.contactId); key = c?.name || "Unassigned"; }
-      else if (groupBy === "status") key = t.status || "todo";
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(t);
+  const saveInline = () => {
+    if (!editTask) return;
+    const rec = {...editTask, projectId: parseInt(editTask.projectId)||null, contactId: parseInt(editTask.contactId)||null, companyId: parseInt(editTask.companyId)||null, dealId: parseInt(editTask.dealId)||null};
+    setDB(db => {
+      const old = db.tasks.find(x => x.id === rec.id);
+      let updated = {...rec};
+      if (old && old.due !== rec.due && rec.due) {
+        updated.reschedule_count = (old.reschedule_count||0) + 1;
+        if (updated.reschedule_count >= 3) {
+          updated.priority = "low";
+          updated.notes = (updated.notes ? updated.notes+"\n" : "") + "Auto-downgraded: due date changed "+updated.reschedule_count+" times.";
+        }
+      }
+      return {...db, tasks: db.tasks.map(x => x.id === rec.id ? updated : x)};
     });
-    return Object.entries(groups).map(([label,tasks])=>({label,tasks}));
-  }, [filteredTasks, groupBy, db.projects, db.companies, db.contacts]);
-
+  };
   const saveTask = (d) => {
     const rec = {...d, projectId:parseInt(d.projectId)||null, contactId:parseInt(d.contactId)||null, companyId:parseInt(d.companyId)||null, dealId:parseInt(d.dealId)||null};
-    if(drawer.mode==="add") setDB(db=>({...db,tasks:[...db.tasks,{...rec,id:nextId(db.tasks)}]}));
-    else setDB(db=>{const old=db.tasks.find(x=>x.id===rec.id);let updated={...rec};if(old&&old.due!==rec.due&&rec.due){updated.reschedule_count=(old.reschedule_count||0)+1;if(updated.reschedule_count>=3){updated.priority="low";updated.notes=(updated.notes?updated.notes+"\n":"")+"\u26a0\ufe0f Auto-downgraded: due date changed "+updated.reschedule_count+" times \u2014 may not be critical.";}}return{...db,tasks:db.tasks.map(x=>x.id===rec.id?updated:x)};});
+    setDB(db=>({...db,tasks:[...db.tasks,{...rec,id:nextId(db.tasks)}]}));
     setDrawer(null);
   };
-  const delTask = (id) => { setDB(db=>({...db,tasks:db.tasks.filter(x=>x.id!==id)})); setConfirm(null); };
+  const delTask = (id) => { setDB(db=>({...db,tasks:db.tasks.filter(x=>x.id!==id)})); if (sel === id) setSel(null); setConfirm(null); };
   const toggleTask = (id) => setDB(db=>({...db,tasks:db.tasks.map(t=>t.id===id?{...t,done:!t.done,status:t.done?"todo":"done"}:t)}));
 
+  const task = sel ? db.tasks.find(t => t.id === sel) : null;
+  const taskContact = task && task.contactId ? db.contacts.find(c => c.id === task.contactId) : null;
+  const taskCompany = task && task.companyId ? db.companies.find(c => c.id === task.companyId) : null;
+  const taskProject = task && task.projectId ? db.projects.find(p => p.id === task.projectId) : null;
+
   return (
-    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Tasks</div>
-        <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setTD(blankTask());setDrawer({mode:"add",type:"task"});}}><Plus size={12}/>Task</button>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+        <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Tasks</div>
+            <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setTD(blankTask());setDrawer({mode:"add",type:"task"});}}><Plus size={12}/>Add</button>
+          </div>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:6 }}>
+            {["open","all","todo","in_progress","waiting","done","cancelled"].map(s=>(
+              <button key={s} className={`filter-chip${fStatus===s?" active":""}`} onClick={()=>setFStatus(s)}>{s.replace(/_/g," ")}</button>
+            ))}
+          </div>
+          <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+            <select className="filter-select" value={fPriority} onChange={e=>setFPriority(e.target.value)} style={{ flex:1 }}>
+              <option value="all">Any Priority</option>
+              {["critical","high","medium","low"].map(p=><option key={p} value={p}>{p}</option>)}
+            </select>
+            <select className="filter-select" value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ flex:1 }}>
+              <option value="due">Due Date</option>
+              <option value="priority">Urgency</option>
+            </select>
+          </div>
+          <div style={{ position:"relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+            <input className="input" placeholder="Search..." value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+          </div>
+          <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:6 }}>{filteredTasks.length} task{filteredTasks.length!==1?"s":""}</div>
+        </div>
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {filteredTasks.map(t => {
+            const isOverdue = t.due && t.due < today() && !t.done;
+            return (
+              <div key={t.id} className="row-hover" onClick={()=>navigate("record",{type:"task",id:t.id})}
+                style={{ padding:"10px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===t.id?"var(--bg-hover)":"transparent", opacity:t.done?0.55:1, display:"flex", gap:8, alignItems:"flex-start", borderLeft:isOverdue?"3px solid var(--red)":t.priority==="critical"?"3px solid var(--red)":undefined }}>
+                <button onClick={(e)=>{e.stopPropagation();toggleTask(t.id);}} style={{ width:16, height:16, borderRadius:3, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, marginTop:2 }}>{t.done&&<Check size={9} color="#fff"/>}</button>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:500, textDecoration:t.done?"line-through":"none" }}>{t.title}</div>
+                  <div className="mono" style={{ fontSize:10, color:isOverdue?"var(--red)":"var(--text-sec)", marginTop:2 }}>{t.due ? (isOverdue?"OVERDUE ":"Due ")+t.due : t.category}</div>
+                </div>
+                <Tag label={t.priority}/>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {true && (
-        <>
-          {/* SEARCH + FILTER BAR */}
-          <div className="card" style={{ padding:"10px 14px" }}>
-            <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
-              <div style={{ position:"relative", flex:1, minWidth:180 }}>
-                <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:9, pointerEvents:"none" }}/>
-                <input className="input" placeholder="Search tasks…" value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{ paddingLeft:30, fontSize:12 }}/>
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+        {(task && editTask) ? (
+          <div className="slide-in">
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("tasks");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to tasks</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div style={{ minWidth:0, display:"flex", alignItems:"flex-start", gap:10 }}>
+                <button onClick={()=>toggleTask(task.id)} style={{ width:22, height:22, borderRadius:5, border:`2px solid ${task.done?"var(--green)":"var(--border-hi)"}`, background:task.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, marginTop:6 }}>{task.done&&<Check size={13} color="#fff"/>}</button>
+                <div>
+                  <div className="display" style={{ fontSize:20, fontWeight:800, textDecoration:task.done?"line-through":"none" }}>{task.title}</div>
+                  <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{task.due ? `Due ${task.due}` : ""}{task.assignedTo?` · ${task.assignedTo}`:""}</div>
+                </div>
               </div>
-              <select className="filter-select" value={fStatus} onChange={e=>setFStatus(e.target.value)}>
-                <option value="open">Open</option><option value="all">All</option>
-                {TASK_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g," ")}</option>)}
-              </select>
-              <select className="filter-select" value={fPriority} onChange={e=>setFPriority(e.target.value)}>
-                <option value="all">Any Priority</option>
-                {["critical","high","medium","low"].map(p=><option key={p} value={p}>{p}</option>)}
-              </select>
-              <select className="filter-select" value={fCategory} onChange={e=>setFCategory(e.target.value)}>
-                <option value="all">Any Category</option>
-                {TASK_CATEGORIES.map(c=><option key={c} value={c}>{c.replace(/_/g," ")}</option>)}
-              </select>
-              <select className="filter-select" value={fSource} onChange={e=>setFSource(e.target.value)}>
-                <option value="mine">Mine</option>
-                <option value="agent">Agent</option>
-                <option value="all">All Sources</option>
-              </select>
-              <select className="filter-select" value={sortBy} onChange={e=>setSortBy(e.target.value)}>
-                <option value="priority">Sort: Urgency</option><option value="due">Sort: Due Date</option>
-              </select>
-              <select className="filter-select" value={groupBy} onChange={e=>setGroupBy(e.target.value)}>
-                <option value="none">No Grouping</option>
-                {["project","company","person","status"].map(g=><option key={g} value={g}>Group: {g}</option>)}
-              </select>
-              <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{filteredTasks.length} tasks</span>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                <Tag label={task.priority}/>
+                <Tag label={task.status?.replace(/_/g," ")||"todo"}/>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={saveInline}><Save size={12}/>Save</button>
+                <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:task.id,label:task.title})}><Trash2 size={12}/></button>
+              </div>
             </div>
+
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <Field label="Task Title"><Inp value={editTask.title} onChange={v=>setEditTask(p=>({...p,title:v}))}/></Field>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <Field label="Status"><Sel value={editTask.status} onChange={v=>setEditTask(p=>({...p,status:v}))} options={TASK_STATUSES.map(s=>({value:s,label:s.replace(/_/g," ")}))}/></Field>
+                <Field label="Priority"><Sel value={editTask.priority} onChange={v=>setEditTask(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
+                <Field label="Category"><Sel value={editTask.category} onChange={v=>setEditTask(p=>({...p,category:v}))} options={TASK_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
+                <Field label="Due Date"><Inp type="date" value={editTask.due||""} onChange={v=>setEditTask(p=>({...p,due:v}))}/></Field>
+                <Field label="Person"><SearchSelect value={editTask.contactId} onChange={v=>setEditTask(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search..." entityType="contact" navigate={navigate}/></Field>
+                <Field label="Company"><SearchSelect value={editTask.companyId} onChange={v=>setEditTask(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search..." entityType="company" navigate={navigate}/></Field>
+                <Field label="Project"><SearchSelect value={editTask.projectId} onChange={v=>setEditTask(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search..." entityType="project" navigate={navigate}/></Field>
+                <Field label="Deal"><SearchSelect value={editTask.dealId} onChange={v=>setEditTask(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search..." entityType="deal" navigate={navigate}/></Field>
+                <Field label="Assigned To"><Inp value={editTask.assignedTo||""} onChange={v=>setEditTask(p=>({...p,assignedTo:v}))}/></Field>
+                <Field label="Source"><Sel value={editTask.source} onChange={v=>setEditTask(p=>({...p,source:v}))} options={["manual","user:voice","agent:orchestrator","agent:news_engine","agent:gmail_scan","agent:ai_sweep","agent:signal-engine","agent:claude_assist"]}/></Field>
+              </div>
+              <Field label="Notes"><Tex value={editTask.notes||""} onChange={v=>setEditTask(p=>({...p,notes:v}))}/></Field>
+            </div>
+
+            {(taskContact||taskCompany||taskProject) && <div className="card-el" style={{ padding:14, marginBottom:16 }}>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>LINKED RECORDS</div>
+              <div style={{ display:"flex", gap:14, flexWrap:"wrap", fontSize:12 }}>
+                {taskContact && <span>Contact: <EntityLink type="contact" id={taskContact.id} navigate={navigate}>{taskContact.name}</EntityLink></span>}
+                {taskCompany && <span>Company: <EntityLink type="company" id={taskCompany.id} navigate={navigate}>{taskCompany.name}</EntityLink></span>}
+                {taskProject && <span>Project: <EntityLink type="project" id={taskProject.id} navigate={navigate}>{taskProject.name}</EntityLink></span>}
+              </div>
+            </div>}
+
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="task" entityId={task.id}/>
           </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+            <CheckCircle size={44} style={{ opacity:.15, marginBottom:14 }}/>
+            <p style={{ fontSize:14 }}>Select a task</p>
+          </div>
+        )}
+      </div>
 
-          {/* TASK LIST */}
-          {grouped.map((group, gi) => (
-            <div key={gi}>
-              {group.label && <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", padding:"8px 0 4px", borderBottom:"1px solid var(--border)", marginBottom:8 }}>{group.label} ({group.tasks.length})</div>}
-              {group.tasks.map(t => {
-                const contact = db.contacts.find(c=>c.id===t.contactId);
-                const company = db.companies.find(c=>c.id===t.companyId);
-                const project = db.projects.find(p=>p.id===t.projectId);
-                const isOverdue = t.due && t.due < today() && !t.done;
-                return (
-                  <div key={t.id} className="card-el row-hover" onClick={()=>navigate("record",{type:"task",id:t.id})} style={{ padding:"12px 14px", display:"flex", gap:12, alignItems:"flex-start", opacity:t.done?0.55:1, marginBottom:6, borderLeft:isOverdue?"3px solid var(--red)":t.priority==="critical"?"3px solid var(--red)":undefined, cursor:"pointer" }}>
-                    <button onClick={(e)=>{e.stopPropagation();toggleTask(t.id);}} style={{ width:18, height:18, borderRadius:4, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", marginTop:2 }}>
-                      {t.done&&<Check size={11} color="#fff"/>}
-                    </button>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, fontWeight:500, textDecoration:t.done?"line-through":"none", color:t.done?"var(--text-sec)":"var(--text)" }}>{t.title}</div>
-                      <div style={{ display:"flex", gap:6, marginTop:4, alignItems:"center", flexWrap:"wrap" }}>
-                        {t.due&&<span className="mono" style={{ fontSize:10, color:isOverdue?"var(--red)":"var(--text-sec)" }}>{isOverdue?"OVERDUE ":""}Due {t.due}</span>}
-                        <Tag label={t.priority}/>
-                        <Tag label={t.category?.replace(/_/g," ")||"task"} color="var(--purple)"/>
-                        {t.status && t.status !== "todo" && t.status !== "done" && <Tag label={t.status.replace(/_/g," ")}/>}
-                        {contact&&<EntityLink type="contact" id={contact.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>👤 {contact.name}</EntityLink>}
-                        {company&&<EntityLink type="company" id={company.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>🏢 {company.name}</EntityLink>}
-                        {project&&<EntityLink type="project" id={project.id} navigate={navigate} className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>📁 {project.name}</EntityLink>}
-                        {t.source!=="manual"&&<span className="mono" style={{ fontSize:9, color:"var(--text-dim)", background:"var(--bg-el)", padding:"1px 4px", borderRadius:3 }}>{t.source}</span>}
-                      </div>
-                    </div>
-                    <RowActions onEdit={()=>{setTD({...t,projectId:String(t.projectId||""),contactId:String(t.contactId||""),companyId:String(t.companyId||""),dealId:String(t.dealId||"")});setDrawer({mode:"edit",type:"task"});}} onDelete={()=>setConfirm({id:t.id,label:t.title,type:"task"})}/>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </>
-      )}
-
-      {drawer?.type==="task"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Task`} onClose={()=>setDrawer(null)} onSave={()=>saveTask(td)}>
+      {drawer?.type==="task"&&drawer.mode==="add"&&<Drawer title="New Task" onClose={()=>setDrawer(null)} onSave={()=>saveTask(td)}>
         <Field label="Task Title"><Inp value={td.title} onChange={v=>setTD(p=>({...p,title:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Status"><Sel value={td.status} onChange={v=>setTD(p=>({...p,status:v}))} options={TASK_STATUSES.map(s=>({value:s,label:s.replace(/_/g," ")}))}/></Field>
           <Field label="Priority"><Sel value={td.priority} onChange={v=>setTD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
           <Field label="Category"><Sel value={td.category} onChange={v=>setTD(p=>({...p,category:v}))} options={TASK_CATEGORIES.map(c=>({value:c,label:c.replace(/_/g," ")}))}/></Field>
           <Field label="Due Date"><Inp type="date" value={td.due} onChange={v=>setTD(p=>({...p,due:v}))}/></Field>
-          <Field label="Person"><SearchSelect value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search contacts…" entityType="contact" navigate={navigate}/></Field>
-          <Field label="Company"><SearchSelect value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…" entityType="company" navigate={navigate}/></Field>
-          <Field label="Project"><SearchSelect value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search projects…" entityType="project" navigate={navigate}/></Field>
-          <Field label="Deal"><SearchSelect value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search deals…" entityType="deal" navigate={navigate}/></Field>
-          <Field label="Assigned To"><Inp value={td.assignedTo} onChange={v=>setTD(p=>({...p,assignedTo:v}))}/></Field>
-          <Field label="Source"><Sel value={td.source} onChange={v=>setTD(p=>({...p,source:v}))} options={["manual","user:voice","agent:orchestrator","agent:news_engine","agent:gmail_scan","agent:ai_sweep","agent:signal-engine","agent:claude_assist"]}/></Field>
+          <Field label="Person"><SearchSelect value={td.contactId} onChange={v=>setTD(p=>({...p,contactId:v}))} options={db.contacts.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search..." entityType="contact" navigate={navigate}/></Field>
+          <Field label="Company"><SearchSelect value={td.companyId} onChange={v=>setTD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search..." entityType="company" navigate={navigate}/></Field>
+          <Field label="Project"><SearchSelect value={td.projectId} onChange={v=>setTD(p=>({...p,projectId:v}))} options={db.projects.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search..." entityType="project" navigate={navigate}/></Field>
+          <Field label="Deal"><SearchSelect value={td.dealId} onChange={v=>setTD(p=>({...p,dealId:v}))} options={db.deals.map(x=>({value:String(x.id),label:x.name}))} placeholder="Search..." entityType="deal" navigate={navigate}/></Field>
         </div>
         <Field label="Notes"><Tex value={td.notes} onChange={v=>setTD(p=>({...p,notes:v}))}/></Field>
-        {drawer.mode === "edit" && td.id && <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="task" entityId={td.id}/>}
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delTask(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1993,31 +2026,70 @@ const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
    PROJECTS VIEW (with AI Agent)
 ──────────────────────────────────────────────────────── */
 const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [pd, setPD] = useState(blankProject());
-  const [expandedId, setExpandedId] = useState(null);
+  const [editProject, setEditProject] = useState(null);
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiProposals, setAiProposals] = useState(null);
   const [selectedProposals, setSelectedProposals] = useState({});
   const [uploading, setUploading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const fileInputRef = useRef(null);
+  const inlineFileInputRef = useRef(null);
 
   useEffect(() => {
-    if(focus?.type==="project" && focus.id) {
-      setExpandedId(focus.id);
-      setFocus(null);
-    }
+    if(focus?.type==="project" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
   }, [focus]);
 
+  useEffect(() => {
+    if (sel) {
+      const p = db.projects.find(x => x.id === sel);
+      if (p) setEditProject({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:p.links||[], files:p.files||[]});
+    } else setEditProject(null);
+  }, [sel, db.projects]);
+
+  const filtered = db.projects.filter(p => {
+    if (query && !`${p.name} ${p.client||""}`.toLowerCase().includes(query.toLowerCase())) return false;
+    if (statusFilter !== "all" && p.status !== statusFilter) return false;
+    return true;
+  });
+  const project = sel ? db.projects.find(p => p.id === sel) : null;
+  const projectTasks = project ? db.tasks.filter(t => t.projectId === project.id) : [];
+  const projectCompany = project && project.companyId ? db.companies.find(c => c.id === project.companyId) : null;
+  const projectStrategy = project && project.strategyId ? (db.strategies||[]).find(s => s.id === project.strategyId) : null;
+
+  const saveInline = () => {
+    if (!editProject) return;
+    const rec = {...editProject, progress:parseInt(editProject.progress)||0, companyId:parseInt(editProject.companyId)||null, strategyId:parseInt(editProject.strategyId)||null, links:editProject.links||[], files:editProject.files||[]};
+    setDB(d => ({...d, projects: d.projects.map(p => p.id === rec.id ? rec : p)}));
+  };
   const saveProject = (d) => {
     const rec = {...d, progress:parseInt(d.progress)||0, companyId:parseInt(d.companyId)||null, strategyId:parseInt(d.strategyId)||null, links:d.links||[], files:d.files||[]};
-    if(drawer.mode==="add") setDB(db=>({...db,projects:[...db.projects,{...rec,id:nextId(db.projects)}]}));
-    else setDB(db=>({...db,projects:db.projects.map(x=>x.id===rec.id?rec:x)}));
+    setDB(db=>({...db,projects:[...db.projects,{...rec,id:nextId(db.projects)}]}));
     setDrawer(null);
   };
 
+  const inlineFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = 'projects/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const { error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) continue;
+        const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
+      }
+      setEditProject(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
+    } finally { setUploading(false); if (inlineFileInputRef.current) inlineFileInputRef.current.value = ''; }
+  };
   const handleProjectFileUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -2028,28 +2100,19 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
         const ext = file.name.split('.').pop();
         const path = 'projects/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
         const { error } = await supabase.storage.from('memory-files').upload(path, file);
-        if (error) { console.error('Upload error:', error); continue; }
+        if (error) continue;
         const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
         uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
       }
       setPD(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
-    } catch (err) { console.error('Upload failed:', err); }
-    setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
-
-  const removeProjectFile = async (fileObj) => {
-    if (fileObj.path) await supabase.storage.from('memory-files').remove([fileObj.path]);
-    setPD(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
+  const removeInlineFile = async (f) => {
+    if (f.path) await supabase.storage.from('memory-files').remove([f.path]);
+    setEditProject(p => ({...p, files:(p.files||[]).filter(x => x.path !== f.path)}));
   };
-
-  const formatFileSize = (bytes) => {
-    if (!bytes) return '';
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
-    return (bytes/1048576).toFixed(1) + ' MB';
-  };
-  const delProject = (id) => { setDB(db=>({...db,projects:db.projects.filter(x=>x.id!==id)})); setConfirm(null); };
+  const formatFileSize = (bytes) => { if (!bytes) return ''; if (bytes < 1024) return bytes + ' B'; if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB'; return (bytes/1048576).toFixed(1) + ' MB'; };
+  const delProject = (id) => { setDB(db=>({...db,projects:db.projects.filter(x=>x.id!==id)})); if (sel === id) setSel(null); setConfirm(null); };
   const toggleTask = (id) => setDB(db=>({...db,tasks:db.tasks.map(t=>t.id===id?{...t,done:!t.done,status:t.done?"todo":"done"}:t)}));
 
   const handleAIGenerate = async (projectId) => {
@@ -2068,188 +2131,214 @@ const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
       }
       const tasks = parsed.tasks || [];
       setAiProposals(tasks);
-      const sel = {}; tasks.forEach((_,i) => sel[i]=true);
-      setSelectedProposals(sel);
-    } catch(e) { console.error("AI gen failed:", e); setAiProposals([]); }
+      const seln = {}; tasks.forEach((_,i) => seln[i]=true);
+      setSelectedProposals(seln);
+    } catch(e) { setAiProposals([]); }
     setAiLoading(false);
   };
 
   const commitProposals = () => {
     const toAdd = (aiProposals||[]).filter((_,i) => selectedProposals[i]);
     if(toAdd.length > 0) {
-      const proj = db.projects.find(p=>p.id===expandedId);
-      const companyId = proj?.companyId || null;
+      const companyId = project?.companyId || null;
       setDB(db => {
         let id = nextId(db.tasks);
-        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:expandedId, companyId, source:"agent:ai_sweep"}))]};
+        return {...db, tasks:[...db.tasks, ...toAdd.map(t => ({...blankTask(), ...t, id:id++, projectId:project.id, companyId, source:"agent:ai_sweep"}))]};
       });
     }
     setAiProposals(null); setAiInput(""); setSelectedProposals({});
   };
 
   return (
-    <div style={{ padding:24, display:"flex", flexDirection:"column", gap:18 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div className="display" style={{ fontSize:18, fontWeight:700 }}>Projects</div>
-        <button className="btn btn-blue" style={{ fontSize:12, padding:"6px 12px" }} onClick={()=>{setPD(blankProject());setDrawer({mode:"add",type:"project"});}}><Plus size={12}/>Project</button>
-      </div>
-
-      
-      {db.projects.map(p => {
-        const pTasks = db.tasks.filter(t=>t.projectId===p.id);
-        const open = pTasks.filter(t=>!t.done && t.status!=="done" && t.status!=="cancelled");
-        const isExpanded = expandedId === p.id;
-        return (
-          <div key={p.id}>
-            <div className="card row-hover" style={{ padding:16, borderLeft:`3px solid ${sc(p.status)}`, cursor:"pointer", borderRadius:isExpanded?"12px 12px 0 0":undefined }} onClick={()=>{setExpandedId(isExpanded?null:p.id); navigate("record",{type:"project",id:p.id});}}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12, flexWrap:"wrap", gap:8 }}>
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>{p.name} <span style={{ fontSize:9, padding:"1px 6px", borderRadius:8, background: (p.type||"client")==="strategic"?"var(--purple-dim)":"var(--blue-dim)", color:(p.type||"client")==="strategic"?"var(--purple)":"var(--blue)", fontWeight:500 }}>{(p.type||"client")}</span></div>
-                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.companyId ? <EntityLink type="company" id={p.companyId} navigate={navigate}>{p.client}</EntityLink> : p.client} · Due {p.dueDate} · {open.length} open / {pTasks.length} tasks</div>
-                  {(p.files||[]).length > 0 && <div className="mono" style={{fontSize:9,color:"var(--text-dim)",marginTop:1,display:"flex",alignItems:"center",gap:3}}><Paperclip size={9}/> {(p.files||[]).length} file{(p.files||[]).length>1?"s":""}</div>}
-                  {p.strategyId && (db.strategies||[]).find(s=>s.id===p.strategyId) && <div className="mono" style={{fontSize:9,color:"var(--purple)",marginTop:1}}>Strategy: {(db.strategies||[]).find(s=>s.id===p.strategyId)?.name}</div>}
-                </div>
-                <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }} onClick={e=>e.stopPropagation()}>
-                  <Tag label={p.priority}/><Tag label={p.status}/>
-                  <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[],files:p.files||[]});setDrawer({mode:"edit",type:"project"});}}><Pencil size={12}/>Edit</button>
-                  <RowActions onEdit={()=>{setPD({...p,progress:String(p.progress),companyId:String(p.companyId||""),strategyId:String(p.strategyId||""),links:p.links||[],files:p.files||[]});setDrawer({mode:"edit",type:"project"});}} onDelete={()=>setConfirm({id:p.id,label:p.name})}/>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+        <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Projects</div>
+            <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setPD(blankProject());setDrawer({mode:"add",type:"project"});}}><Plus size={12}/>Add</button>
+          </div>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+            {["all","active","stalled","complete","on-hold"].map(s=>(
+              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
+            ))}
+          </div>
+          <div style={{ position:"relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+            <input className="input" placeholder="Search..." value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+          </div>
+        </div>
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {filtered.map(p => {
+            const open = db.tasks.filter(t => t.projectId === p.id && !t.done && t.status !== "done").length;
+            return (
+              <div key={p.id} className="row-hover" onClick={()=>navigate("record",{type:"project",id:p.id})}
+                style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===p.id?"var(--bg-hover)":"transparent", borderLeft:`3px solid ${sc(p.status)}` }}>
+                <div style={{ fontSize:13, fontWeight:600 }}>{p.name}</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{p.client||""} · {open} open</div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:4 }}>
+                  <div style={{ flex:1, height:4, background:"var(--bg-el)", borderRadius:2 }}><div style={{ height:"100%", width:`${p.progress||0}%`, background:p.progress<40?"var(--red)":p.progress<70?"var(--amber)":"var(--green)", borderRadius:2 }}/></div>
+                  <span className="mono" style={{ fontSize:9, color:"var(--text-sec)" }}>{p.progress||0}%</span>
                 </div>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                <div style={{ flex:1, height:5, background:"var(--bg-el)", borderRadius:3 }}><div style={{ height:"100%", width:`${p.progress}%`, background:p.progress<40?"var(--red)":p.progress<70?"var(--amber)":"var(--green)", borderRadius:3, transition:"width .5s" }}/></div>
-                <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{p.progress}%</span>
-                <ChevronDown size={14} color="var(--text-sec)" onClick={(e)=>{e.stopPropagation();setExpandedId(isExpanded?null:p.id);}} style={{ transform:isExpanded?"rotate(180deg)":"none", transition:"transform .2s", cursor:"pointer" }}/>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+        {(project && editProject) ? (
+          <div className="slide-in">
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("projects");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to projects</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div style={{ minWidth:0 }}>
+                <div className="display" style={{ fontSize:20, fontWeight:800 }}>{project.name}</div>
+                <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>
+                  {projectCompany ? <EntityLink type="company" id={projectCompany.id} navigate={navigate}>{projectCompany.name}</EntityLink> : project.client||""}
+                  {project.dueDate && ` · Due ${project.dueDate}`}
+                </div>
+              </div>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                <Tag label={project.priority}/><Tag label={project.status}/>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={saveInline}><Save size={12}/>Save</button>
+                <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:project.id,label:project.name})}><Trash2 size={12}/></button>
               </div>
             </div>
 
-            {isExpanded && (
-              <div className="card-el" style={{ padding:16, borderRadius:"0 0 12px 12px", borderTop:"1px dashed var(--border)" }}>
-                {/* COMPANY SNAPSHOT */}
-                {(()=>{ const co = p.companyId ? db.companies.find(c=>c.id===p.companyId) : null; return co ? (
-                  <div className="card-el" style={{ padding:"10px 14px", marginBottom:14, background:"var(--bg-card)", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
-                    <Building2 size={14} color="var(--text-sec)"/>
-                    <span style={{ fontSize:13, fontWeight:600 }}><EntityLink type="company" id={co.id} navigate={navigate}>{co.name}</EntityLink></span>
-                    {co.industry && <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{co.industry}</span>}
-                    <Tag label={co.status}/>
-                    {co.website && <a href={co.website.startsWith("http")?co.website:`https://${co.website}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft:"auto", fontSize:11, color:"var(--blue)", display:"flex", gap:4, alignItems:"center" }} onClick={e=>e.stopPropagation()}><Globe size={11}/>Website</a>}
-                  </div>
-                ) : null; })()}
-{/* PROJECT LINKS */}
-                {(p.links||[]).length > 0 && <div style={{marginBottom:14}}>
-                  <div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginBottom:6}}>LINKS</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                    {(p.links||[]).map((lnk,li)=>(<a key={li} href={lnk.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,fontSize:11,color:"var(--blue)",textDecoration:"none",cursor:"pointer"}} title={lnk.desc||lnk.url}><ExternalLink size={11}/>{lnk.label||lnk.url}</a>))}
-                  </div>
-                </div>}
-                {/* PROJECT FILES */}
-                {(p.files||[]).length > 0 && <div style={{marginBottom:14}}>
-                  <div className="mono" style={{fontSize:10,color:"var(--text-sec)",marginBottom:6}}>FILES</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                    {(p.files||[]).map((f,fi)=>(<a key={fi} href={f.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,fontSize:11,color:"var(--blue)",textDecoration:"none",cursor:"pointer"}} title={f.name}><FileText size={11}/>{f.name}</a>))}
-                  </div>
-                </div>}
-                <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="project" entityId={p.id}/>
-                                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>PROJECT TASKS</div>
-                {pTasks.length > 0 ? pTasks.map(t => (
-                  <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
-                    <button onClick={()=>toggleTask(t.id)} style={{ width:16, height:16, borderRadius:3, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>{t.done&&<Check size={9} color="#fff"/>}</button>
-                    <EntityLink type="task" id={t.id} navigate={navigate} style={{ fontSize:12, flex:1, textDecoration:t.done?"line-through":"none", opacity:t.done?0.5:1 }}>{t.title}</EntityLink>
-                    <Tag label={t.priority}/><span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{t.due||""}</span>
-                  </div>
-                )) : <div style={{ fontSize:12, color:"var(--text-dim)", padding:"8px 0" }}>No tasks yet — use the AI agent below to generate some.</div>}
+            <div className="grid-resp-4" style={{ marginBottom:16 }}>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--blue)" }}>{project.progress||0}%</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Progress</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--green)" }}>{projectTasks.filter(t=>t.done).length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Done</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--amber)" }}>{projectTasks.filter(t=>!t.done).length}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Open</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:13, fontWeight:600 }}>{(project.type||"client").toUpperCase()}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Type</div></div>
+            </div>
 
-                {/* AI AGENT */}
-                <div style={{ marginTop:16, paddingTop:14, borderTop:"1px solid var(--border)" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}><Sparkles size={13} color="var(--blue)"/><span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>AI TASK AGENT</span></div>
-                  <textarea className="input" value={aiInput} onChange={e=>setAiInput(e.target.value)} placeholder="Describe what needs to happen for this project..." style={{ marginBottom:8 }}/>
-                  <button className="btn btn-blue" onClick={()=>handleAIGenerate(p.id)} disabled={aiLoading||!aiInput.trim()} style={{ opacity:aiLoading||!aiInput.trim()?0.5:1, fontSize:12 }}>
-                    {aiLoading?<><Loader size={12} className="spin"/>Thinking...</>:<><Sparkles size={12}/>Generate Tasks</>}
-                  </button>
+            {projectStrategy && <div className="card-el" style={{ padding:"10px 14px", marginBottom:12, display:"flex", gap:8, alignItems:"center" }}>
+              <Target size={13} color="var(--purple)"/>
+              <span style={{ fontSize:12 }}>Strategy: <EntityLink type="strategy" id={projectStrategy.id} navigate={navigate}>{projectStrategy.name}</EntityLink></span>
+            </div>}
 
-                  {aiProposals && aiProposals.length > 0 && expandedId===p.id && (
-                    <div style={{ marginTop:12, padding:12, background:"var(--bg)", borderRadius:8, border:"1px solid var(--border)" }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-                        <span style={{ fontSize:12, fontWeight:600 }}>Proposed Tasks ({aiProposals.length})</span>
-                        <div style={{ display:"flex", gap:6 }}>
-                          <button className="btn btn-ghost" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>{const s={};aiProposals.forEach((_,i)=>s[i]=true);setSelectedProposals(s);}}>All</button>
-                          <button className="btn btn-ghost" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>setSelectedProposals({})}>None</button>
-                        </div>
-                      </div>
-                      {aiProposals.map((t, idx) => (
-                        <label key={idx} style={{ display:"flex", gap:8, padding:"8px 6px", borderBottom:"1px solid var(--border)", cursor:"pointer", alignItems:"flex-start" }}>
-                          <input type="checkbox" checked={!!selectedProposals[idx]} onChange={e=>setSelectedProposals(s=>({...s,[idx]:e.target.checked}))} style={{ marginTop:3 }}/>
-                          <div style={{ flex:1 }}>
-                            <div style={{ fontSize:12, fontWeight:500 }}>{t.title}</div>
-                            <div style={{ display:"flex", gap:4, marginTop:3 }}><Tag label={t.priority}/><Tag label={(t.category||"").replace(/_/g," ")} color="var(--purple)"/>{t.due&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due}</span>}</div>
-                            {t.notes&&<div style={{ fontSize:10, color:"var(--text-sec)", marginTop:3, fontStyle:"italic" }}>{t.notes}</div>}
-                          </div>
-                        </label>
-                      ))}
-                      <div style={{ display:"flex", gap:8, marginTop:10 }}>
-                        <button className="btn btn-blue" style={{ flex:1, justifyContent:"center", fontSize:12 }} onClick={commitProposals}><Check size={12}/>Commit Selected</button>
-                        <button className="btn btn-ghost" style={{ flex:1, justifyContent:"center", fontSize:12 }} onClick={()=>{setAiProposals(null);setAiInput("");}}>Discard</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <Field label="Project Name"><Inp value={editProject.name} onChange={v=>setEditProject(p=>({...p,name:v}))}/></Field>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <Field label="Client"><Inp value={editProject.client||""} onChange={v=>setEditProject(p=>({...p,client:v}))}/></Field>
+                <Field label="Company"><SearchSelect value={editProject.companyId} onChange={v=>setEditProject(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search..."/></Field>
+                <Field label="Status"><Sel value={editProject.status} onChange={v=>setEditProject(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
+                <Field label="Type"><Sel value={editProject.type||"client"} onChange={v=>setEditProject(p=>({...p,type:v}))} options={["client","strategic"]}/></Field>
+                <Field label="Priority"><Sel value={editProject.priority} onChange={v=>setEditProject(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
+                <Field label="Progress (%)"><Inp type="number" value={editProject.progress} onChange={v=>setEditProject(p=>({...p,progress:v}))}/></Field>
+                <Field label="Due Date"><Inp type="date" value={editProject.dueDate||""} onChange={v=>setEditProject(p=>({...p,dueDate:v}))}/></Field>
+                <Field label="Strategy"><Sel value={editProject.strategyId||""} onChange={v=>setEditProject(p=>({...p,strategyId:v}))} options={[{value:"",label:"None"},...(db.strategies||[]).map(s=>({value:String(s.id),label:s.name}))]}/></Field>
               </div>
-            )}
-          </div>
-        );
-      })}
+              <Field label="Notes"><Tex value={editProject.notes||""} onChange={v=>setEditProject(p=>({...p,notes:v}))}/></Field>
 
-      {drawer?.type==="project"&&<Drawer title={`${drawer.mode==="add"?"New":"Edit"} Project`} onClose={()=>setDrawer(null)} onSave={()=>saveProject(pd)}>
+              {/* Links */}
+              <div style={{ marginTop:8 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                  <span style={{ fontSize:12, fontWeight:600, color:"var(--text-sec)" }}>Links</span>
+                  <button type="button" className="btn btn-ghost" style={{ fontSize:11, padding:"3px 8px" }} onClick={()=>setEditProject(p=>({...p,links:[...(p.links||[]),{url:"",label:""}]}))}>+ Add Link</button>
+                </div>
+                {(editProject.links||[]).map((lnk,li)=>(
+                  <div key={li} style={{ display:"flex", gap:6, marginBottom:8 }}>
+                    <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>
+                      <input className="input" placeholder="Label" value={lnk.label||""} onChange={e=>{const links=[...editProject.links];links[li]={...links[li],label:e.target.value};setEditProject(p=>({...p,links}));}} style={{ padding:"6px 8px", fontSize:12 }}/>
+                      <input className="input" placeholder="https://..." value={lnk.url||""} onChange={e=>{const links=[...editProject.links];links[li]={...links[li],url:e.target.value};setEditProject(p=>({...p,links}));}} style={{ padding:"6px 8px", fontSize:12 }}/>
+                    </div>
+                    <button onClick={()=>setEditProject(p=>({...p,links:p.links.filter((_,i)=>i!==li)}))} style={{ background:"none", border:"none", color:"var(--red)", cursor:"pointer" }}><X size={14}/></button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Files */}
+              <div style={{ marginTop:14, borderTop:"1px solid var(--border)", paddingTop:14 }}>
+                <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ATTACHED FILES</div>
+                {(editProject.files||[]).map((f,fi)=>(
+                  <div key={fi} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 10px", borderRadius:6, background:"var(--bg-el)", border:"1px solid var(--border)", marginBottom:4 }}>
+                    <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--blue)", textDecoration:"none", overflow:"hidden" }}>
+                      <FileText size={13}/><span style={{ overflow:"hidden", textOverflow:"ellipsis" }}>{f.name}</span>
+                      <span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>{f.size?'('+formatFileSize(f.size)+')':''}</span>
+                    </a>
+                    <button onClick={()=>removeInlineFile(f)} style={{ background:"none", border:"none", color:"var(--red)", cursor:"pointer" }}><X size={12}/></button>
+                  </div>
+                ))}
+                <input ref={inlineFileInputRef} type="file" multiple style={{ display:"none" }} onChange={inlineFileUpload}/>
+                <button className="btn btn-ghost" onClick={()=>inlineFileInputRef.current?.click()} disabled={uploading} style={{ fontSize:12, marginTop:6 }}>
+                  {uploading ? <><Loader size={12} className="spin"/>Uploading...</> : <><Upload size={12}/>Upload Files</>}
+                </button>
+              </div>
+            </div>
+
+            {/* Project tasks */}
+            <div className="card-el" style={{ padding:14, marginBottom:16 }}>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>PROJECT TASKS ({projectTasks.length})</div>
+              {projectTasks.length > 0 ? projectTasks.map(t=>(
+                <div key={t.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
+                  <button onClick={()=>toggleTask(t.id)} style={{ width:16, height:16, borderRadius:3, border:`2px solid ${t.done?"var(--green)":"var(--border-hi)"}`, background:t.done?"var(--green)":"transparent", cursor:"pointer", flexShrink:0 }}>{t.done&&<Check size={9} color="#fff"/>}</button>
+                  <span style={{ fontSize:12, flex:1, textDecoration:t.done?"line-through":"none", opacity:t.done?0.5:1 }}><EntityLink type="task" id={t.id} navigate={navigate}>{t.title}</EntityLink></span>
+                  <Tag label={t.priority}/>
+                  <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{t.due||""}</span>
+                </div>
+              )) : <div style={{ fontSize:12, color:"var(--text-dim)" }}>No tasks yet. Use the AI agent below to generate some.</div>}
+            </div>
+
+            {/* AI agent */}
+            <div className="card" style={{ padding:14, marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}><Sparkles size={13} color="var(--blue)"/><span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>AI TASK AGENT</span></div>
+              <textarea className="input" value={aiInput} onChange={e=>setAiInput(e.target.value)} placeholder="Describe what needs to happen..." style={{ marginBottom:8 }}/>
+              <button className="btn btn-blue" onClick={()=>handleAIGenerate(project.id)} disabled={aiLoading||!aiInput.trim()} style={{ fontSize:12 }}>
+                {aiLoading ? <><Loader size={12} className="spin"/>Thinking...</> : <><Sparkles size={12}/>Generate Tasks</>}
+              </button>
+              {aiProposals && aiProposals.length > 0 && (
+                <div style={{ marginTop:12, padding:12, background:"var(--bg)", borderRadius:8, border:"1px solid var(--border)" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                    <span style={{ fontSize:12, fontWeight:600 }}>Proposed Tasks ({aiProposals.length})</span>
+                    <div style={{ display:"flex", gap:6 }}>
+                      <button className="btn btn-ghost" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>{const s={};aiProposals.forEach((_,i)=>s[i]=true);setSelectedProposals(s);}}>All</button>
+                      <button className="btn btn-ghost" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>setSelectedProposals({})}>None</button>
+                    </div>
+                  </div>
+                  {aiProposals.map((t, idx) => (
+                    <label key={idx} style={{ display:"flex", gap:8, padding:"8px 6px", borderBottom:"1px solid var(--border)", cursor:"pointer", alignItems:"flex-start" }}>
+                      <input type="checkbox" checked={!!selectedProposals[idx]} onChange={e=>setSelectedProposals(s=>({...s,[idx]:e.target.checked}))} style={{ marginTop:3 }}/>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:12, fontWeight:500 }}>{t.title}</div>
+                        <div style={{ display:"flex", gap:4, marginTop:3 }}><Tag label={t.priority}/>{t.due&&<span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Due {t.due}</span>}</div>
+                      </div>
+                    </label>
+                  ))}
+                  <div style={{ display:"flex", gap:8, marginTop:10 }}>
+                    <button className="btn btn-blue" style={{ flex:1, justifyContent:"center", fontSize:12 }} onClick={commitProposals}><Check size={12}/>Commit Selected</button>
+                    <button className="btn btn-ghost" style={{ flex:1, justifyContent:"center", fontSize:12 }} onClick={()=>{setAiProposals(null);setAiInput("");}}>Discard</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="project" entityId={project.id}/>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+            <Briefcase size={44} style={{ opacity:.15, marginBottom:14 }}/>
+            <p style={{ fontSize:14 }}>Select a project</p>
+          </div>
+        )}
+      </div>
+
+      {drawer?.type==="project"&&drawer.mode==="add"&&<Drawer title="New Project" onClose={()=>setDrawer(null)} onSave={()=>saveProject(pd)}>
         <Field label="Project Name"><Inp value={pd.name} onChange={v=>setPD(p=>({...p,name:v}))}/></Field>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Client"><Inp value={pd.client} onChange={v=>setPD(p=>({...p,client:v}))}/></Field>
-          <Field label="Company"><SearchSelect value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search companies…"/></Field>
+          <Field label="Company"><SearchSelect value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search..."/></Field>
           <Field label="Status"><Sel value={pd.status} onChange={v=>setPD(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
           <Field label="Type"><Sel value={pd.type||"client"} onChange={v=>setPD(p=>({...p,type:v}))} options={["client","strategic"]}/></Field>
           <Field label="Priority"><Sel value={pd.priority} onChange={v=>setPD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
-          <Field label="Progress (%)"><Inp type="number" value={pd.progress} onChange={v=>setPD(p=>({...p,progress:v}))}/></Field>
           <Field label="Due Date"><Inp type="date" value={pd.dueDate} onChange={v=>setPD(p=>({...p,dueDate:v}))}/></Field>
         </div>
         <Field label="Notes"><Tex value={pd.notes} onChange={v=>setPD(p=>({...p,notes:v}))}/></Field>
-        <Field label="Strategy"><Sel value={pd.strategyId||""} onChange={v=>setPD(p=>({...p,strategyId:v}))} options={[{value:"",label:"None"},...(db.strategies||[]).map(s=>({value:String(s.id),label:s.name}))]}/></Field>
-        <div style={{marginTop:8}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <span style={{fontSize:12,fontWeight:600,color:"var(--text-sec)"}}>Links</span>
-            <button type="button" className="btn btn-ghost" style={{fontSize:11,padding:"3px 8px"}} onClick={()=>setPD(p=>({...p,links:[...(p.links||[]),{url:"",label:"",desc:""}]}))}>+ Add Link</button>
-          </div>
-          {(pd.links||[]).map((lnk,li)=>(<div key={li} style={{display:"flex",gap:6,marginBottom:8,alignItems:"flex-start"}}>
-            <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
-              <input className="input" placeholder="Label (e.g. Google Drive)" value={lnk.label} onChange={e=>{const links=[...(pd.links||[])];links[li]={...links[li],label:e.target.value};setPD(p=>({...p,links}));}} style={{padding:"6px 8px",fontSize:12}}/>
-              <input className="input" placeholder="https://..." value={lnk.url} onChange={e=>{const links=[...(pd.links||[])];links[li]={...links[li],url:e.target.value};setPD(p=>({...p,links}));}} style={{padding:"6px 8px",fontSize:12}}/>
-              <input className="input" placeholder="Short description" value={lnk.desc||""} onChange={e=>{const links=[...(pd.links||[])];links[li]={...links[li],desc:e.target.value};setPD(p=>({...p,links}));}} style={{padding:"6px 8px",fontSize:12}}/>
-            </div>
-            <button type="button" onClick={()=>setPD(p=>({...p,links:(p.links||[]).filter((_,i)=>i!==li)}))} style={{background:"none",border:"none",color:"var(--red)",cursor:"pointer",padding:4,marginTop:2}}><X size={14}/></button>
-          </div>))}
-        </div>
-        <div style={{marginTop:14,borderTop:"1px solid var(--border)",paddingTop:14}}>
-          <div className="mono" style={{fontSize:11,color:"var(--text-sec)",marginBottom:8,textTransform:"uppercase"}}>Attached Files</div>
-          {(pd.files||[]).length > 0 && (
-            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
-              {(pd.files||[]).map((f,fi)=>(
-                <div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 10px",borderRadius:6,background:"var(--bg-sec)",border:"1px solid var(--border)"}}>
-                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"var(--blue)",textDecoration:"none",overflow:"hidden"}}>
-                    <FileText size={13}/> <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
-                    <span className="mono" style={{fontSize:10,color:"var(--text-dim)",flexShrink:0}}>{f.size?'('+formatFileSize(f.size)+')':''}</span>
-                  </a>
-                  <button className="btn btn-sm" style={{padding:"2px 6px",color:"var(--red)"}} onClick={()=>removeProjectFile(f)} title="Remove file"><X size={12}/></button>
-                </div>
-              ))}
-            </div>
-          )}
-          <input ref={fileInputRef} type="file" multiple style={{display:"none"}} onChange={handleProjectFileUpload}/>
-          <button className="btn btn-sm" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{fontSize:12,gap:6}}>
-            {uploading ? <><Loader size={12} className="spin"/> Uploading...</> : <><Upload size={12}/> Upload Files</>}
-          </button>
-        </div>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delProject(confirm.id)} onCancel={()=>setConfirm(null)}/>}
     </div>
   );
 };
+
 
 
 /* ────────────────────────────────────────────────────────
