@@ -5358,16 +5358,67 @@ const AIMemoriesView = ({ db, setDB, navigate }) => {
   );
 }
 const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"medium", notes:"", links:[], files:[] });
-const StrategiesView = ({ db, setDB, navigate }) => {
+const StrategiesView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [sd, setSD] = useState(blankStrategy());
-  const [expandedId, setExpandedId] = useState(null);
+  const [editStrategy, setEditStrategy] = useState(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
   const strategies = (db.strategies || []);
   const goals = (db.goals || []);
+
+  useEffect(() => {
+    if (focus?.type === "strategy" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+  }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const s = strategies.find(x => x.id === sel);
+      if (s) setEditStrategy({...s, goalId: String(s.goalId || ""), links: s.links || [], files: s.files || []});
+    } else setEditStrategy(null);
+  }, [sel, db.strategies]);
+
+  const filtered = strategies.filter(s => {
+    if (query && !s.name.toLowerCase().includes(query.toLowerCase())) return false;
+    if (statusFilter !== "all" && s.status !== statusFilter) return false;
+    return true;
+  });
+  const strategy = sel ? strategies.find(x => x.id === sel) : null;
+  const strategyGoal = strategy && strategy.goalId ? goals.find(g => g.id === strategy.goalId) : null;
+  const linkedProjects = strategy ? (db.projects || []).filter(p => p.strategyId === strategy.id) : [];
+
+  const saveInline = () => {
+    if (!editStrategy) return;
+    const rec = {...editStrategy, goalId: parseInt(editStrategy.goalId) || null, links: editStrategy.links || [], files: editStrategy.files || []};
+    setDB(d => ({...d, strategies: d.strategies.map(x => x.id === rec.id ? rec : x)}));
+  };
+
+  const inlineFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const ext = file.name.split('.').pop();
+        const path = 'strategies/' + Date.now() + '_' + Math.random().toString(36).slice(2,8) + '.' + ext;
+        const { error } = await supabase.storage.from('memory-files').upload(path, file);
+        if (error) continue;
+        const { data: urlData } = supabase.storage.from('memory-files').getPublicUrl(path);
+        uploaded.push({ name: file.name, url: urlData.publicUrl, type: file.type, size: file.size, path });
+      }
+      setEditStrategy(p => ({ ...p, files: [...(p.files||[]), ...uploaded] }));
+    } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+  };
+  const removeInlineFile = async (fileObj) => {
+    if (fileObj.path) await supabase.storage.from('memory-files').remove([fileObj.path]);
+    setEditStrategy(p => ({ ...p, files: (p.files||[]).filter(f => f.path !== fileObj.path) }));
+  };
 
   const saveStrategy = (d) => {
     const rec = { ...d, goalId: parseInt(d.goalId) || null, links: d.links || [], files: d.files || [] };
@@ -5410,92 +5461,127 @@ const StrategiesView = ({ db, setDB, navigate }) => {
   };
 
   const statusColor = (s) => ({ active: "var(--green)", completed: "var(--blue)", paused: "var(--amber)", cancelled: "var(--text-dim)" }[s] || "var(--text-sec)");
+  const formatStrategyFileSizeOld = (bytes) => { if (!bytes) return ''; if (bytes < 1024) return bytes + ' B'; if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB'; return (bytes/1048576).toFixed(1) + ' MB'; };
 
   return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18, maxWidth: 900 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div className="display" style={{ fontSize: 18, fontWeight: 700 }}>Strategies</div>
-        <button className="btn btn-blue" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => { setSD(blankStrategy()); setDrawer({ mode: "add" }); }}><Plus size={12} />Strategy</button>
+    <div className={`view-shell${sel ? " has-selection" : ""}`}>
+      <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+        <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Strategies</div>
+            <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setSD(blankStrategy());setDrawer({mode:"add"});}}><Plus size={12}/>Add</button>
+          </div>
+          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+            {["all","active","completed","paused","cancelled"].map(s=>(
+              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
+            ))}
+          </div>
+          <div style={{ position:"relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+            <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+          </div>
+        </div>
+        <div style={{ overflowY:"auto", flex:1 }}>
+          {filtered.map(s=>(
+            <div key={s.id} className="row-hover" onClick={()=>navigate("record",{type:"strategy",id:s.id})}
+              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===s.id?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center", gap:6 }}>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{s.name}</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{s.priority}</div>
+              </div>
+              <div style={{ display:"flex", gap:6, alignItems:"center", flexShrink:0 }}>
+                <Tag label={s.status}/>
+                <RowActions onEdit={()=>navigate("record",{type:"strategy",id:s.id})} onDelete={()=>setConfirm({id:s.id,label:s.name})}/>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Active Goals summary */}
-      {goals.filter(g => g.status === "active").length > 0 && <div className="card" style={{ padding: 14 }}>
-        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8 }}>ACTIVE GOALS</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {goals.filter(g => g.status === "active").map(g => {
-            const pct = g.target_value > 0 ? Math.min(100, Math.round((g.current_value / g.target_value) * 100)) : 0;
-            return (<div key={g.id} style={{ padding: "6px 12px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }}>
-              <div style={{ fontWeight: 600 }}>{g.name}</div>
-              <div style={{ color: "var(--text-sec)", fontSize: 10 }}>{pct}% — {g.current_value}/{g.target_value} {g.unit}</div>
-            </div>);
-          })}
-        </div>
-      </div>}
-
-      {/* Strategies list */}
-      {strategies.length === 0 && <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No strategies yet. Create one to start organizing your strategic initiatives.</div>}
-      {strategies.map(s => {
-        const goal = goals.find(g => g.id === s.goalId);
-        const linkedProjects = (db.projects || []).filter(p => p.strategyId === s.id);
-        const isExpanded = expandedId === s.id;
-        return (
-          <div key={s.id}>
-            <div className="card row-hover" style={{ padding: 16, borderLeft: "3px solid " + statusColor(s.status), cursor: "pointer", borderRadius: isExpanded ? "12px 12px 0 0" : undefined }} onClick={() => navigate("record",{type:"strategy",id:s.id})}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{s.name} <Tag label={s.priority} /></div>
-                  {goal && <div className="mono" style={{ fontSize: 10, color: "var(--purple)", marginTop: 2 }}>Goal: <EntityLink type="goal" id={goal.id} db={db} navigate={navigate}/></div>}
-                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 2 }}>{linkedProjects.length} linked project{linkedProjects.length !== 1 ? "s" : ""}{(s.files||[]).length > 0 && <> · <Paperclip size={9} style={{verticalAlign:"middle"}}/> {(s.files||[]).length} file{(s.files||[]).length>1?"s":""}</>}</div>
-                </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
-                  <Tag label={s.status} />
-                  <RowActions onEdit={() => { setSD({ ...s, goalId: String(s.goalId || ""), links: s.links || [], files: s.files || [] }); setDrawer({ mode: "edit" }); }} onDelete={() => setConfirm({ id: s.id, label: s.name })} />
-                </div>
+      <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+        {(strategy && editStrategy) ? (
+          <div className="slide-in">
+            <button className="mobile-back" onClick={()=>{setSel(null);navigate("strategies");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to strategies</button>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div style={{ minWidth:0 }}>
+                <div className="display" style={{ fontSize:20, fontWeight:800 }}>{strategy.name}</div>
+                {strategyGoal && <div style={{ color:"var(--purple)", fontSize:12, marginTop:2 }}>Goal: <EntityLink type="goal" id={strategyGoal.id} navigate={navigate}>{strategyGoal.name}</EntityLink></div>}
               </div>
-              {s.description && <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>{s.description}</div>}
-              <button className="btn-icon" title={isExpanded ? "Collapse" : "Expand"} onClick={(e)=>{e.stopPropagation();setExpandedId(isExpanded ? null : s.id)}} style={{ marginTop: 4 }}>
-                <ChevronDown size={14} color="var(--text-sec)" style={{ transform: isExpanded ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-              </button>
+              <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                <Tag label={strategy.priority}/><Tag label={strategy.status}/>
+                <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={saveInline}><Save size={12}/>Save</button>
+                <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:strategy.id,label:strategy.name})}><Trash2 size={12}/></button>
+              </div>
             </div>
 
-            {isExpanded && <div className="card-el" style={{ padding: 16, borderRadius: "0 0 12px 12px", borderTop: "1px dashed var(--border)" }}>
-              {/* Strategy Links */}
-              {(s.links || []).length > 0 && <div style={{ marginBottom: 14 }}>
-                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>LINKS</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {(s.links || []).map((lnk, li) => (<a key={li} href={lnk.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--blue)", textDecoration: "none" }} title={lnk.desc || lnk.url}><ExternalLink size={11} />{lnk.label || lnk.url}</a>))}
-                </div>
-              </div>}
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <Field label="Strategy Name"><Inp value={editStrategy.name} onChange={v=>setEditStrategy(p=>({...p,name:v}))}/></Field>
+              <Field label="Description"><Tex value={editStrategy.description||""} onChange={v=>setEditStrategy(p=>({...p,description:v}))}/></Field>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <Field label="Goal"><Sel value={editStrategy.goalId||""} onChange={v=>setEditStrategy(p=>({...p,goalId:v}))} options={[{value:"",label:"None"}, ...goals.map(g=>({value:String(g.id),label:g.name}))]}/></Field>
+                <Field label="Status"><Sel value={editStrategy.status} onChange={v=>setEditStrategy(p=>({...p,status:v}))} options={["active","completed","paused","cancelled"]}/></Field>
+                <Field label="Priority"><Sel value={editStrategy.priority} onChange={v=>setEditStrategy(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
+              </div>
+              <Field label="Notes"><Tex value={editStrategy.notes||""} onChange={v=>setEditStrategy(p=>({...p,notes:v}))}/></Field>
 
-              {/* Strategy Files */}
-              {(s.files || []).length > 0 && <div style={{ marginBottom: 14 }}>
-                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>FILES</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {(s.files || []).map((f, fi) => (<a key={fi} href={f.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--blue)", textDecoration: "none" }} title={f.name}><FileText size={11} />{f.name}</a>))}
+              {/* Links */}
+              <div style={{ marginTop:8 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                  <span style={{ fontSize:12, fontWeight:600, color:"var(--text-sec)" }}>Links</span>
+                  <button type="button" className="btn btn-ghost" style={{ fontSize:11, padding:"3px 8px" }} onClick={()=>setEditStrategy(p=>({...p,links:[...(p.links||[]),{url:"",label:"",desc:""}]}))}>+ Add Link</button>
                 </div>
-              </div>}
+                {(editStrategy.links||[]).map((lnk, li) => (<div key={li} style={{ display:"flex", gap:6, marginBottom:8 }}>
+                  <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>
+                    <input className="input" placeholder="Label" value={lnk.label||""} onChange={e=>{const links=[...editStrategy.links];links[li]={...links[li],label:e.target.value};setEditStrategy(p=>({...p,links}));}} style={{ padding:"6px 8px", fontSize:12 }}/>
+                    <input className="input" placeholder="https://..." value={lnk.url||""} onChange={e=>{const links=[...editStrategy.links];links[li]={...links[li],url:e.target.value};setEditStrategy(p=>({...p,links}));}} style={{ padding:"6px 8px", fontSize:12 }}/>
+                  </div>
+                  <button type="button" onClick={()=>setEditStrategy(p=>({...p,links:p.links.filter((_,i)=>i!==li)}))} style={{ background:"none", border:"none", color:"var(--red)", cursor:"pointer" }}><X size={14}/></button>
+                </div>))}
+              </div>
 
-              {/* Linked Projects */}
-              <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="strategy" entityId={s.id}/>
-              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>LINKED PROJECTS</div>
-              {linkedProjects.length > 0 ? linkedProjects.map(p => (
-                <div key={p.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
-                  <Briefcase size={12} color="var(--text-sec)" />
-                  <span style={{ fontSize: 12, flex: 1 }}><EntityLink type="project" id={p.id} db={db} navigate={navigate}/></span>
-                  <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{p.client}</span>
-                  <Tag label={p.status} />
-                  <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>{p.progress}%</span>
+              {/* Files */}
+              <div style={{ marginTop:14, borderTop:"1px solid var(--border)", paddingTop:14 }}>
+                <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>ATTACHED FILES</div>
+                {(editStrategy.files||[]).map((f, fi) => (
+                  <div key={fi} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 10px", borderRadius:6, background:"var(--bg-el)", border:"1px solid var(--border)", marginBottom:4 }}>
+                    <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"var(--blue)", textDecoration:"none", overflow:"hidden" }}>
+                      <FileText size={13}/><span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.name}</span>
+                      <span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>{f.size?'('+formatStrategyFileSizeOld(f.size)+')':''}</span>
+                    </a>
+                    <button onClick={()=>removeInlineFile(f)} style={{ background:"none", border:"none", color:"var(--red)", cursor:"pointer" }}><X size={12}/></button>
+                  </div>
+                ))}
+                <input ref={fileInputRef} type="file" multiple style={{ display:"none" }} onChange={inlineFileUpload}/>
+                <button className="btn btn-ghost" onClick={()=>fileInputRef.current?.click()} disabled={uploading} style={{ fontSize:12, marginTop:6 }}>
+                  {uploading ? <><Loader size={12} className="spin"/>Uploading…</> : <><Upload size={12}/>Upload Files</>}
+                </button>
+              </div>
+            </div>
+
+            {/* Linked Projects */}
+            <div className="card-el" style={{ padding:14, marginBottom:16 }}>
+              <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>LINKED PROJECTS ({linkedProjects.length})</div>
+              {linkedProjects.length > 0 ? linkedProjects.map(p=>(
+                <div key={p.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
+                  <Briefcase size={12} color="var(--text-sec)"/>
+                  <span style={{ fontSize:12, flex:1 }}><EntityLink type="project" id={p.id} navigate={navigate}>{p.name}</EntityLink></span>
+                  <Tag label={p.status}/>
+                  <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{p.progress}%</span>
                 </div>
-              )) : <div style={{ fontSize: 12, color: "var(--text-dim)", padding: "8px 0" }}>No projects linked yet. Link projects via the project edit form.</div>}
+              )) : <div style={{ fontSize:12, color:"var(--text-dim)" }}>No projects linked. Link via project edit form.</div>}
+            </div>
 
-              {s.notes && <div style={{ marginTop: 12, padding: 10, background: "var(--bg)", borderRadius: 8, fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>{s.notes}</div>}
-            </div>}
+            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="strategy" entityId={strategy.id}/>
           </div>
-        );
-      })}
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+            <Target size={44} style={{ opacity:.15, marginBottom:14 }}/>
+            <p style={{ fontSize:14 }}>Select a strategy</p>
+          </div>
+        )}
+      </div>
 
-      {/* Drawer */}
-      {drawer && <Drawer title={drawer.mode === "add" ? "New Strategy" : "Edit Strategy"} onClose={() => setDrawer(null)} onSave={() => saveStrategy(sd)}>
+      {drawer?.mode==="add" && <Drawer title="New Strategy" onClose={() => setDrawer(null)} onSave={() => saveStrategy(sd)}>
         <Field label="Strategy Name"><Inp value={sd.name} onChange={v => setSD(p => ({ ...p, name: v }))} /></Field>
         <Field label="Description"><Tex value={sd.description} onChange={v => setSD(p => ({ ...p, description: v }))} /></Field>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -5547,112 +5633,157 @@ const StrategiesView = ({ db, setDB, navigate }) => {
 const GOAL_STATUSES = ["active","completed","paused","cancelled"];
 const GOAL_CATEGORIES = ["professional","personal"];
 const blankGoal = () => ({ name:"", description:"", category:"professional", status:"active", target_value:0, current_value:0, unit:"", period:"annual", start_date:today(), end_date:"", priority_order:0, notes:"" });
-const GoalsView = ({ db, setDB, navigate }) => {
+const GoalsView = ({ db, setDB, navigate, focus, setFocus }) => {
+  const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [gd, setGD] = useState(blankGoal());
-  const [filterCat, setFilterCat] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("active");
-  const goals = useMemo(() => { let g = [...(db.goals || [])]; if (filterCat !== "all") g = g.filter(x => x.category === filterCat); if (filterStatus !== "all") g = g.filter(x => x.status === filterStatus); return g.sort((a, b) => (a.priority_order || 0) - (b.priority_order || 0)); }, [db.goals, filterCat, filterStatus]);
-  const profGoals = (db.goals || []).filter(g => g.category === "professional" && g.status === "active");
-  const persGoals = (db.goals || []).filter(g => g.category === "personal" && g.status === "active");
-  const avgProgress = goals.length ? Math.round(goals.reduce((s, g) => s + (g.target_value > 0 ? Math.min(100, (g.current_value / g.target_value) * 100) : 0), 0) / goals.length) : 0;
-  const saveGoal = (d) => { const rec = { ...d, target_value: parseInt(d.target_value) || 0, current_value: parseInt(d.current_value) || 0, priority_order: parseInt(d.priority_order) || 0 }; if (drawer.mode === "add") setDB(db => ({ ...db, goals: [...(db.goals || []), { ...rec, id: nextId(db.goals || []) }] })); else setDB(db => ({ ...db, goals: (db.goals || []).map(x => x.id === rec.id ? rec : x) })); setDrawer(null); };
-  const delGoal = (id) => { setDB(db => ({ ...db, goals: (db.goals || []).filter(x => x.id !== id) })); setConfirm(null); };
-  const moveGoal = (idx, dir) => { const sorted = [...goals]; const ni = idx + dir; if (ni < 0 || ni >= sorted.length) return; [sorted[idx], sorted[ni]] = [sorted[ni], sorted[idx]]; const upd = sorted.map((g, i) => ({ ...g, priority_order: i })); setDB(db => ({ ...db, goals: (db.goals || []).map(g => { const u = upd.find(x => x.id === g.id); return u || g; }) })); };
+  const [editGoal, setEditGoal] = useState(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("active");
+
+  useEffect(() => {
+    if (focus?.type === "goal" && focus.id) { setStatusFilter("all"); setSel(focus.id); setFocus(null); }
+  }, [focus]);
+
+  useEffect(() => {
+    if (sel) {
+      const g = (db.goals || []).find(x => x.id === sel);
+      if (g) setEditGoal({...g, target_value: String(g.target_value||0), current_value: String(g.current_value||0), priority_order: String(g.priority_order||0)});
+    } else setEditGoal(null);
+  }, [sel, db.goals]);
+
+  const filtered = (db.goals || []).filter(g => {
+    if (query && !g.name.toLowerCase().includes(query.toLowerCase())) return false;
+    if (statusFilter !== "all" && g.status !== statusFilter) return false;
+    return true;
+  }).sort((a, b) => (a.priority_order || 0) - (b.priority_order || 0));
+  const goal = sel ? (db.goals || []).find(g => g.id === sel) : null;
+  const goalStrategies = goal ? (db.strategies || []).filter(s => s.goalId === goal.id) : [];
+
+  const saveInline = () => {
+    if (!editGoal) return;
+    const rec = {...editGoal, target_value: parseInt(editGoal.target_value)||0, current_value: parseInt(editGoal.current_value)||0, priority_order: parseInt(editGoal.priority_order)||0};
+    setDB(d => ({...d, goals: (d.goals || []).map(x => x.id === rec.id ? rec : x)}));
+  };
+  const saveGoal = (data) => { const rec = {...data, target_value: parseInt(data.target_value)||0, current_value: parseInt(data.current_value)||0, priority_order: parseInt(data.priority_order)||0}; if (drawer.mode === "add") setDB(d => ({...d, goals: [...(d.goals || []), {...rec, id: nextId(d.goals || [])}]})); else setDB(d => ({...d, goals: (d.goals || []).map(x => x.id === rec.id ? rec : x)})); setDrawer(null); };
+  const delGoal = (id) => { setDB(d => ({...d, goals: (d.goals || []).filter(x => x.id !== id)})); if (sel === id) setSel(null); setConfirm(null); };
   const pctOf = (g) => g.target_value > 0 ? Math.min(100, Math.round((g.current_value / g.target_value) * 100)) : 0;
-  const catColor = (c) => c === "professional" ? "var(--blue)" : "var(--purple)";
-  const statusColor = (s) => ({ active: "var(--green)", completed: "var(--blue)", paused: "var(--amber)", cancelled: "var(--text-dim)" }[s] || "var(--text-sec)");
-  return (<div style={{padding:"2rem 2.5rem",maxWidth:1100,margin:"0 auto"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.5rem"}}>
-      <h2 style={{margin:0,fontSize:"1.5rem"}}>Goals & Priorities</h2>
-      <button onClick={()=>{setGD(blankGoal());setDrawer({mode:"add"})}} style={{background:"var(--accent)",color:"#fff",border:"none",borderRadius:8,padding:"0.5rem 1.2rem",cursor:"pointer",fontWeight:600}}>+ New Goal</button>
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1rem",marginBottom:"1.5rem"}}>
-      {[["Total Goals",(db.goals||[]).length],["Professional",profGoals.length],["Personal",persGoals.length],["Avg Progress",avgProgress+"%"]].map(([l,v],i)=>(<div key={i} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",textAlign:"center"}}><div style={{fontSize:"1.5rem",fontWeight:700}}>{v}</div><div style={{fontSize:"0.85rem",color:"var(--text-sec)"}}>{l}</div></div>))}
-    </div>
-    <div style={{display:"flex",gap:"0.75rem",marginBottom:"1.5rem",flexWrap:"wrap"}}>
-      <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{padding:"0.4rem 0.8rem",borderRadius:8,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)"}}>
-        <option value="all">All Categories</option><option value="professional">Professional</option><option value="personal">Personal</option>
-      </select>
-      <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{padding:"0.4rem 0.8rem",borderRadius:8,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)"}}>
-        <option value="all">All Statuses</option>{GOAL_STATUSES.map(s=>(<option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>))}
-      </select>
-    </div>
-    <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
-      {goals.length===0&&<div style={{textAlign:"center",padding:"3rem",color:"var(--text-sec)"}}>No goals found. Create one to get started!</div>}
-      {goals.map((g,idx)=>(<div key={g.id} className="row-hover" onClick={()=>navigate("record",{type:"goal",id:g.id})} style={{background:"var(--card)",borderRadius:12,padding:"1rem 1.2rem",border:"1px solid var(--border)",cursor:"pointer"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.5rem"}}>
-          <div style={{display:"flex",alignItems:"center",gap:"0.75rem"}}>
-            <div style={{display:"flex",flexDirection:"column",gap:2}}>
-              <button onClick={(e)=>{e.stopPropagation();moveGoal(idx,-1)}} disabled={idx===0} style={{background:"none",border:"none",cursor:idx===0?"default":"pointer",opacity:idx===0?0.3:1,fontSize:"0.7rem",padding:0}}>&#9650;</button>
-              <button onClick={(e)=>{e.stopPropagation();moveGoal(idx,1)}} disabled={idx===goals.length-1} style={{background:"none",border:"none",cursor:idx===goals.length-1?"default":"pointer",opacity:idx===goals.length-1?0.3:1,fontSize:"0.7rem",padding:0}}>&#9660;</button>
+
+  return (<div className={`view-shell${sel ? " has-selection" : ""}`}>
+    <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
+      <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div className="display" style={{ fontSize:16, fontWeight:700 }}>Goals</div>
+          <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setGD(blankGoal());setDrawer({mode:"add"});}}><Plus size={12}/>Add</button>
+        </div>
+        <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+          {["all", ...GOAL_STATUSES].map(s=>(
+            <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
+          ))}
+        </div>
+        <div style={{ position:"relative" }}>
+          <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
+          <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
+        </div>
+      </div>
+      <div style={{ overflowY:"auto", flex:1 }}>
+        {filtered.map(g=>(
+          <div key={g.id} className="row-hover" onClick={()=>navigate("record",{type:"goal",id:g.id})}
+            style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===g.id?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center", gap:6 }}>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{g.name}</div>
+              <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{g.category} · {pctOf(g)}%</div>
             </div>
-            <span style={{fontWeight:600,fontSize:"1.05rem"}}>{g.name}</span>
-            <span style={{fontSize:"0.75rem",padding:"2px 8px",borderRadius:20,background:catColor(g.category)+"22",color:catColor(g.category),fontWeight:600}}>{g.category}</span>
-            <span style={{fontSize:"0.75rem",padding:"2px 8px",borderRadius:20,background:statusColor(g.status)+"22",color:statusColor(g.status),fontWeight:600}}>{g.status}</span>
+            <div style={{ display:"flex", gap:6, alignItems:"center", flexShrink:0 }}>
+              <Tag label={g.status}/>
+              <RowActions onEdit={()=>navigate("record",{type:"goal",id:g.id})} onDelete={()=>setConfirm({id:g.id,label:g.name})}/>
+            </div>
           </div>
-          <div style={{display:"flex",gap:"0.5rem"}}>
-            <button onClick={(e)=>{e.stopPropagation();setGD({...g});setDrawer({mode:"edit"})}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--text)"}}>Edit</button>
-            <button onClick={(e)=>{e.stopPropagation();setConfirm(g)}} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"0.3rem 0.7rem",cursor:"pointer",fontSize:"0.8rem",color:"var(--red,#e53e3e)"}}>Del</button>
-          </div>
-        </div>
-        {g.description&&<div style={{fontSize:"0.85rem",color:"var(--text-sec)",marginBottom:"0.5rem"}}>{g.description}</div>}
-        {g.target_value>0&&<div style={{marginBottom:"0.5rem"}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.8rem",marginBottom:4}}>
-            <span>{g.current_value} / {g.target_value} {g.unit}</span><span style={{fontWeight:600}}>{pctOf(g)}%</span>
-          </div>
-          <div style={{background:"var(--bg)",borderRadius:6,height:8,overflow:"hidden"}}>
-            <div style={{width:pctOf(g)+"%",height:"100%",background:pctOf(g)>=100?"var(--green)":"var(--accent)",borderRadius:6,transition:"width 0.3s"}}/>
-          </div>
-        </div>}
-        <div style={{display:"flex",gap:"1rem",fontSize:"0.78rem",color:"var(--text-dim)",flexWrap:"wrap"}}>
-          {g.period&&<span>Period: {g.period}</span>}
-          {g.start_date&&<span>Start: {g.start_date}</span>}
-          {g.end_date&&<span>End: {g.end_date}</span>}
-          {g.notes&&<span>Notes: {g.notes.substring(0,60)}{g.notes.length>60?"...":""}</span>}
-        </div>
-      </div>))}
+        ))}
+      </div>
     </div>
-    {drawer&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",justifyContent:"flex-end"}} onClick={e=>{if(e.target===e.currentTarget)setDrawer(null)}}>
-      <div style={{width:420,maxWidth:"90vw",background:"var(--card)",height:"100%",overflowY:"auto",padding:"1.5rem",boxShadow:"-4px 0 24px rgba(0,0,0,0.2)"}}>
-        <h3 style={{marginTop:0}}>{drawer.mode==="add"?"New Goal":"Edit Goal"}</h3>
-        <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
-          <label>Name<input value={gd.name} onChange={e=>setGD({...gd,name:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-          <label>Description<textarea value={gd.description} onChange={e=>setGD({...gd,description:e.target.value})} rows={3} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4,resize:"vertical"}} /></label>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.75rem"}}>
-            <label>Category<select value={gd.category} onChange={e=>setGD({...gd,category:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}}>{GOAL_CATEGORIES.map(c=>(<option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>))}</select></label>
-            <label>Status<select value={gd.status} onChange={e=>setGD({...gd,status:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}}>{GOAL_STATUSES.map(s=>(<option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>))}</select></label>
+
+    <div className="detail-pane" style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
+      {(goal && editGoal) ? (
+        <div className="slide-in">
+          <button className="mobile-back" onClick={()=>{setSel(null);navigate("goals");}}><ChevronRight size={14} style={{ transform:"rotate(180deg)" }}/>Back to goals</button>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+            <div style={{ minWidth:0 }}>
+              <div className="display" style={{ fontSize:20, fontWeight:800 }}>{goal.name}</div>
+              <div style={{ color:"var(--text-sec)", fontSize:13, marginTop:2 }}>{goal.category} · {goal.period}</div>
+            </div>
+            <div className="header-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+              <Tag label={goal.status}/>
+              <button className="btn btn-blue" style={{ padding:"5px 12px", fontSize:12 }} onClick={saveInline}><Save size={12}/>Save</button>
+              <button className="btn btn-danger" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setConfirm({id:goal.id,label:goal.name})}><Trash2 size={12}/></button>
+            </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.75rem"}}>
-            <label>Target<input type="number" value={gd.target_value} onChange={e=>setGD({...gd,target_value:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-            <label>Current<input type="number" value={gd.current_value} onChange={e=>setGD({...gd,current_value:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-            <label>Unit<input value={gd.unit} onChange={e=>setGD({...gd,unit:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
+
+          {goal.target_value > 0 && <div className="card-el" style={{ padding:14, marginBottom:16 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, marginBottom:6 }}>
+              <span>{goal.current_value} / {goal.target_value} {goal.unit}</span>
+              <span style={{ fontWeight:700 }}>{pctOf(goal)}%</span>
+            </div>
+            <div style={{ background:"var(--bg)", borderRadius:6, height:10, overflow:"hidden" }}>
+              <div style={{ width:pctOf(goal)+"%", height:"100%", background:pctOf(goal)>=100?"var(--green)":"var(--blue)", transition:"width .3s" }}/>
+            </div>
+          </div>}
+
+          <div className="card" style={{ padding:20, marginBottom:16 }}>
+            <Field label="Goal Name"><Inp value={editGoal.name} onChange={v=>setEditGoal(p=>({...p,name:v}))}/></Field>
+            <Field label="Description"><Tex value={editGoal.description||""} onChange={v=>setEditGoal(p=>({...p,description:v}))}/></Field>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+              <Field label="Category"><Sel value={editGoal.category} onChange={v=>setEditGoal(p=>({...p,category:v}))} options={GOAL_CATEGORIES}/></Field>
+              <Field label="Status"><Sel value={editGoal.status} onChange={v=>setEditGoal(p=>({...p,status:v}))} options={GOAL_STATUSES}/></Field>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14 }}>
+              <Field label="Target"><Inp type="number" value={editGoal.target_value} onChange={v=>setEditGoal(p=>({...p,target_value:v}))}/></Field>
+              <Field label="Current"><Inp type="number" value={editGoal.current_value} onChange={v=>setEditGoal(p=>({...p,current_value:v}))}/></Field>
+              <Field label="Unit"><Inp value={editGoal.unit||""} onChange={v=>setEditGoal(p=>({...p,unit:v}))}/></Field>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14 }}>
+              <Field label="Period"><Sel value={editGoal.period} onChange={v=>setEditGoal(p=>({...p,period:v}))} options={["daily","weekly","monthly","quarterly","annual"]}/></Field>
+              <Field label="Start Date"><Inp type="date" value={editGoal.start_date||""} onChange={v=>setEditGoal(p=>({...p,start_date:v}))}/></Field>
+              <Field label="End Date"><Inp type="date" value={editGoal.end_date||""} onChange={v=>setEditGoal(p=>({...p,end_date:v}))}/></Field>
+            </div>
+            <Field label="Priority Order"><Inp type="number" value={editGoal.priority_order} onChange={v=>setEditGoal(p=>({...p,priority_order:v}))}/></Field>
+            <Field label="Notes"><Tex value={editGoal.notes||""} onChange={v=>setEditGoal(p=>({...p,notes:v}))}/></Field>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0.75rem"}}>
-            <label>Period<select value={gd.period} onChange={e=>setGD({...gd,period:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}}>{["daily","weekly","monthly","quarterly","annual"].map(p=>(<option key={p} value={p}>{p}</option>))}</select></label>
-            <label>Start<input type="date" value={gd.start_date} onChange={e=>setGD({...gd,start_date:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-            <label>End<input type="date" value={gd.end_date} onChange={e=>setGD({...gd,end_date:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-          </div>
-          <label>Priority Order<input type="number" value={gd.priority_order} onChange={e=>setGD({...gd,priority_order:e.target.value})} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4}} /></label>
-          <label>Notes<textarea value={gd.notes} onChange={e=>setGD({...gd,notes:e.target.value})} rows={3} style={{width:"100%",padding:"0.4rem",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",marginTop:4,resize:"vertical"}} /></label>
-          <div style={{display:"flex",gap:"0.75rem",marginTop:"0.5rem"}}>
-            <button onClick={()=>saveGoal(gd)} style={{flex:1,padding:"0.5rem",background:"var(--accent)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Save</button>
-            <button onClick={()=>setDrawer(null)} style={{flex:1,padding:"0.5rem",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",color:"var(--text)"}}>Cancel</button>
-          </div>
+
+          {goalStrategies.length > 0 && <div className="card-el" style={{ padding:14, marginBottom:16 }}>
+            <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>STRATEGIES ({goalStrategies.length})</div>
+            {goalStrategies.map(s=>(
+              <div key={s.id} style={{ display:"flex", gap:8, alignItems:"center", padding:"7px 0", borderBottom:"1px solid var(--border)" }}>
+                <span style={{ fontSize:12, flex:1 }}><EntityLink type="strategy" id={s.id} navigate={navigate}>{s.name}</EntityLink></span>
+                <Tag label={s.status}/>
+                <Tag label={s.priority}/>
+              </div>
+            ))}
+          </div>}
         </div>
-      </div>
-    </div>}
-    {confirm&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1001,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirm(null)}}>
-      <div style={{background:"var(--card)",borderRadius:12,padding:"1.5rem",maxWidth:400,width:"90%"}}>
-        <h3 style={{marginTop:0}}>Delete Goal?</h3>
-        <p>Are you sure you want to delete <strong>{confirm.name}</strong>?</p>
-        <div style={{display:"flex",gap:"0.75rem"}}>
-          <button onClick={()=>delGoal(confirm.id)} style={{flex:1,padding:"0.5rem",background:"var(--red,#e53e3e)",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Delete</button>
-          <button onClick={()=>setConfirm(null)} style={{flex:1,padding:"0.5rem",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",color:"var(--text)"}}>Cancel</button>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
+          <Award size={44} style={{ opacity:.15, marginBottom:14 }}/>
+          <p style={{ fontSize:14 }}>Select a goal</p>
         </div>
+      )}
+    </div>
+
+    {drawer?.mode==="add" && <Drawer title="New Goal" onClose={()=>setDrawer(null)} onSave={()=>saveGoal(gd)}>
+      <Field label="Goal Name"><Inp value={gd.name} onChange={v=>setGD(p=>({...p,name:v}))}/></Field>
+      <Field label="Description"><Tex value={gd.description} onChange={v=>setGD(p=>({...p,description:v}))}/></Field>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+        <Field label="Category"><Sel value={gd.category} onChange={v=>setGD(p=>({...p,category:v}))} options={GOAL_CATEGORIES}/></Field>
+        <Field label="Status"><Sel value={gd.status} onChange={v=>setGD(p=>({...p,status:v}))} options={GOAL_STATUSES}/></Field>
+        <Field label="Target"><Inp type="number" value={gd.target_value} onChange={v=>setGD(p=>({...p,target_value:v}))}/></Field>
+        <Field label="Current"><Inp type="number" value={gd.current_value} onChange={v=>setGD(p=>({...p,current_value:v}))}/></Field>
+        <Field label="Unit"><Inp value={gd.unit} onChange={v=>setGD(p=>({...p,unit:v}))}/></Field>
+        <Field label="Period"><Sel value={gd.period} onChange={v=>setGD(p=>({...p,period:v}))} options={["daily","weekly","monthly","quarterly","annual"]}/></Field>
       </div>
-    </div>}
+      <Field label="Notes"><Tex value={gd.notes} onChange={v=>setGD(p=>({...p,notes:v}))}/></Field>
+    </Drawer>}
+    {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>delGoal(confirm.id)} onCancel={()=>setConfirm(null)}/>}
   </div>);
 };
 
@@ -5903,6 +6034,9 @@ const RecordDetailView = ({ db, setDB, record, navigate, setFocus }) => {
   if (type === "company")  return <CompaniesView  db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
   if (type === "campaign") return <MarketingView  db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
   if (type === "project")  return <ProjectsView   db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "deal")     return <DealsView      db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "goal")     return <GoalsView      db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "strategy") return <StrategiesView db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
 
   const id = record?.id;
   const cfg = DOCUMENT_ENTITY_TYPES.find(c => c.type === type);
@@ -6163,12 +6297,12 @@ export default function App() {
     deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     marketing:    <MarketingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    goals:        <GoalsView db={db} setDB={setDB} navigate={navigate}/>,
+    goals:        <GoalsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate}/>,
     record:      <RecordDetailView db={db} setDB={setDB} record={recordTarget} navigate={navigate} setFocus={setFocus}/>,
     ai_memories: <AIMemoriesView db={db} setDB={setDB} navigate={navigate}/>,
     multi_llm:   <MultiLLMView session={session}/>,
-    strategies:   <StrategiesView db={db} setDB={setDB} navigate={navigate}/>,
+    strategies:   <StrategiesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voitra_gate:  <VoitraGateView/>,
     payments:      <PaymentsView db={db} setDB={setDB} navigate={navigate}/>,
     projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
