@@ -5,7 +5,7 @@ import {Brain, Users, Megaphone, Briefcase, DollarSign, Mic,
   Phone, Building, Search, BarChart2, Calendar, Loader, Shield,
   ChevronRight, Eye, MicOff, ArrowUp, ArrowDown, Inbox, RefreshCw,
   FileText, Trash2, Pencil, X, Save, MoreVertical, Check, Sparkles, Hash,
-  MessageSquare, Send, Paperclip, Loader2, Copy,
+  MessageSquare, Send, Paperclip, Loader2, Copy, Mail,
   Linkedin, ExternalLink, Filter, SortAsc, ChevronDown, CreditCard, Globe, Newspaper,
   Star, ArrowRightCircle, Activity, Award, Building2, BookOpen, ChevronUp, Upload} from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -1008,10 +1008,6 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [query, setQuery] = useState("");
   const [catFilter, setCatFilter] = useState("all");
-  const [gmailState, setGmailState] = useState({ loading:false, signals:[], synthesis:"", scannedAt:null, error:null });
-  const [showGmail, setShowGmail] = useState(false);
-  const [pasteMode, setPasteMode] = useState(false);
-  const [pasteText, setPasteText] = useState("");
   const [editContact, setEditContact] = useState(null);
 
   // Sync editContact when selection changes
@@ -1035,6 +1031,7 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
   const contact = sel ? db.contacts.find(c=>c.id===sel) : null;
   const contactDeals = contact ? db.deals.filter(d=>d.contactId===contact.id) : [];
   const contactTasks = contact ? db.tasks.filter(t=>t.contactId===contact.id && !t.done) : [];
+  const contactCompany = contact && contact.companyId ? db.companies.find(c=>c.id===contact.companyId) : null;
 
   const save = () => {
     if (drawer.mode==="add") {
@@ -1072,55 +1069,6 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
     logEvent(db, setDB, "contact", contact.id, "converted", `${contact.name} converted from ${contact.category} to ${toCategory}`);
   };
 
-  const scanGmail = async () => {
-    setShowGmail(true); setSel(null);
-    setGmailState(s=>({...s,loading:true,error:null,signals:[],synthesis:"",scannedAt:null}));
-    try {
-      const cutoff = new Date(Date.now()-30*24*60*60*1000);
-      const ds = `${cutoff.getFullYear()}/${String(cutoff.getMonth()+1).padStart(2,"0")}/${String(cutoff.getDate()).padStart(2,"0")}`;
-      const res = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:4000,
-          system:`You are the CRM Intelligence Agent for Mendy Ezagui, an independent AI operations consultant. Search Gmail for ALL emails and meeting invites from the past 30 days (after:${ds}). Return ONLY a valid JSON array: [{"subject":"","date":"YYYY-MM-DD","contact":{"name":"","email":"","company":"","role":"","phone":""},"contactType":"lead|partner|vendor|existing-customer","accountContext":"","activitySummary":"","bdOpportunity":"","taskTitle":"","taskDueDate":"YYYY-MM-DD","taskPriority":"critical|high|medium|low","taskGuidance":"","priority":"high|medium|low"}]`,
-          messages:[{role:"user",content:"Search my Gmail for the past 30 days. Extract every person I communicated with. Return the full JSON array."}],
-          mcp_servers:[{type:"url",url:"https://gmail.mcp.claude.com/mcp",name:"gmail"}]
-        })
-      });
-      const data = await res.json();
-      const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
-      let signals = [];
-      try { const m = text.match(/\[[\s\S]*\]/); if (m) signals = JSON.parse(m[0]); } catch { signals = []; }
-      let synthesis = signals.length > 0
-        ? await callClaude("You are Mendy's Orchestrator. Revenue target $800K.", `Gmail scan found ${signals.length} contacts. Top action, most at-risk, strongest lead. 3 sentences.`, 400)
-        : "No contacts found. Connect Gmail under Claude Settings → Integrations.";
-      setGmailState({loading:false,signals:signals.map(s=>({...s,imported:false})),synthesis,scannedAt:new Date().toLocaleTimeString(),error:null});
-    } catch(e) {
-      setGmailState(s=>({...s,loading:false,error:"Gmail scan failed. Connect Gmail under Claude Settings → Integrations."}));
-    }
-  };
-
-  const importContact = (signal) => {
-    const alreadyExists = db.contacts.some(c => c.email && signal.contact.email && c.email.toLowerCase()===signal.contact.email.toLowerCase());
-    if (alreadyExists) { alert(`${signal.contact.name} is already in CRM.`); return; }
-    const catMap = {"existing-customer":"customer","lead":"customer_lead","partner":"partner_lead","vendor":"vendor"};
-    const newContact = { id:nextId(db.contacts), name:signal.contact.name||"Unknown", co:signal.contact.company||"", role:signal.contact.role||"", email:signal.contact.email||"", phone:signal.contact.phone||"", status:signal.contactType==="existing-customer"?"client":"prospect", score:signal.contactType==="existing-customer"?80:signal.contactType==="lead"?55:signal.contactType==="partner"?70:50, tags:[signal.contactType], lastTouch:today(), notes:signal.accountContext||"", category:catMap[signal.contactType]||"customer_lead", companyId:null };
-    const newTask = { id:nextId(db.tasks), title:signal.taskTitle||`Follow up with ${signal.contact.name}`, projectId:null, contactId:newContact.id, companyId:null, dealId:null, due:signal.taskDueDate||new Date(Date.now()+3*86400000).toISOString().split("T")[0], done:false, priority:signal.taskPriority||"medium", assignedTo:"CRM Agent", notes:signal.taskGuidance||"", status:"todo", category:"follow_up", source:"agent:gmail_scan", recurrence:"none" };
-    setDB(d => ({...d, contacts:[...d.contacts,newContact], tasks:[...d.tasks,newTask], agentLogs:[{id:nextId(d.agentLogs), agent:"CRM Agent", type:"activity", message:`[IMPORTED] ${signal.contact.name} (${signal.contact.company})`, ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), priority:signal.taskPriority||"medium"}, ...d.agentLogs]}));
-    setGmailState(s => ({...s, signals:s.signals.map(sg=>sg===signal?{...sg,imported:true}:sg)}));
-  };
-
-  const pasteImport = () => {
-    try {
-      const raw = pasteText.trim();
-      const match = raw.match(/\[[\s\S]*\]/);
-      const signals = JSON.parse(match ? match[0] : raw);
-      if (!Array.isArray(signals)) throw new Error("Not an array");
-      setGmailState({ loading:false, signals:signals.map(s=>({...s,imported:false})), synthesis:`Paste import: ${signals.length} contacts loaded.`, scannedAt:new Date().toLocaleTimeString(), error:null });
-      setShowGmail(true); setSel(null); setPasteMode(false); setPasteText("");
-    } catch { alert("Could not parse JSON."); }
-  };
-
   return (
     <div style={{ display:"flex", height:"100%", overflow:"hidden" }}>
       {/* LEFT LIST */}
@@ -1130,15 +1078,6 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Contacts</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"add",data:blankContact()})}><Plus size={12}/>Add</button>
           </div>
-          <button className="btn btn-gmail" style={{ width:"100%", justifyContent:"center", marginBottom:6, fontSize:12, padding:"7px 10px" }} onClick={scanGmail} disabled={gmailState.loading}>
-            {gmailState.loading?<><Loader size={13} className="spin" style={{color:"#EA4335"}}/>Scanning…</>:<>
-              <svg width="13" height="13" viewBox="0 0 24 24"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z" fill="#EA4335"/></svg>
-              Scan Gmail — 30 Days
-            </>}
-          </button>
-          <button className="btn btn-ghost" style={{ width:"100%", justifyContent:"center", marginBottom:8, fontSize:11, padding:"5px 10px" }} onClick={()=>setPasteMode(true)}>
-            <FileText size={11}/>Paste JSON from Claude
-          </button>
           {/* Category filter chips */}
           <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
             {["all",...CONTACT_CATEGORIES].map(cat=>(
@@ -1154,8 +1093,8 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(c=>(
-            <div key={c.id} className="row-hover" onClick={()=>{setSel(c.id);setShowGmail(false);}}
-              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id&&!showGmail?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div key={c.id} className="row-hover" onClick={()=>navigate("record",{type:"contact",id:c.id})}
+              style={{ padding:"12px 14px", borderBottom:"1px solid var(--border)", cursor:"pointer", background:sel===c.id?"var(--bg-hover)":"transparent", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div style={{ minWidth:0 }}>
                 <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                   <span style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{c.name}</span>
@@ -1174,40 +1113,7 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
 
       {/* RIGHT PANEL */}
       <div style={{ flex:1, overflowY:"auto", padding:24, background:"var(--bg)" }}>
-        {showGmail ? (
-          <div className="slide-in">
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z" fill="#EA4335"/></svg>
-                <span className="display" style={{ fontSize:18, fontWeight:700 }}>Gmail Intelligence — 30 Days</span>
-              </div>
-              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={scanGmail} disabled={gmailState.loading}><RefreshCw size={12}/>Rescan</button>
-            </div>
-            {gmailState.loading && <div className="card" style={{ padding:44, textAlign:"center" }}><Loader size={30} className="spin" style={{ color:"var(--blue)", margin:"0 auto 16px" }}/><p style={{ fontSize:13, color:"var(--text-sec)" }}>CRM Agent scanning Gmail…</p></div>}
-            {gmailState.error && <div className="card" style={{ padding:18, borderLeft:"3px solid var(--red)", marginBottom:14 }}><AlertCircle size={14} color="var(--red)"/><span style={{ fontSize:13, color:"var(--red)" }}>{gmailState.error}</span></div>}
-            {!gmailState.loading && gmailState.synthesis && <div className="card" style={{ padding:16, marginBottom:18, borderLeft:"3px solid var(--blue)" }}><p style={{ fontSize:13, lineHeight:1.65 }}>{gmailState.synthesis}</p></div>}
-            {!gmailState.loading && gmailState.signals.map((sig,i) => (
-              <div key={i} className="card" style={{ padding:18, marginBottom:12, borderLeft:`3px solid var(${({"existing-customer":"--green","lead":"--blue","partner":"--purple","vendor":"--amber"})[sig.contactType]||"--text-sec"})`, opacity:sig.imported?0.55:1 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
-                  <div>
-                    <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:3 }}>
-                      <span style={{ fontSize:14, fontWeight:700 }}>{sig.contact?.name||"Unknown"}</span>
-                      <Tag label={sig.contactType}/>{sig.imported&&<span className="mono" style={{ fontSize:10, color:"var(--green)" }}>✓ imported</span>}
-                    </div>
-                    <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{sig.contact?.role} · {sig.contact?.company} · {sig.date}</div>
-                  </div>
-                  <Tag label={sig.taskPriority||"medium"}/>
-                </div>
-                {sig.activitySummary&&<div style={{ padding:"8px 11px", background:"var(--bg-el)", borderRadius:6, fontSize:12, marginBottom:8, lineHeight:1.5 }}>{sig.activitySummary}</div>}
-                {sig.taskGuidance&&<div style={{ padding:"10px 12px", background:"rgba(0,119,204,0.06)", border:"1px solid rgba(0,119,204,0.15)", borderRadius:6, marginBottom:10 }}><div className="mono" style={{ fontSize:9, color:"var(--blue)", marginBottom:5 }}>TASK · {sig.taskTitle}</div><p style={{ fontSize:12, lineHeight:1.6 }}>{sig.taskGuidance}</p></div>}
-                <div style={{ display:"flex", gap:6 }}>
-                  {!sig.imported ? <button className="btn btn-blue" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>importContact(sig)}><Plus size={11}/>Import Contact + Task</button>
-                  : <span style={{ fontSize:11, color:"var(--green)", display:"flex", alignItems:"center", gap:4 }}><CheckCircle size={12}/>Imported</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (contact && editContact) ? (
+        {(contact && editContact) ? (
           <div className="slide-in">
             {/* Header with name and actions */}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
@@ -1238,10 +1144,36 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
               </div>
             )}
 
+            {/* Clickable contact links */}
+            {(contact.linkedin_url || contact.email || contact.phone) && (
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
+                {contact.linkedin_url && <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="card-el" style={{ padding:"8px 12px", display:"flex", gap:6, alignItems:"center", fontSize:12, color:"#0A66C2", textDecoration:"none" }}><Linkedin size={13} color="#0A66C2"/>LinkedIn</a>}
+                {contact.email && <a href={`mailto:${contact.email}`} className="card-el" style={{ padding:"8px 12px", display:"flex", gap:6, alignItems:"center", fontSize:12, color:"var(--blue)", textDecoration:"none" }}><Mail size={13}/>{contact.email}</a>}
+                {contact.phone && <a href={`tel:${contact.phone}`} className="card-el" style={{ padding:"8px 12px", display:"flex", gap:6, alignItems:"center", fontSize:12, color:"var(--blue)", textDecoration:"none" }}><Phone size={13}/>{contact.phone}</a>}
+              </div>
+            )}
+
             {/* Inline editable form */}
             <div className="card" style={{ padding:20, marginBottom:16 }}>
               <ContactForm data={editContact} onChange={setEditContact} companies={db.companies} contacts={db.contacts} campaigns={db.campaigns} setDB={setDB} db={db}/>
             </div>
+
+            {/* Company snapshot — read-only */}
+            {contactCompany && (
+              <div className="card-el" style={{ padding:14, marginBottom:16 }}>
+                <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:8 }}>COMPANY PROFILE</div>
+                <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:6, flexWrap:"wrap" }}>
+                  <Building2 size={14} color="var(--text-sec)"/>
+                  <span style={{ fontSize:14, fontWeight:600 }}><EntityLink type="company" id={contactCompany.id} navigate={navigate}>{contactCompany.name}</EntityLink></span>
+                  <Tag label={contactCompany.status}/>
+                  {contactCompany.industry && <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{contactCompany.industry}</span>}
+                </div>
+                <div style={{ display:"flex", gap:14, flexWrap:"wrap", fontSize:12 }}>
+                  {contactCompany.website && <a href={contactCompany.website.startsWith("http")?contactCompany.website:`https://${contactCompany.website}`} target="_blank" rel="noopener noreferrer" style={{ color:"var(--blue)", display:"flex", gap:4, alignItems:"center" }}><Globe size={11}/>{contactCompany.website}</a>}
+                  {contactCompany.linkedin_url && <a href={contactCompany.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ color:"#0A66C2", display:"flex", gap:4, alignItems:"center" }}><Linkedin size={11}/>LinkedIn</a>}
+                </div>
+              </div>
+            )}
 
             {/* Related Tasks */}
             {contactTasks.length>0&&<div style={{ marginBottom:16 }}>
@@ -1294,7 +1226,7 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
         ) : (
           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)" }}>
             <Users size={44} style={{ opacity:.15, marginBottom:14 }}/>
-            <p style={{ fontSize:14 }}>Select a contact or scan Gmail</p>
+            <p style={{ fontSize:14 }}>Select a contact</p>
           </div>
         )}
       </div>
@@ -1303,18 +1235,6 @@ const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
         <ContactForm data={drawer.data} onChange={data=>setDrawer(d=>({...d,data}))} companies={db.companies} contacts={db.contacts} campaigns={db.campaigns} setDB={setDB} db={db}/>
       </Drawer>}
       {confirm&&<ConfirmDelete label={confirm.label} onConfirm={()=>del(confirm.id)} onCancel={()=>setConfirm(null)}/>}
-      {pasteMode&&(
-        <div className="confirm-overlay" onClick={()=>setPasteMode(false)}>
-          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:14, padding:28, width:"min(600px,92vw)", boxShadow:"var(--shadow-lg)", display:"flex", flexDirection:"column", gap:14 }}>
-            <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700 }}>Paste Gmail JSON from Claude</div>
-            <textarea className="input" placeholder="Paste the JSON array…" value={pasteText} onChange={e=>setPasteText(e.target.value)} style={{ minHeight:180, fontSize:12, fontFamily:"var(--font-m)" }}/>
-            <div style={{ display:"flex", gap:8 }}>
-              <button className="btn btn-blue" onClick={pasteImport} style={{ flex:1, justifyContent:"center" }} disabled={!pasteText.trim()}><Plus size={13}/>Load Contacts</button>
-              <button className="btn btn-ghost" onClick={()=>{setPasteMode(false);setPasteText("");}}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -1403,7 +1323,7 @@ const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
               </div>
               <div style={{ display:"flex", gap:6 }}>
                 <Tag label={company.status}/>
-                <button className="btn btn-ghost" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"edit",data:{...company}})}><Pencil size={12}/>Edit</button>
+                <button className="btn btn-blue" style={{ padding:"6px 14px", fontSize:12 }} onClick={()=>setDrawer({mode:"edit",data:{...company}})}><Pencil size={12}/>Edit Company</button>
               </div>
             </div>
 
