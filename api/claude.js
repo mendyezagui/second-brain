@@ -6,20 +6,31 @@
 // Agent") is upgraded here to use Claude's server-side web_search tool, so it
 // returns REAL, current news grounded in live search results instead of
 // hallucinated articles. Every other Claude call passes through untouched.
+//
+// The scan is deliberately bounded (few companies, few searches) so the
+// synchronous request returns well within the serverless time budget — an
+// unbounded search over the whole company list times out (504), which the
+// client surfaces as "News scan failed".
 
 // Web search + model latency can exceed the default 10s budget.
 export const config = { maxDuration: 60 };
 
 const NEWS_MARKER = "News Intelligence Agent";
 
+// How many companies / searches a single scan is allowed to do. Kept small so
+// the request finishes fast and reliably; click again (or use a future cron)
+// for broader coverage.
+const NEWS_MAX_COMPANIES = 5;
+const NEWS_MAX_SEARCHES = 5;
+
 // Appended to the News Engine's system prompt when web search is enabled.
 const NEWS_AUGMENT = `
 
-TOOLS: You have a web_search tool — you MUST use it. Only report news you can verify from a real, recent search result.
+TOOLS: You have a web_search tool — you MUST use it. Only report news you can verify from a real, recent search result. Work quickly and do not over-search.
 RULES:
+- Pick only the ${NEWS_MAX_COMPANIES} MOST significant companies from the list — one verified, recent item each. Ignore the rest.
 - Prefer items from roughly the last 30 days; never invent or guess.
-- Cover up to 12 of the most significant companies from the list, one verified item each.
-- If you cannot find a real, recent item for a company, omit that company entirely.
+- If you cannot quickly find a real, recent item for a company, skip it and move on.
 - Use the EXACT company name from the list for "companyName" (so it matches the CRM).
 - Set "published_date" to the article's real date in YYYY-MM-DD form.
 - Append the real source URL to the END of each "summary", formatted exactly as: " Source: <url>".
@@ -47,11 +58,11 @@ export default async function handler(req, res) {
       // work, and tighten the instructions so results are real and parseable.
       body = {
         ...body,
-        max_tokens: Math.max(Number(body.max_tokens) || 0, 8000),
+        max_tokens: Math.max(Number(body.max_tokens) || 0, 6000),
         system: system + NEWS_AUGMENT,
         tools: [
           ...(Array.isArray(body.tools) ? body.tools : []),
-          { type: "web_search_20250305", name: "web_search", max_uses: 8 },
+          { type: "web_search_20250305", name: "web_search", max_uses: NEWS_MAX_SEARCHES },
         ],
       };
     }
