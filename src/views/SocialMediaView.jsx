@@ -1,20 +1,17 @@
-import { useState, useEffect, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
-import { Calendar, Search, ExternalLink, RefreshCw, Loader2, ChevronRight, AlertCircle, Copy, Check, Filter, BookOpen, Save, X } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { supabase } from "../lib/supabase";
+import { Calendar, Search, ExternalLink, RefreshCw, Loader2, ChevronRight, AlertCircle, Copy, Check, Filter, BookOpen, X, Link2 } from "lucide-react";
 
-/* ── Standalone Supabase client ──
-   contentCalendar is NOT part of the central DB_TABLES / loadAllFromDB pipeline,
-   so this view reads + writes the table directly. It deliberately does not
-   touch the global db/setDB sync engine. Second Brain is the source of truth. */
-const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || "";
-const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-const SB_READY = SUPA_URL.startsWith("https://") && SUPA_KEY.length > 10;
-const sb = SB_READY ? createClient(SUPA_URL, SUPA_KEY) : null;
+/* ── Social Media view ──
+   Reads/writes contentCalendar directly via the shared (authenticated) client.
+   Using the shared client (not a separate anon client) means RLS-protected
+   tables like ai_memories are readable as the logged-in user.
+   Defaults to "upcoming" (everything not Posted), sorted next-up first.
+   Detail pane is fully editable inline; edits persist to Supabase on blur/change. */
 
-const STATUS_OPTIONS = ["Draft", "Script Ready", "Scheduled", "Posted"];
-const TYPE_OPTIONS = ["Video", "Text Post", "Article", "Carousel"];
+const STATUS_OPTIONS  = ["Draft", "Script Ready", "Scheduled", "Posted"];
+const TYPE_OPTIONS    = ["Video", "Carousel", "Text Post", "Article"];
 const ACCOUNT_OPTIONS = ["Personal", "Voitra", "Aventary"];
-const DEFAULT_STATUS = STATUS_OPTIONS.filter(s => s !== "Posted"); // "upcoming" = everything not posted
 
 const STATUS_COLORS = {
   "Draft": "var(--text-sec)",
@@ -34,11 +31,8 @@ const ACCOUNT_COLORS = {
   "Aventary": "var(--amber)",
 };
 const colorFor = (map, k) => map[k] || "var(--text-sec)";
-
-/* content fields edited via the Save bar (attributes save instantly, separately) */
-const CONTENT_KEYS = ["videoTitle", "postDate", "postTime", "postingDay", "week", "videoNumber",
-  "stickyNote", "screenshotLine", "script", "caption", "engagementNotes", "dailyEngagement",
-  "preRecordChecklist", "postRecordChecklist", "campaign", "track", "creditTo"];
+const uniq = (arr) => Array.from(new Set(arr));
+const NONE = "—";
 
 const Pill = ({ label, color }) => {
   if (!label) return null;
@@ -49,60 +43,67 @@ const Pill = ({ label, color }) => {
   );
 };
 
-const FieldLabel = ({ children }) => (
-  <div className="form-label" style={{ marginBottom: 4 }}>{children}</div>
-);
-
-const TextField = ({ value, onChange, onBlur, placeholder, mono }) => (
-  <input className="input" value={value ?? ""} placeholder={placeholder || ""}
-    onChange={e => onChange(e.target.value)} onBlur={onBlur}
-    style={{ fontSize: 13, fontFamily: mono ? "var(--font-m)" : "inherit" }} />
-);
-
-const AreaField = ({ value, onChange, rows, mono }) => (
-  <textarea className="input" value={value ?? ""} rows={rows || 4}
-    onChange={e => onChange(e.target.value)}
-    style={{ fontSize: 13, lineHeight: 1.6, resize: "vertical", whiteSpace: "pre-wrap",
-      fontFamily: mono ? "var(--font-m)" : "inherit" }} />
-);
-
-const ColoredSelect = ({ value, options, onChange, colorMap, placeholder, disabled }) => {
-  const c = colorFor(colorMap, value);
+/* Inline editable single-line input. Commits on blur / Enter if changed. */
+function EditableText({ value, onCommit, placeholder, type = "text", mono, style }) {
+  const [v, setV] = useState(value ?? "");
+  useEffect(() => { setV(value ?? ""); }, [value]);
   return (
-    <select value={value || ""} disabled={disabled} onChange={e => onChange(e.target.value || null)}
-      style={{ appearance: "auto", padding: "4px 8px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer",
-        color: value ? c : "var(--text-sec)", fontFamily: "var(--font-m)",
-        background: value ? `color-mix(in srgb, ${c} 12%, transparent)` : "transparent",
-        border: `1px solid ${value ? `color-mix(in srgb, ${c} 32%, transparent)` : "var(--border)"}` }}>
-      <option value="">{placeholder || "—"}</option>
-      {options.map(o => <option key={o} value={o} style={{ color: "var(--text)", background: "var(--bg-card)" }}>{o}</option>)}
+    <input
+      className="input"
+      type={type === "number" ? "number" : type === "date" ? "date" : "text"}
+      value={v}
+      placeholder={placeholder}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { if (String(value ?? "") !== String(v)) onCommit(v); }}
+      onKeyDown={(e) => { if (e.key === "Enter" && type !== "textarea") e.currentTarget.blur(); }}
+      style={{ fontSize: 13, fontFamily: mono ? "var(--font-m)" : "inherit", ...style }}
+    />
+  );
+}
+
+/* Inline editable multi-line textarea with auto-grow. */
+function EditableArea({ value, onCommit, placeholder, mono }) {
+  const [v, setV] = useState(value ?? "");
+  const ref = useRef(null);
+  const grow = (el) => { if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 640) + "px"; } };
+  useEffect(() => { setV(value ?? ""); }, [value]);
+  useEffect(() => { grow(ref.current); }, [v]);
+  return (
+    <textarea
+      ref={ref}
+      className="input"
+      value={v}
+      placeholder={placeholder}
+      onChange={(e) => { setV(e.target.value); grow(e.target); }}
+      onBlur={() => { if ((value ?? "") !== v) onCommit(v); }}
+      style={{ width: "100%", resize: "vertical", minHeight: 84, lineHeight: 1.6, fontSize: 13, whiteSpace: "pre-wrap", fontFamily: mono ? "var(--font-m)" : "inherit", padding: "10px 12px" }}
+    />
+  );
+}
+
+/* Colored inline picklist (status / type / account). */
+function Picklist({ value, options, colorMap, onChange, disabled, placeholder }) {
+  const color = colorFor(colorMap, value);
+  return (
+    <select
+      value={value || ""}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value || null)}
+      style={{ appearance: "auto", padding: "3px 8px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer", color, background: `color-mix(in srgb, ${color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 32%, transparent)`, fontFamily: "var(--font-m)" }}
+    >
+      <option value="" style={{ color: "var(--text)", background: "var(--bg-card)" }}>{placeholder || NONE}</option>
+      {options.map((o) => <option key={o} value={o} style={{ color: "var(--text)", background: "var(--bg-card)" }}>{o}</option>)}
       {value && !options.includes(value) && <option value={value} style={{ color: "var(--text)", background: "var(--bg-card)" }}>{value}</option>}
     </select>
   );
-};
-
-function FilterGroup({ title, options, selected, onToggle, colorMap }) {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <FieldLabel>{title}</FieldLabel>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {options.map(o => {
-          const on = selected.includes(o);
-          const c = colorFor(colorMap, o);
-          return (
-            <button key={o} onClick={() => onToggle(o)} style={{ display: "inline-flex", alignItems: "center", gap: 5,
-              padding: "5px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer", fontWeight: on ? 600 : 500,
-              border: `1px solid ${on ? `color-mix(in srgb, ${c} 50%, transparent)` : "var(--border)"}`,
-              background: on ? `color-mix(in srgb, ${c} 14%, transparent)` : "transparent",
-              color: on ? c : "var(--text-sec)" }}>
-              {on && <Check size={12} />} {o}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
+
+const EditRow = ({ label, children }) => (
+  <div style={{ marginTop: 16 }}>
+    <div className="form-label">{label}</div>
+    {children}
+  </div>
+);
 
 export default function SocialMediaView() {
   const [rows, setRows] = useState(null);     // null = loading
@@ -111,54 +112,66 @@ export default function SocialMediaView() {
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(0);
 
-  // filters
-  const [statusSel, setStatusSel] = useState(DEFAULT_STATUS); // default: hide Posted
-  const [typeSel, setTypeSel] = useState([]);
-  const [accountSel, setAccountSel] = useState([]);
-  const [showFilters, setShowFilters] = useState(false);
+  // Filters (multi-select). null until seeded from data on first load.
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [statusSel, setStatusSel] = useState(null);
+  const [typeSel, setTypeSel] = useState(null);
+  const [accountSel, setAccountSel] = useState(null);
 
-  // editing
-  const [form, setForm] = useState(null);
-  const [orig, setOrig] = useState(null);
-  const [saving, setSaving] = useState(null);     // tag of field currently saving
-  const [savedFlash, setSavedFlash] = useState(null);
-
-  // reference drawer (ICP + voice from ai_memories)
+  // Reference drawer (ICP + voice from ai_memories)
   const [refOpen, setRefOpen] = useState(false);
-  const [refData, setRefData] = useState(null);
+  const [refMem, setRefMem] = useState(null);
+  const [refErr, setRefErr] = useState(null);
+
+  const ready = supabase != null;
 
   const load = async () => {
-    if (!sb) { setErr("Supabase env not configured (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)."); setRows([]); return; }
+    if (!ready) { setErr("Supabase env not configured."); setRows([]); return; }
     setRefreshing(true);
-    const { data, error } = await sb.from("contentCalendar").select("*");
+    const { data, error } = await supabase.from("contentCalendar").select("*").order("id", { ascending: true });
     if (error) { setErr(error.message); setRows([]); }
     else { setErr(null); setRows(data || []); }
     setRefreshing(false);
   };
   useEffect(() => { load(); }, []);
 
-  // init the editable form whenever selection changes
+  // Seed filter selections once data arrives: all options selected EXCEPT "Posted".
   useEffect(() => {
-    if (sel == null) { setForm(null); setOrig(null); return; }
-    const row = (rows || []).find(r => r.id === sel);
-    if (row) { setForm({ ...row }); setOrig({ ...row }); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel]);
+    if (rows && statusSel === null) {
+      const sU = uniq([...STATUS_OPTIONS, ...rows.map((r) => r.status || NONE)]);
+      const tU = uniq([...TYPE_OPTIONS, ...rows.map((r) => r.contentType || NONE)]);
+      const aU = uniq([...ACCOUNT_OPTIONS, ...rows.map((r) => r.account || NONE)]);
+      setStatusSel(new Set(sU.filter((s) => s !== "Posted")));
+      setTypeSel(new Set(tU));
+      setAccountSel(new Set(aU));
+    }
+  }, [rows, statusSel]);
 
-  const loadRef = async () => {
-    if (refData || !sb) return;
-    const { data } = await sb.from("ai_memories").select("id,memory_type,subject,memory_summary").in("memory_type", ["brand_voice", "icp"]);
-    setRefData(data || []);
+  const statusUniv  = useMemo(() => uniq([...STATUS_OPTIONS, ...(rows || []).map((r) => r.status || NONE)]), [rows]);
+  const typeUniv    = useMemo(() => uniq([...TYPE_OPTIONS, ...(rows || []).map((r) => r.contentType || NONE)]), [rows]);
+  const accountUniv = useMemo(() => uniq([...ACCOUNT_OPTIONS, ...(rows || []).map((r) => r.account || NONE)]), [rows]);
+
+  const toggle = (setter, key) => setter((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  const resetUpcoming = () => {
+    setStatusSel(new Set(statusUniv.filter((s) => s !== "Posted")));
+    setTypeSel(new Set(typeUniv));
+    setAccountSel(new Set(accountUniv));
   };
 
-  const types = useMemo(() => Array.from(new Set((rows || []).map(r => r.contentType).filter(Boolean))), [rows]);
+  const activeFilterCount =
+    (statusSel ? statusUniv.filter((s) => !statusSel.has(s)).length : 0) +
+    (typeSel ? typeUniv.filter((t) => !typeSel.has(t)).length : 0) +
+    (accountSel ? accountUniv.filter((a) => !accountSel.has(a)).length : 0);
 
   const filtered = useMemo(() => {
-    const list = (rows || []).filter(r => {
-      if (statusSel.length && !statusSel.includes(r.status)) return false;
-      if (typeSel.length && !typeSel.includes(r.contentType)) return false;
-      if (accountSel.length && !accountSel.includes(r.account)) return false;
+    if (!rows) return [];
+    const out = rows.filter((r) => {
+      if (statusSel && !statusSel.has(r.status || NONE)) return false;
+      if (typeSel && !typeSel.has(r.contentType || NONE)) return false;
+      if (accountSel && !accountSel.has(r.account || NONE)) return false;
       if (query) {
         const q = query.toLowerCase();
         const hay = [r.videoTitle, r.screenshotLine, r.caption, r.campaign, r.stickyNote, r.script].filter(Boolean).join(" ").toLowerCase();
@@ -166,63 +179,45 @@ export default function SocialMediaView() {
       }
       return true;
     });
-    list.sort((a, b) => {
-      const ad = a.postDate || "", bd = b.postDate || "";
-      if (ad && bd) return ad < bd ? -1 : ad > bd ? 1 : a.id - b.id; // earliest upcoming first
-      if (ad && !bd) return -1;
-      if (!ad && bd) return 1;
-      return a.id - b.id;
+    // Sort: next-up first — dated rows ascending, undated last.
+    const FAR = "9999-12-31";
+    return out.sort((a, b) => {
+      const da = a.postDate || FAR, db = b.postDate || FAR;
+      if (da !== db) return da < db ? -1 : 1;
+      return (a.videoNumber ?? 1e9) - (b.videoNumber ?? 1e9) || a.id - b.id;
     });
-    return list;
   }, [rows, statusSel, typeSel, accountSel, query]);
 
-  const selected = sel != null ? (rows || []).find(r => r.id === sel) : null;
-  const postedHidden = !statusSel.includes("Posted");
-  const activeCount = statusSel.length + typeSel.length + accountSel.length;
-
-  const toggleIn = (setter) => (val) => setter(arr => arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]);
-  const resetUpcoming = () => { setStatusSel(DEFAULT_STATUS); setTypeSel([]); setAccountSel([]); };
-  const showEverything = () => { setStatusSel([]); setTypeSel([]); setAccountSel([]); };
+  const selected = sel != null ? (rows || []).find((r) => r.id === sel) : null;
 
   const copy = (text, key) => {
     if (!text) return;
     navigator.clipboard?.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(null), 1400); });
   };
 
-  // single write path for everything
-  const saveRow = async (id, patch, tag) => {
-    if (!sb) return;
-    setSaving(tag || "row");
-    const { error } = await sb.from("contentCalendar").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-    if (error) { setErr(`Save failed: ${error.message}`); }
-    else {
-      setErr(null);
-      setRows(rs => (rs || []).map(r => r.id === id ? { ...r, ...patch } : r));
-      setOrig(o => (o && o.id === id) ? { ...o, ...patch } : o);
-      setForm(f => (f && f.id === id) ? { ...f, ...patch } : f);
-      setSavedFlash(tag || "row"); setTimeout(() => setSavedFlash(null), 1500);
-    }
-    setSaving(null);
+  // Persist a single field edit.
+  const save = async (id, col, value) => {
+    if (!ready) return;
+    setSaving(true);
+    const v = value === "" ? null : value;
+    const { error } = await supabase.from("contentCalendar").update({ [col]: v, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) { setErr(`Save failed (${col}): ${error.message}`); }
+    else { setErr(null); setRows((rs) => (rs || []).map((r) => (r.id === id ? { ...r, [col]: v } : r))); setJustSaved(Date.now()); }
+    setSaving(false);
   };
 
-  // instant-save attribute (status / account / type / linkedin)
-  const setAttr = (key, val, tag) => { setForm(f => ({ ...f, [key]: val })); saveRow(form.id, { [key]: val }, tag || key); };
-  const blurSave = (key, tag) => () => {
-    if (!form || !orig) return;
-    if ((form[key] ?? "") !== (orig[key] ?? "")) saveRow(form.id, { [key]: form[key] === "" ? null : form[key] }, tag || key);
+  const loadRef = async () => {
+    if (refMem || !ready) return;
+    const { data, error } = await supabase
+      .from("ai_memories")
+      .select("id,subject,memory_type,memory_summary")
+      .or("memory_type.eq.brand_voice,memory_type.eq.icp,subject.ilike.%ICP%,subject.ilike.%ideal customer%,subject.ilike.%voice%")
+      .order("id");
+    if (error) { setRefErr(error.message); setRefMem([]); }
+    else { setRefErr(null); setRefMem(data || []); }
   };
+  const openRef = () => { setRefOpen(true); loadRef(); };
 
-  const setField = (key) => (val) => setForm(f => ({ ...f, [key]: val }));
-  const contentDirty = form && orig && CONTENT_KEYS.some(k => (form[k] ?? "") !== (orig[k] ?? ""));
-  const saveContent = async () => {
-    const patch = {};
-    CONTENT_KEYS.forEach(k => { if ((form[k] ?? "") !== (orig[k] ?? "")) patch[k] = form[k] === "" ? null : form[k]; });
-    if ("videoNumber" in patch) { const n = parseInt(patch.videoNumber, 10); patch.videoNumber = Number.isFinite(n) ? n : null; }
-    await saveRow(form.id, patch, "content");
-  };
-  const discardContent = () => setForm({ ...orig });
-
-  /* ── Loading state ── */
   if (rows === null) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--text-sec)" }}>
@@ -231,8 +226,29 @@ export default function SocialMediaView() {
     );
   }
 
+  const FilterGroup = ({ title, options, sel, setter, colorMap }) => (
+    <div style={{ marginBottom: 12 }}>
+      <div className="form-label" style={{ marginBottom: 6 }}>{title}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {options.map((o) => {
+          const on = sel?.has(o);
+          const c = colorFor(colorMap, o);
+          return (
+            <button key={o} onClick={() => toggle(setter, o)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px", fontSize: 12, borderRadius: 6, cursor: "pointer",
+                color: on ? c : "var(--text-sec)",
+                background: on ? `color-mix(in srgb, ${c} 14%, transparent)` : "transparent",
+                border: `1px solid ${on ? `color-mix(in srgb, ${c} 38%, transparent)` : "var(--border)"}`, fontWeight: on ? 600 : 400 }}>
+              {on ? <Check size={11} /> : null}{o}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
-    <div className={`view-shell${sel != null ? " has-selection" : ""}`} style={{ position: "relative" }}>
+    <div className={`view-shell${sel != null ? " has-selection" : ""}`}>
       {/* LEFT LIST */}
       <div className="list-pane" style={{ width: 340, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--bg-card)" }}>
         <div style={{ padding: "16px 14px 10px", borderBottom: "1px solid var(--border)", position: "relative" }}>
@@ -242,63 +258,43 @@ export default function SocialMediaView() {
               <div className="display" style={{ fontSize: 16, fontWeight: 700 }}>Social Media</div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
-              <button className="btn btn-ghost" style={{ padding: "5px 9px", fontSize: 12 }} title="ICP & Voice reference"
-                onClick={() => { setRefOpen(true); loadRef(); }}>
-                <BookOpen size={13} /> Reference
+              <button className="btn btn-ghost" title="ICP & Voice reference" style={{ padding: "5px 9px", fontSize: 12 }} onClick={openRef}>
+                <BookOpen size={13} />
               </button>
-              <button className="btn btn-ghost" style={{ padding: "5px 9px", fontSize: 12 }} onClick={load} disabled={refreshing} title="Refresh">
+              <button className="btn btn-ghost" title="Filters" style={{ padding: "5px 9px", fontSize: 12, position: "relative", color: activeFilterCount ? "var(--blue)" : undefined }} onClick={() => setFilterOpen((o) => !o)}>
+                <Filter size={13} />
+                {activeFilterCount > 0 && (
+                  <span style={{ position: "absolute", top: -4, right: -4, background: "var(--blue)", color: "#fff", borderRadius: 8, fontSize: 9, fontWeight: 700, minWidth: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>{activeFilterCount}</span>
+                )}
+              </button>
+              <button className="btn btn-ghost" title="Refresh" style={{ padding: "5px 9px", fontSize: 12 }} onClick={load} disabled={refreshing}>
                 <RefreshCw size={12} className={refreshing ? "spin" : ""} />
               </button>
             </div>
           </div>
 
-          {/* Search + filter button */}
-          <div style={{ display: "flex", gap: 6 }}>
-            <div style={{ position: "relative", flex: 1 }}>
-              <Search size={13} color="var(--text-sec)" style={{ position: "absolute", left: 10, top: 10, pointerEvents: "none" }} />
-              <input className="input" placeholder="Search…" value={query} onChange={e => setQuery(e.target.value)} style={{ paddingLeft: 30, fontSize: 13 }} />
-            </div>
-            <button className="btn btn-ghost" onClick={() => setShowFilters(s => !s)} title="Filters"
-              style={{ padding: "0 10px", fontSize: 12, position: "relative", border: activeCount ? "1px solid color-mix(in srgb, var(--blue) 45%, transparent)" : undefined, color: activeCount ? "var(--blue)" : undefined }}>
-              <Filter size={14} />
-              {activeCount > 0 && (
-                <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "var(--blue)", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeCount}</span>
-              )}
-            </button>
+          <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8 }}>
+            {filtered.length} of {rows.length} · next up first{activeFilterCount ? " · filtered" : " · upcoming only"}
           </div>
 
-          {/* Active filter chips */}
-          {activeCount > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
-              {statusSel.map(s => <FilterTag key={"s" + s} label={s} color={colorFor(STATUS_COLORS, s)} onClear={() => toggleIn(setStatusSel)(s)} />)}
-              {typeSel.map(t => <FilterTag key={"t" + t} label={t} color={colorFor(TYPE_COLORS, t)} onClear={() => toggleIn(setTypeSel)(t)} />)}
-              {accountSel.map(a => <FilterTag key={"a" + a} label={a} color={colorFor(ACCOUNT_COLORS, a)} onClear={() => toggleIn(setAccountSel)(a)} />)}
-            </div>
-          )}
-
-          <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 8, display: "flex", justifyContent: "space-between" }}>
-            <span>{filtered.length} shown · {rows.length} total</span>
-            {postedHidden && (
-              <button onClick={() => toggleIn(setStatusSel)("Posted")} style={{ background: "none", border: "none", color: "var(--blue)", fontSize: 10, cursor: "pointer", padding: 0, fontFamily: "var(--font-m)" }}>+ show posted</button>
-            )}
+          <div style={{ position: "relative" }}>
+            <Search size={13} color="var(--text-sec)" style={{ position: "absolute", left: 10, top: 10, pointerEvents: "none" }} />
+            <input className="input" placeholder="Search posts…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ paddingLeft: 30, fontSize: 13 }} />
           </div>
 
           {/* Filter popover */}
-          {showFilters && (
+          {filterOpen && (
             <>
-              <div onClick={() => setShowFilters(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-              <div className="card" style={{ position: "absolute", top: "100%", left: 14, right: 14, zIndex: 41, marginTop: 6, padding: 14, boxShadow: "0 12px 32px rgba(0,0,0,0.28)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div onClick={() => setFilterOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+              <div style={{ position: "absolute", top: 46, right: 14, zIndex: 41, width: 290, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.35)", padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div className="display" style={{ fontSize: 13, fontWeight: 700 }}>Filters</div>
-                  <button onClick={() => setShowFilters(false)} className="btn btn-ghost" style={{ padding: 4 }}><X size={14} /></button>
+                  <button className="btn btn-ghost" style={{ padding: "3px 8px", fontSize: 11 }} onClick={resetUpcoming}>Reset to upcoming</button>
                 </div>
-                <FilterGroup title="Status" options={STATUS_OPTIONS} selected={statusSel} onToggle={toggleIn(setStatusSel)} colorMap={STATUS_COLORS} />
-                <FilterGroup title="Account" options={ACCOUNT_OPTIONS} selected={accountSel} onToggle={toggleIn(setAccountSel)} colorMap={ACCOUNT_COLORS} />
-                <FilterGroup title="Type" options={TYPE_OPTIONS} selected={typeSel} onToggle={toggleIn(setTypeSel)} colorMap={TYPE_COLORS} />
-                <div style={{ display: "flex", gap: 8, marginTop: 6, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
-                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={resetUpcoming}>Upcoming only</button>
-                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={showEverything}>Show everything</button>
-                </div>
+                <FilterGroup title="Status" options={statusUniv} sel={statusSel} setter={setStatusSel} colorMap={STATUS_COLORS} />
+                <FilterGroup title="Type" options={typeUniv} sel={typeSel} setter={setTypeSel} colorMap={TYPE_COLORS} />
+                <FilterGroup title="Account" options={accountUniv} sel={accountSel} setter={setAccountSel} colorMap={ACCOUNT_COLORS} />
+                <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 4, fontSize: 12 }} onClick={() => setFilterOpen(false)}>Done</button>
               </div>
             </>
           )}
@@ -312,9 +308,9 @@ export default function SocialMediaView() {
             </div>
           )}
           {!err && filtered.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--text-sec)", fontSize: 12 }}>Nothing matches these filters.</div>
+            <div style={{ padding: 24, textAlign: "center", color: "var(--text-sec)", fontSize: 12 }}>No posts match these filters.</div>
           )}
-          {filtered.map(r => (
+          {filtered.map((r) => (
             <div key={r.id} className="row-hover" onClick={() => setSel(r.id)}
               style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", cursor: "pointer", background: sel === r.id ? "var(--bg-hover)" : "transparent" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -322,159 +318,131 @@ export default function SocialMediaView() {
                 <Pill label={r.status} color={colorFor(STATUS_COLORS, r.status)} />
               </div>
               <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                <span style={{ color: colorFor(ACCOUNT_COLORS, r.account) }}>{r.account || "—"}</span>
+                <span style={{ color: colorFor(ACCOUNT_COLORS, r.account) }}>{r.account || "Personal"}</span>
                 <span>·</span>
-                <span style={{ color: colorFor(TYPE_COLORS, r.contentType) }}>{r.contentType || "—"}</span>
+                <span style={{ color: colorFor(TYPE_COLORS, r.contentType) }}>{r.contentType || NONE}</span>
                 <span>·</span>
-                <span>{r.postDate || "unscheduled"}</span>
+                <span style={{ fontWeight: r.postDate ? 600 : 400, color: r.postDate ? "var(--text)" : "var(--text-sec)" }}>{r.postDate || "unscheduled"}</span>
+                {r.linkedinUrl && <><span>·</span><Link2 size={10} color="var(--green)" /></>}
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* RIGHT DETAIL / EDITOR */}
+      {/* RIGHT DETAIL */}
       <div className="detail-pane" style={{ flex: 1, overflowY: "auto", padding: 24, background: "var(--bg)" }}>
-        {!selected || !form ? (
+        {!selected ? (
           <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--text-sec)" }}>
             <Calendar size={28} color="var(--text-dim)" />
-            <div style={{ fontSize: 13 }}>Select a post to view and edit it.</div>
+            <div style={{ fontSize: 13 }}>Select a post to view and edit its script, caption, and notes.</div>
           </div>
         ) : (
-          <div className="slide-in" style={{ maxWidth: 760, paddingBottom: contentDirty ? 70 : 0 }}>
-            <button className="mobile-back" onClick={() => setSel(null)}>
-              <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} /> Back to posts
-            </button>
+          <div className="slide-in" key={selected.id}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <button className="mobile-back" onClick={() => setSel(null)}>
+                <ChevronRight size={14} style={{ transform: "rotate(180deg)" }} /> Back to posts
+              </button>
+              <span className="mono" style={{ fontSize: 11, color: justSaved && Date.now() - justSaved < 2000 ? "var(--green)" : "var(--text-sec)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                {saving ? <><Loader2 size={11} className="spin" /> Saving…</> : (justSaved && Date.now() - justSaved < 2000 ? <><Check size={11} /> Saved</> : "Edits save automatically")}
+              </span>
+            </div>
 
             {/* Title (editable) */}
-            <input className="input" value={form.videoTitle ?? ""} onChange={e => setField("videoTitle")(e.target.value)}
-              placeholder="Untitled"
-              style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.25, border: "1px solid transparent", background: "transparent", padding: "4px 6px", marginLeft: -6, width: "100%" }} />
+            <EditableText value={selected.videoTitle} onCommit={(v) => save(selected.id, "videoTitle", v)} placeholder="Untitled post"
+              style={{ fontSize: 19, fontWeight: 700, padding: "8px 10px", width: "100%" }} />
 
-            {/* Quick attributes (instant save) */}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-              <ColoredSelect value={form.status} options={STATUS_OPTIONS} colorMap={STATUS_COLORS} placeholder="— status —" disabled={saving === "status"} onChange={v => setAttr("status", v, "status")} />
-              <ColoredSelect value={form.account} options={ACCOUNT_OPTIONS} colorMap={ACCOUNT_COLORS} placeholder="— account —" disabled={saving === "account"} onChange={v => setAttr("account", v, "account")} />
-              <ColoredSelect value={form.contentType} options={TYPE_OPTIONS} colorMap={TYPE_COLORS} placeholder="— type —" disabled={saving === "contentType"} onChange={v => setAttr("contentType", v, "contentType")} />
-              {(saving === "status" || saving === "account" || saving === "contentType") && <Loader2 size={13} className="spin" color="var(--text-sec)" />}
-              {(savedFlash === "status" || savedFlash === "account" || savedFlash === "contentType" || savedFlash === "linkedinUrl") && <span style={{ fontSize: 11, color: "var(--green)", display: "inline-flex", alignItems: "center", gap: 3 }}><Check size={12} /> saved</span>}
+            {/* Picklists */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12, alignItems: "center" }}>
+              <Picklist value={selected.status} options={STATUS_OPTIONS} colorMap={STATUS_COLORS} placeholder="set status" onChange={(v) => save(selected.id, "status", v)} />
+              <Picklist value={selected.contentType} options={TYPE_OPTIONS} colorMap={TYPE_COLORS} placeholder="set type" onChange={(v) => save(selected.id, "contentType", v)} />
+              <Picklist value={selected.account} options={ACCOUNT_OPTIONS} colorMap={ACCOUNT_COLORS} placeholder="set account" onChange={(v) => save(selected.id, "account", v)} />
             </div>
 
-            {/* LinkedIn link (save on blur) */}
-            <div style={{ marginTop: 14 }}>
-              <FieldLabel>LinkedIn link {form.status === "Posted" && <span style={{ color: "var(--amber)" }}>· add this once posted</span>}</FieldLabel>
-              <div style={{ display: "flex", gap: 6 }}>
-                <input className="input" value={form.linkedinUrl ?? ""} placeholder="https://www.linkedin.com/posts/…"
-                  onChange={e => setField("linkedinUrl")(e.target.value)} onBlur={blurSave("linkedinUrl", "linkedinUrl")}
-                  style={{ fontSize: 13, flex: 1 }} />
-                {form.linkedinUrl && (
-                  <a className="btn btn-ghost" href={form.linkedinUrl} target="_blank" rel="noreferrer" style={{ padding: "6px 12px", fontSize: 12, textDecoration: "none", whiteSpace: "nowrap" }}>
-                    <ExternalLink size={13} /> Open
+            {/* LinkedIn link capture */}
+            <div style={{ marginTop: 16, padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 8, background: selected.status === "Posted" ? "color-mix(in srgb, var(--green) 7%, transparent)" : "transparent" }}>
+              <div className="form-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Link2 size={12} /> LinkedIn post URL{selected.status === "Posted" && !selected.linkedinUrl ? " — add the live link" : ""}</span>
+                {selected.linkedinUrl && (
+                  <a className="btn btn-ghost" href={selected.linkedinUrl} target="_blank" rel="noreferrer" style={{ padding: "3px 8px", fontSize: 11, textDecoration: "none" }}>
+                    <ExternalLink size={11} /> Open
                   </a>
                 )}
-                {saving === "linkedinUrl" && <Loader2 size={14} className="spin" color="var(--text-sec)" style={{ alignSelf: "center" }} />}
               </div>
+              <EditableText value={selected.linkedinUrl} onCommit={(v) => save(selected.id, "linkedinUrl", v)} placeholder="https://www.linkedin.com/posts/…" type="text" mono style={{ width: "100%" }} />
             </div>
 
-            {/* Scheduling meta (editable) */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-              <div><FieldLabel>Post date</FieldLabel><input type="date" className="input" value={form.postDate || ""} onChange={e => setField("postDate")(e.target.value)} style={{ fontSize: 13 }} /></div>
-              <div><FieldLabel>Time</FieldLabel><TextField value={form.postTime} onChange={setField("postTime")} placeholder="9:00 AM PT" /></div>
-              <div><FieldLabel>Day</FieldLabel><TextField value={form.postingDay} onChange={setField("postingDay")} /></div>
-              <div><FieldLabel>Week</FieldLabel><TextField value={form.week} onChange={setField("week")} /></div>
-              <div><FieldLabel>Video #</FieldLabel><TextField value={form.videoNumber} onChange={setField("videoNumber")} /></div>
-              <div><FieldLabel>Campaign</FieldLabel><TextField value={form.campaign} onChange={setField("campaign")} /></div>
-              <div><FieldLabel>Track</FieldLabel><TextField value={form.track} onChange={setField("track")} /></div>
-              <div><FieldLabel>Credit to</FieldLabel><TextField value={form.creditTo} onChange={setField("creditTo")} /></div>
+            {/* Scheduling grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginTop: 16 }}>
+              <div><div className="form-label">Post date</div><EditableText value={selected.postDate} type="date" onCommit={(v) => save(selected.id, "postDate", v)} style={{ width: "100%" }} /></div>
+              <div><div className="form-label">Time</div><EditableText value={selected.postTime} onCommit={(v) => save(selected.id, "postTime", v)} placeholder="e.g. 9:00 AM PT" style={{ width: "100%" }} /></div>
+              <div><div className="form-label">Posting day</div><EditableText value={selected.postingDay} onCommit={(v) => save(selected.id, "postingDay", v)} placeholder="e.g. Tuesday" style={{ width: "100%" }} /></div>
+              <div><div className="form-label">Week</div><EditableText value={selected.week} onCommit={(v) => save(selected.id, "week", v)} placeholder="e.g. Week 1" style={{ width: "100%" }} /></div>
+              <div><div className="form-label">Video #</div><EditableText value={selected.videoNumber} type="number" onCommit={(v) => save(selected.id, "videoNumber", v === "" ? null : Number(v))} style={{ width: "100%" }} /></div>
+              <div><div className="form-label">Track</div><EditableText value={selected.track} onCommit={(v) => save(selected.id, "track", v)} placeholder="e.g. AI in Sales Ops" style={{ width: "100%" }} /></div>
+              <div><div className="form-label">Campaign</div><EditableText value={selected.campaign} onCommit={(v) => save(selected.id, "campaign", v)} style={{ width: "100%" }} /></div>
+              <div><div className="form-label">Platform</div><EditableText value={selected.platform} onCommit={(v) => save(selected.id, "platform", v)} placeholder="LinkedIn" style={{ width: "100%" }} /></div>
             </div>
 
-            {/* Content (editable, Save bar) */}
-            <div style={{ marginTop: 18 }}><FieldLabel>Screenshot line</FieldLabel><TextField value={form.screenshotLine} onChange={setField("screenshotLine")} /></div>
-            <div style={{ marginTop: 14 }}><FieldLabel>Sticky note (the point of this post)</FieldLabel><AreaField value={form.stickyNote} onChange={setField("stickyNote")} rows={2} /></div>
+            <EditRow label="Screenshot line"><EditableText value={selected.screenshotLine} onCommit={(v) => save(selected.id, "screenshotLine", v)} placeholder="The on-screen hook line" style={{ width: "100%" }} /></EditRow>
+            <EditRow label="Sticky note (the point of this post)"><EditableArea value={selected.stickyNote} onCommit={(v) => save(selected.id, "stickyNote", v)} placeholder="One-line point of the post" /></EditRow>
+            <EditRow label="Script"><EditableArea value={selected.script} onCommit={(v) => save(selected.id, "script", v)} placeholder="HOOK / PROBLEM / SOLUTION / PAYOFF…" mono /></EditRow>
 
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <FieldLabel>Script</FieldLabel>
-                <button className="btn btn-ghost" style={{ padding: "3px 8px", fontSize: 11 }} onClick={() => copy(form.script, "script")}>{copied === "script" ? <Check size={11} color="var(--green)" /> : <Copy size={11} />} {copied === "script" ? "Copied" : "Copy"}</button>
+            <div style={{ marginTop: 16 }}>
+              <div className="form-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Caption</span>
+                <button className="btn btn-ghost" style={{ padding: "3px 8px", fontSize: 11 }} onClick={() => copy(selected.caption, "caption")}>
+                  {copied === "caption" ? <Check size={11} color="var(--green)" /> : <Copy size={11} />} {copied === "caption" ? "Copied" : "Copy"}
+                </button>
               </div>
-              <AreaField value={form.script} onChange={setField("script")} rows={10} mono />
+              <EditableArea value={selected.caption} onCommit={(v) => save(selected.id, "caption", v)} placeholder="LinkedIn caption" />
             </div>
 
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <FieldLabel>Caption</FieldLabel>
-                <button className="btn btn-ghost" style={{ padding: "3px 8px", fontSize: 11 }} onClick={() => copy(form.caption, "caption")}>{copied === "caption" ? <Check size={11} color="var(--green)" /> : <Copy size={11} />} {copied === "caption" ? "Copied" : "Copy"}</button>
-              </div>
-              <AreaField value={form.caption} onChange={setField("caption")} rows={8} />
-            </div>
-
-            <div style={{ marginTop: 14 }}><FieldLabel>Engagement notes</FieldLabel><AreaField value={form.engagementNotes} onChange={setField("engagementNotes")} rows={3} /></div>
-            <div style={{ marginTop: 14 }}><FieldLabel>Pre-record checklist</FieldLabel><AreaField value={form.preRecordChecklist} onChange={setField("preRecordChecklist")} rows={5} /></div>
-            <div style={{ marginTop: 14 }}><FieldLabel>Post-record checklist</FieldLabel><AreaField value={form.postRecordChecklist} onChange={setField("postRecordChecklist")} rows={5} /></div>
-
-            {/* Sticky Save bar */}
-            {contentDirty && (
-              <div style={{ position: "sticky", bottom: 0, marginTop: 18, padding: "12px 14px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 -6px 20px rgba(0,0,0,0.18)" }}>
-                <span style={{ fontSize: 12, color: "var(--text-sec)" }}>Unsaved content changes</span>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={discardContent} disabled={saving === "content"}>Discard</button>
-                  <button className="btn" style={{ fontSize: 12, background: "var(--blue)", color: "#fff", display: "inline-flex", alignItems: "center", gap: 6 }} onClick={saveContent} disabled={saving === "content"}>
-                    {saving === "content" ? <Loader2 size={13} className="spin" /> : <Save size={13} />} Save changes
-                  </button>
-                </div>
-              </div>
-            )}
-            {savedFlash === "content" && (
-              <div style={{ marginTop: 12, fontSize: 12, color: "var(--green)", display: "inline-flex", alignItems: "center", gap: 5 }}><Check size={13} /> Saved</div>
-            )}
+            <EditRow label="Engagement notes"><EditableArea value={selected.engagementNotes} onCommit={(v) => save(selected.id, "engagementNotes", v)} /></EditRow>
+            <EditRow label="Daily engagement"><EditableArea value={selected.dailyEngagement} onCommit={(v) => save(selected.id, "dailyEngagement", v)} /></EditRow>
+            <EditRow label="Pre-record checklist"><EditableArea value={selected.preRecordChecklist} onCommit={(v) => save(selected.id, "preRecordChecklist", v)} /></EditRow>
+            <EditRow label="Post-record checklist"><EditableArea value={selected.postRecordChecklist} onCommit={(v) => save(selected.id, "postRecordChecklist", v)} /></EditRow>
           </div>
         )}
       </div>
 
-      {/* REFERENCE DRAWER (ICP + Voice) */}
+      {/* REFERENCE DRAWER — ICP & Voice */}
       {refOpen && (
         <>
-          <div onClick={() => setRefOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50 }} />
-          <div className="card" style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "min(560px, 92%)", zIndex: 51, padding: 20, overflowY: "auto", borderRadius: 0, boxShadow: "-12px 0 32px rgba(0,0,0,0.3)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div onClick={() => setRefOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 60 }} />
+          <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(560px, 92vw)", background: "var(--bg-card)", borderLeft: "1px solid var(--border)", zIndex: 61, display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px rgba(0,0,0,0.35)" }}>
+            <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <BookOpen size={16} color="var(--blue)" />
-                <div className="display" style={{ fontSize: 16, fontWeight: 700 }}>ICP & Voice reference</div>
+                <div className="display" style={{ fontSize: 15, fontWeight: 700 }}>ICP &amp; Voice — reference</div>
               </div>
-              <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => setRefOpen(false)}><X size={16} /></button>
+              <button className="btn btn-ghost" style={{ padding: "5px 9px" }} onClick={() => setRefOpen(false)}><X size={14} /></button>
             </div>
-            <div style={{ fontSize: 12, color: "var(--text-sec)", marginBottom: 16 }}>Pulled live from Second Brain · ai_memories. Use these to reprioritize your content.</div>
-            {refData === null ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-sec)" }}><Loader2 size={15} className="spin" /> <span style={{ fontSize: 12 }}>Loading…</span></div>
-            ) : (
-              <>
-                {refData.length === 0 && <div style={{ fontSize: 13, color: "var(--text-sec)" }}>No voice or ICP memories found.</div>}
-                {refData.map(m => (
-                  <div key={m.id} style={{ marginBottom: 20 }}>
-                    <Pill label={m.memory_type === "brand_voice" ? "Voice" : m.memory_type === "icp" ? "ICP" : m.memory_type} color={m.memory_type === "icp" ? "var(--green)" : "var(--purple)"} />
-                    <div className="display" style={{ fontSize: 14, fontWeight: 700, margin: "8px 0" }}>{m.subject}</div>
-                    <div className="card-el" style={{ padding: "12px 14px", fontSize: 12.5, lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 420, overflowY: "auto" }}>{m.memory_summary}</div>
+            <div style={{ padding: 18, overflowY: "auto", flex: 1 }}>
+              <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 14 }}>Pulled live from Second Brain · ai_memories. Use these to reprioritize content.</div>
+              {refMem === null && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-sec)", fontSize: 13 }}><Loader2 size={14} className="spin" /> Loading…</div>
+              )}
+              {refErr && <div style={{ color: "var(--red)", fontSize: 12 }}>Couldn't load memories: {refErr}</div>}
+              {refMem && refMem.length === 0 && !refErr && <div style={{ color: "var(--text-sec)", fontSize: 13 }}>No matching memories found.</div>}
+              {refMem && refMem.length > 0 && !refMem.some((m) => (m.memory_type || "") === "icp" || (m.subject || "").toLowerCase().includes("icp") || (m.subject || "").toLowerCase().includes("ideal customer")) && (
+                <div style={{ marginBottom: 16, padding: "10px 12px", border: "1px dashed var(--amber)", borderRadius: 8, fontSize: 12, color: "var(--text-sec)", background: "color-mix(in srgb, var(--amber) 7%, transparent)" }}>
+                  No dedicated <b>ICP</b> memory exists yet — only the voice profile below. Ask Claude to draft one into ai_memories.
+                </div>
+              )}
+              {(refMem || []).map((m) => (
+                <div key={m.id} style={{ marginBottom: 18 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <div className="display" style={{ fontSize: 14, fontWeight: 700 }}>{m.subject}</div>
+                    <Pill label={m.memory_type} color="var(--blue)" />
                   </div>
-                ))}
-                {!refData.some(m => m.memory_type === "icp") && (
-                  <div style={{ fontSize: 12, color: "var(--text-sec)", borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-                    No <span className="mono">icp</span> memory exists yet. Add one to ai_memories with <span className="mono">memory_type = 'icp'</span> and it will appear here automatically.
-                  </div>
-                )}
-              </>
-            )}
+                  <div className="card-el" style={{ padding: "12px 14px", fontSize: 12.5, lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: 420, overflowY: "auto" }}>{m.memory_summary}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </>
       )}
     </div>
-  );
-}
-
-function FilterTag({ label, color, onClear }) {
-  return (
-    <span className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: `color-mix(in srgb, ${color} 12%, transparent)`, color, border: `1px solid color-mix(in srgb, ${color} 28%, transparent)` }}>
-      {label}
-      <button onClick={onClear} style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", color, display: "inline-flex" }}><X size={11} /></button>
-    </span>
   );
 }
