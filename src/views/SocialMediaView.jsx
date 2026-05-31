@@ -21,6 +21,9 @@ const STATUS_COLORS = {
   "Posted": "var(--green)",
   "Published": "var(--green)",
 };
+// Canonical status pipeline (editable picklist). Second Brain is the source of truth.
+const STATUS_OPTIONS = ["Draft", "Script Ready", "Scheduled", "Posted"];
+
 const TYPE_COLORS = {
   "Video": "var(--purple)",
   "Carousel": "var(--amber)",
@@ -69,6 +72,7 @@ export default function SocialMediaView() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState(null);
+  const [savingStatus, setSavingStatus] = useState(false);
 
   const load = async () => {
     if (!sb) { setErr("Supabase env not configured (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)."); setRows([]); return; }
@@ -86,6 +90,7 @@ export default function SocialMediaView() {
   useEffect(() => { load(); }, []);
 
   const statuses = useMemo(() => Array.from(new Set((rows || []).map(r => r.status).filter(Boolean))), [rows]);
+  const allStatuses = useMemo(() => { const set = new Set(STATUS_OPTIONS); (rows || []).forEach(r => r.status && set.add(r.status)); return Array.from(set); }, [rows]);
   const types = useMemo(() => Array.from(new Set((rows || []).map(r => r.contentType).filter(Boolean))), [rows]);
 
   const filtered = useMemo(() => (rows || []).filter(r => {
@@ -104,6 +109,15 @@ export default function SocialMediaView() {
   const copy = (text, key) => {
     if (!text) return;
     navigator.clipboard?.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(null), 1400); });
+  };
+
+  const updateStatus = async (id, status) => {
+    if (!sb) return;
+    setSavingStatus(true);
+    const { error } = await sb.from("contentCalendar").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) setErr(`Status update failed: ${error.message}`);
+    else { setErr(null); setRows(rs => (rs || []).map(r => r.id === id ? { ...r, status } : r)); }
+    setSavingStatus(false);
   };
 
   /* ── Loading / error / empty states ── */
@@ -134,7 +148,7 @@ export default function SocialMediaView() {
           </div>
           {/* Status filters */}
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
-            {["all", ...statuses].map(s => (
+            {["all", ...allStatuses].map(s => (
               <button key={s} className={`filter-chip${statusFilter === s ? " active" : ""}`} onClick={() => setStatusFilter(s)}>{s}</button>
             ))}
           </div>
@@ -195,8 +209,22 @@ export default function SocialMediaView() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
               <div style={{ minWidth: 0 }}>
                 <div className="display" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.25 }}>{selected.videoTitle || "Untitled"}</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                  <Pill label={selected.status} color={colorFor(STATUS_COLORS, selected.status)} />
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <select
+                      value={selected.status || ""}
+                      onChange={e => updateStatus(selected.id, e.target.value)}
+                      disabled={savingStatus}
+                      title="Set status"
+                      style={{ appearance: "auto", padding: "3px 8px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer", color: colorFor(STATUS_COLORS, selected.status), background: `color-mix(in srgb, ${colorFor(STATUS_COLORS, selected.status)} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${colorFor(STATUS_COLORS, selected.status)} 32%, transparent)`, fontFamily: "var(--font-m)" }}
+                    >
+                      {!selected.status && <option value="">— set status —</option>}
+                      {(STATUS_OPTIONS.includes(selected.status) || !selected.status ? STATUS_OPTIONS : [...STATUS_OPTIONS, selected.status]).map(s => (
+                        <option key={s} value={s} style={{ color: "var(--text)", background: "var(--bg-card)" }}>{s}</option>
+                      ))}
+                    </select>
+                    {savingStatus && <Loader2 size={12} className="spin" color="var(--text-sec)" />}
+                  </span>
                   <Pill label={selected.contentType} color={colorFor(TYPE_COLORS, selected.contentType)} />
                   {selected.track && <Pill label={selected.track} color="var(--blue)" />}
                   {selected.platform && <Pill label={selected.platform} color="var(--text-sec)" />}
