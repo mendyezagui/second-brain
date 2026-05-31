@@ -1,6 +1,6 @@
 # Proactive Daily Orchestrator — Build Spec
 
-Status: **Draft for review** · Owner: Mendy · Last updated: 2026-05-31
+Status: **Decisions locked (§10) · ready to build** · Owner: Mendy · Last updated: 2026-05-31
 Scope: Phase 1 only. Phase 2+ sketched at the end.
 
 ---
@@ -57,7 +57,7 @@ they plug into the same orchestrator once it's proactive and acting.
 ## 3. Architecture (Phase 1)
 
 ```
-Vercel Cron (daily ~6:30 AM PT)
+Vercel Cron (daily 6:30 AM PT)
         │
         ▼
 /api/orchestrator/daily   (new serverless function, runs server-side)
@@ -66,10 +66,12 @@ Vercel Cron (daily ~6:30 AM PT)
         │  3. call Claude (reuse /api/claude logic or call inline)
         │  4. parse structured brief  { date, top_priorities[], deal_moves[], ... }
         │  5. persist brief  → daily_briefs table
-        │  6. for top N priorities that need time:
-        │        create calendar hold (status="proposed") in calendar_events + Google
+        │  6. read Google free/busy for today 09:00–17:00 PT; for the top
+        │       ≤3 priorities that need focus time, pick open slots (skip
+        │       conflicts) and create calendar holds (status="proposed")
         │  7. for priorities that need a message:
         │        stage a draft (email via Gmail draft / LinkedIn text) → drafts table
+        │  8. email a copy of the brief via Resend (reuse morning-brief sender)
         ▼
 Dashboard (OrchestratorView)
         reads daily_briefs (today) → renders brief + proposed holds + drafts
@@ -93,8 +95,9 @@ var, never shipped to client) and calls Claude server-side.
 ### 3.3 Reuse, don't reinvent
 - Email drafts: reuse `InboxView`'s reply-generation path.
 - Calendar: reuse the existing Google sync layer that populates
-  `calendar_events`; add a write path for proposed holds.
+  `calendar_events`; add a free/busy read + a write path for proposed holds.
 - LLM: reuse `/api/claude` request shape.
+- Email brief: reuse the `morning-brief` Resend sender + HTML template.
 
 ---
 
@@ -145,8 +148,9 @@ Add support for **proposed** holds the orchestrator creates:
 
 ## 5. Autonomy rails (the contract)
 
-- **Auto-allowed:** create calendar **holds** (proposed), stage **drafts**,
-  create/update tasks, write the daily brief.
+- **Auto-allowed:** create calendar **holds** (proposed, ≤3/day, inside
+  09:00–17:00 PT, conflict-checked), stage **drafts**, create/update tasks,
+  write the daily brief, email a copy of the brief to Mendy.
 - **Never without Mendy:** send an email, publish a LinkedIn post, send any
   outbound message, delete real data.
 - **Everything reversible:** proposed holds and staged drafts are soft
@@ -158,15 +162,15 @@ Add support for **proposed** holds the orchestrator creates:
 
 ## 6. Scheduling & idempotency
 
-- **Vercel Cron** daily ~6:30 AM PT (`vercel.json` crons entry). One run/day.
+- **Vercel Cron** daily 6:30 AM PT (`vercel.json` crons entry). One run/day.
 - **Idempotency:** one `daily_briefs` row per `brief_date`. If today's brief
   exists, the function returns early unless `?force=1`. (Mirrors the
   `morning-brief` worker's 409-skip pattern.)
 - **No double-spend:** calendar holds / drafts are keyed to `brief_id`, so a
   re-run won't duplicate holds for the same day.
-- **Failure-safe:** the brief is persisted before actions run; calendar/draft
-  steps are best-effort and logged, never aborting the brief (same posture as
-  `morning-brief`'s publish/email steps).
+- **Failure-safe:** the brief is persisted before actions run; calendar,
+  draft, and email steps are best-effort and logged, never aborting the
+  brief (same posture as `morning-brief`'s publish/email steps).
 
 ---
 
@@ -176,22 +180,25 @@ Add support for **proposed** holds the orchestrator creates:
 |---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | server-side DB read/write for the cron |
 | `ANTHROPIC_API_KEY` | already used by `/api/claude` |
-| Google Calendar write creds | reuse existing calendar-sync credentials; confirm scope allows event **insert**, not just read |
+| Google Calendar creds | reuse existing calendar-sync credentials; confirm scope allows **free/busy read** + event **insert**, not just read |
+| `RESEND_API_KEY` + from-address | email the daily brief (reuse `morning-brief` config) |
 | `ORCH_CRON_SECRET` | guard the `/api/orchestrator/daily` endpoint against public POSTs (Bearer), like `morning-brief`'s `TRIGGER_SECRET` |
 
 ---
 
 ## 8. Acceptance criteria (Phase 1 done =)
 
-1. At ~6:30 AM PT with no browser open, a `daily_briefs` row appears for
+1. At 6:30 AM PT with no browser open, a `daily_briefs` row appears for
    today with a goal-aware prioritized brief and per-item "why".
 2. Opening the Orchestrator tab shows today's brief without clicking Sweep.
-3. Top priorities that need focus time appear as **proposed** calendar holds;
-   approving one confirms a real Google Calendar event.
-4. Priorities that need a message appear as **staged drafts**; approving an
-   email leaves a ready Gmail draft (un-sent).
-5. Nothing is ever sent or posted automatically.
-6. Re-running the same day does not duplicate briefs, holds, or drafts.
+3. The top ≤3 priorities that need focus time appear as **proposed**
+   calendar holds, each inside 09:00–17:00 PT and not overlapping an
+   existing event; approving one confirms a real Google Calendar event.
+4. Priorities that need a message appear as **staged drafts** (email or
+   LinkedIn text); approving an email leaves a ready Gmail draft (un-sent).
+5. A copy of the brief is emailed to Mendy at 6:30 via Resend.
+6. Nothing is ever sent or posted automatically.
+7. Re-running the same day does not duplicate briefs, holds, or drafts.
 
 ---
 
@@ -209,12 +216,20 @@ Add support for **proposed** holds the orchestrator creates:
 
 ---
 
-## 10. Open decisions for Mendy
+## 10. Decisions (locked 2026-05-31)
 
-1. **How many calendar holds/day max?** (suggest 2–3, top priorities only.)
-2. **Calendar working-hours window** the agent may book inside (e.g. 9–5 PT,
-   skip existing events) — needs a free/busy read before proposing.
-3. **LinkedIn drafts:** store as text in `drafts` for copy-paste (Phase 1),
-   or integrate a posting API later? (Phase 1 = text only.)
-4. **Brief delivery beyond the dashboard?** Email copy of the brief at 6:30
-   reusing the `morning-brief` Resend path — yes/no.
+1. **Calendar holds/day: max 3**, top priorities only. Keeps the calendar
+   trustworthy and avoids over-booking from a single brief.
+2. **Working-hours window: 09:00–17:00 PT.** The agent does a Google
+   free/busy read first and only proposes holds in open slots — never
+   double-books an existing event.
+3. **LinkedIn drafts: text only (copy-paste) in Phase 1.** Stored in
+   `drafts.body`; a posting-API integration is deferred to a later phase.
+4. **Email copy of the brief: yes.** Sent at 6:30 AM PT reusing the
+   `morning-brief` Resend sender and HTML template, so the brief reaches
+   Mendy even before he opens the dashboard.
+
+### Still to confirm during build
+- Which Google account/calendar the holds are written to (if more than one).
+- Default hold length (suggest 45 min) and whether to leave buffer between
+  back-to-back holds.
