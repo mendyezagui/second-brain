@@ -170,6 +170,15 @@ export const Tex = ({ value, onChange, placeholder }) => (
   <textarea className="input" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} />
 );
 
+// Entity types that have a navigable master/detail view -> their master view id.
+// Gate used by SearchSelect: a selected value renders as a clickable EntityLink only
+// when its entityType is navigable here. Keys mirror recordListViewFor (RecordDetailView).
+const ENTITY_NAV = {
+  contact: "crm", company: "companies", deal: "deals", document: "documents",
+  project: "projects", task: "tasks", campaign: "marketing", invoice: "invoices",
+  payment: "payments", strategy: "strategies", goal: "goals", ai_memory: "ai_memories",
+};
+
 export const SearchSelect = ({ value, onChange, options, placeholder, entityType, navigate }) => {
   // options: [{value:"1", label:"Name"}, ...]. value is the selected value string.
   // entityType + navigate (optional): when both provided and a value is selected,
