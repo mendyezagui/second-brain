@@ -28,6 +28,8 @@ async function callClaude(system, user, max = 600) {
   return d.content?.[0]?.text || "";
 }
 
+const fmt = (n) => "$" + Math.round(Number(n) || 0).toLocaleString();
+
 export default async function handler(req, res) {
   // Protect: only allow Vercel cron or requests with CRON_SECRET header
   const cronSecret = process.env.CRON_SECRET;
@@ -40,13 +42,18 @@ export default async function handler(req, res) {
 
   try {
     // ── Pull all live data from Supabase ──
-    const [contacts, deals, tasks, projects, invoices, campaigns, instructions] = await Promise.all([
+    // `invoices` is unpaid-only (drives overdue logic); `allInvoices` is every
+    // invoice so we can compute collected revenue from amount_paid. `goals` and
+    // `instructions` feed the orchestrator its real north star + standing orders.
+    const [contacts, deals, tasks, projects, invoices, allInvoices, campaigns, goals, instructions] = await Promise.all([
       supabase.from("contacts").select("*"),
       supabase.from("deals").select("*"),
       supabase.from("tasks").select("*").eq("done", false),
       supabase.from("projects").select("*"),
       supabase.from("invoices").select("*").neq("status", "paid"),
+      supabase.from("invoices").select("amount, amount_paid, status"),
       supabase.from("campaigns").select("*"),
+      supabase.from("goals").select("*").eq("status", "active"),
       supabase.from("instructions").select("*").eq("active", true),
     ]);
 
@@ -57,8 +64,10 @@ export default async function handler(req, res) {
       projects:  projects.data  || [],
       invoices:  invoices.data  || [],
       campaigns: campaigns.data || [],
+      goals:     goals.data     || [],
       instructions: instructions.data || [],
     };
+    const allInv = allInvoices.data || [];
 
     // ── Compute key metrics ──
     const overdueInv     = db.invoices.filter(i => i.status === "overdue");
@@ -66,11 +75,32 @@ export default async function handler(req, res) {
     const atRiskContacts = db.contacts.filter(c => c.status === "at-risk");
     const stalledProj    = db.projects.filter(p => p.status === "stalled");
     const activeDeals    = db.deals.filter(d => !["won","lost"].includes(d.stage));
-    const paidYTD        = 0; // invoices already filtered to unpaid above
-    const weightedPipe   = Math.round(db.deals.reduce((a,d) => a + d.value * (d.probability/100), 0));
-    const overdueAR      = overdueInv.reduce((a,i) => a + i.amount, 0);
+    const weightedPipe   = Math.round(db.deals.reduce((a,d) => a + (d.value||0) * ((d.probability||0)/100), 0));
+    const overdueAR      = overdueInv.reduce((a,i) => a + (i.amount||0), 0);
+
+    // Revenue collected = sum of amount_paid across every invoice (partials count).
+    const collectedRevenue = allInv.reduce((a,i) => a + (i.amount_paid || 0), 0);
+
+    // Primary revenue goal pulled from the goals table (was hardcoded $800K).
+    const revenueGoal = db.goals
+      .filter(g => g.unit === "$" && g.period === "annual")
+      .sort((a,b) => (b.target_value||0) - (a.target_value||0))[0]
+      || { name: "Annual Revenue Target", target_value: 800000 };
+    const revenueTarget = revenueGoal.target_value || 800000;
+    const revenueGap     = Math.max(0, revenueTarget - collectedRevenue);
+    const pipelineCoverage = revenueGap > 0 ? Math.round((weightedPipe / revenueGap) * 100) : 100;
+
+    // Human-readable goals list, highest priority_order first, for prompt salience.
+    const goalsBlock = db.goals.length
+      ? db.goals
+          .slice()
+          .sort((a,b) => (a.priority_order ?? 99) - (b.priority_order ?? 99))
+          .map(g => `- [${g.category||"general"}] ${g.name}: ${g.current_value ?? 0}/${g.target_value} ${g.unit||""} (${g.period||""})`)
+          .join("\n")
+      : "(no active goals defined)";
 
     const snap = {
+      goals:     db.goals.map(g => ({ name:g.name, target:g.target_value, current:g.current_value, unit:g.unit, period:g.period, category:g.category, priority_order:g.priority_order })),
       contacts:  db.contacts.map(c => ({ name:c.name, co:c.co, status:c.status, score:c.score, lastTouch:c.lastTouch, notes:c.notes })),
       deals:     db.deals.map(d => ({ name:d.name, value:d.value, stage:d.stage, probability:d.probability, closeDate:d.closeDate, notes:d.notes })),
       tasks:     db.tasks.map(t => ({ title:t.title, due:t.due, priority:t.priority, notes:t.notes||"" })),
@@ -79,6 +109,10 @@ export default async function handler(req, res) {
       invoices:  db.invoices.map(i => ({ client:i.client, amount:i.amount, status:i.status, due:i.due, number:i.number })),
       metrics: {
         weightedPipeline: weightedPipe,
+        collectedRevenue,
+        revenueTarget,
+        revenueGap,
+        pipelineCoverage,
         overdueAR,
         openTasks: db.tasks.length,
         criticalTasks: criticalTasks.length,
@@ -94,8 +128,8 @@ export default async function handler(req, res) {
     const [orchestratorMsg, billingMsg, crmMsg] = await Promise.all([
 
       callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent — his proactive daily strategist. He's an independent AI ops consultant in LA targeting property management/HOA companies. Revenue target: $800K/year. Projects are typed as "client" or "strategic" with priorities (high/medium/low). High-priority strategic projects should drive weekly focus. Evaluate deals by revenue potential, strategic alignment, and momentum. Follow any active instructions from the instructions array. Be specific — name names, cite dollar amounts, reference deadlines.`,
-        `Good morning — today is ${today}. Live database snapshot:\n${JSON.stringify(snap, null, 2)}\n\nGenerate Mendy's Daily Action Plan:\n\nTOP PRIORITIES — The 1-2 most urgent items from critical tasks, high-priority strategic projects, and approaching deadlines.\n\nDEAL MOVES — Specific next actions on active deals, ranked by revenue potential and urgency. Flag stale deals (no activity >7 days).\n\nSTRATEGIC PLAYS — One move to advance a high-priority strategic project today.\n\nSMART NUDGES — Follow-ups due, relationships going cold, upcoming deadlines, billing issues.\n\nBe direct. Name people, amounts, dates. Max 8 sentences total.`,
+        `You are Mendy Ezagui's Orchestrator Agent — his proactive daily strategist. He's an independent AI ops consultant in LA targeting property management/HOA companies. His active goals (with live progress) are in the snapshot under "goals" — weigh every recommendation against them, prioritizing the lowest priority_order (most important) first. His primary revenue goal is ${fmt(revenueTarget)}/year; he has collected ${fmt(collectedRevenue)} so far (gap ${fmt(revenueGap)}, weighted pipeline ${fmt(weightedPipe)} = ${pipelineCoverage}% coverage). Projects are typed "client" or "strategic" with priorities (high/medium/low); high-priority strategic projects should drive weekly focus. The snapshot's "instructions" array holds Mendy's standing orders — follow them and let them override default behavior. Be specific — name names, cite dollar amounts, reference deadlines.`,
+        `Good morning — today is ${today}.\n\nYOUR GOALS (most important first):\n${goalsBlock}\n\nREVENUE: collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} target — gap ${fmt(revenueGap)}; weighted pipeline ${fmt(weightedPipe)} (${pipelineCoverage}% coverage).\n\nLive database snapshot:\n${JSON.stringify(snap, null, 2)}\n\nGenerate Mendy's Daily Action Plan:\n\nTOP PRIORITIES — The 1-2 most urgent items from critical tasks, high-priority strategic projects, and approaching deadlines, tied to the goals they advance.\n\nDEAL MOVES — Specific next actions on active deals, ranked by revenue potential and urgency. Flag stale deals (no activity >7 days).\n\nSTRATEGIC PLAYS — One move to advance a high-priority strategic project today.\n\nSMART NUDGES — Follow-ups due, relationships going cold, upcoming deadlines, billing issues.\n\nBe direct. Name people, amounts, dates. Max 8 sentences total.`,
         800
       ),
 
@@ -133,7 +167,7 @@ export default async function handler(req, res) {
         id: nextId++,
         agent: "System",
         type: "sweep-summary",
-        message: `Morning sweep complete — ${db.contacts.length} contacts, ${activeDeals.length} active deals, $${overdueAR.toLocaleString()} overdue A/R, ${criticalTasks.length} critical tasks, ${atRiskContacts.length} at-risk contacts. Weighted pipeline: $${weightedPipe.toLocaleString()}.`,
+        message: `Morning sweep complete — ${db.contacts.length} contacts, ${activeDeals.length} active deals, ${fmt(overdueAR)} overdue A/R, ${criticalTasks.length} critical tasks, ${atRiskContacts.length} at-risk contacts. Collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} (${pipelineCoverage}% pipeline coverage). ${db.instructions.length} standing instructions, ${db.goals.length} active goals.`,
         ts,
         priority: "medium",
       },
