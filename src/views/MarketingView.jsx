@@ -1,11 +1,57 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, Megaphone, Plus, Save, Search, Trash2 } from "lucide-react";
+import { ChevronRight, Megaphone, Plus, Save, Search, Target, Trash2 } from "lucide-react";
 import { fmt, nextId } from "../lib/utils";
 import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, ScoreBadge, Sel, Tag, Tex } from "../components/ui";
+import PipelinesView from "./PipelinesView";
 
 export const blankCampaign = () => ({ name:"", type:"Email", status:"draft", leads:0, opens:0, conversions:0, startDate:"" });
 
-export const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
+const TABS = [
+  { id:"pipelines", label:"Pipelines", icon:Target, description:"Campaign pipelines with full activity timelines" },
+  { id:"campaigns", label:"Campaigns", icon:Megaphone, description:"Legacy campaigns CRM with leads, opens & conversions" },
+];
+
+/* ── Marketing shell with tabs ──
+   Default tab is Pipelines (the new socialCampaigns + contentCalendar
+   surface — full marketing/outbound campaigns with day-by-day activities
+   and document links). Second tab keeps the legacy db.campaigns CRUD
+   intact for the older metrics-style campaigns. */
+export const MarketingView = (props) => {
+  const [tab, setTab] = useState(() => {
+    if (typeof window === "undefined") return "pipelines";
+    try { return window.localStorage.getItem("marketingTab") || "pipelines"; } catch { return "pipelines"; }
+  });
+  useEffect(() => { try { window.localStorage.setItem("marketingTab", tab); } catch {} }, [tab]);
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100%" }}>
+      <div style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-card)", padding:"0 16px", display:"flex", gap:0, flexShrink:0 }}>
+        {TABS.map(t => {
+          const active = tab === t.id;
+          const Icon = t.icon;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              title={t.description}
+              style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"12px 16px",
+                background:"transparent", border:"none", cursor:"pointer",
+                color: active ? "var(--blue)" : "var(--text-sec)",
+                fontWeight: active ? 600 : 500, fontSize:13,
+                borderBottom: active ? "2px solid var(--blue)" : "2px solid transparent",
+                marginBottom:-1, fontFamily:"var(--font-b)" }}>
+              <Icon size={14}/>{t.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ flex:1, overflow:"hidden", minHeight:0 }}>
+        {tab === "pipelines" ? <PipelinesView/> : <LegacyCampaignsView {...props}/>}
+      </div>
+    </div>
+  );
+};
+
+/* ── Legacy campaigns CRUD (kept intact, originally MarketingView) ── */
+const LegacyCampaignsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -49,7 +95,7 @@ export const MarketingView = ({ db, setDB, navigate, focus, setFocus }) => {
       <div className="list-pane" style={{ width:300, borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", background:"var(--bg-card)" }}>
         <div style={{ padding:"16px 14px 10px", borderBottom:"1px solid var(--border)" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Marketing</div>
+            <div className="display" style={{ fontSize:16, fontWeight:700 }}>Campaigns</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setD(blankCampaign());setDrawer("add");}}><Plus size={12}/>Add</button>
           </div>
           <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
