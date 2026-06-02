@@ -21,6 +21,7 @@ import { MultiLLMView } from "./views/MultiLLMView";
 import { OrchestratorView } from "./views/OrchestratorView";
 import { PaymentsView } from "./views/PaymentsView";
 import { ProjectsView } from "./views/ProjectsView";
+import { RCControlsView } from "./views/RCControlsView";
 import { RecordDetailView } from "./views/RecordDetailView";
 import { StrategiesView } from "./views/StrategiesView";
 import { TasksView } from "./views/TasksView";
@@ -29,7 +30,7 @@ import { VoitraGateView } from "./views/VoitraGateView";
 import SocialMediaView from "./views/SocialMediaView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","associates","mstack","crm","companies","deals","marketing","social","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","admin","record"];
+  const VALID_VIEWS = ["dashboard","orchestrator","associates","mstack","crm","companies","deals","marketing","social","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
   const routeFromHash = () => {
     const route = parseAppHash();
     return VALID_VIEWS.includes(route.view) ? route : { view:"dashboard", record:null, focus:null };
@@ -45,7 +46,6 @@ export default function App() {
       const target = targetView === "record" ? focusTarget : { type:focusTarget.type, id:focusTarget.id };
       const masterView = MASTER_VIEW_FOR_TYPE[target.type];
       if (masterView) {
-        // Route to master view without remounting — just update focus + URL.
         setRecordTarget(null);
         setFocus(target);
         if (view !== masterView) setView(masterView);
@@ -53,13 +53,11 @@ export default function App() {
         if (window.location.hash !== hash) window.location.hash = hash;
         return;
       }
-      // Legacy fallback for types without a master view.
       setRecordTarget(target);
       setView("record");
       window.location.hash = recordPath(target.type, target.id);
       return;
     }
-    // Top-level navigation (sidebar / bottom nav). Clear focus so master views reset to list mode.
     setRecordTarget(null);
     setFocus(null);
     setView(targetView);
@@ -95,9 +93,7 @@ export default function App() {
     setSweepRunning(false);
   };
 
-  // Sync view ↔ URL hash; reset autoRecord when leaving voice
   useEffect(() => {
-    // Skip URL clobber when the current hash already corresponds to this view (e.g., #/tasks/42 while view=tasks).
     const parsed = parseAppHash();
     if (parsed.view !== view) {
       const nextHash = view === "record" && recordTarget ? recordPath(recordTarget.type, recordTarget.id) : "#/" + view;
@@ -203,6 +199,7 @@ export default function App() {
     multi_llm:   <MultiLLMView session={session}/>,
     strategies:   <StrategiesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voitra_gate:  <VoitraGateView/>,
+    rc_controls:  <RCControlsView/>,
     payments:      <PaymentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
