@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Plus, Save, Shield, Sparkles, Target, Trash2, Upload, Users, X, Calendar } from "lucide-react";
+import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, Save, Shield, Sparkles, Target, Trash2, Upload, Users, X, Calendar } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { blankDocument, buildDocOptions, docAssociationKey, docHasAssociation, formatDocSize, getDocEntityLabel, getDocKindLabel, nextId, normalizeDocId, recordPath, sc, uploadDocumentFile } from "../lib/utils";
 
@@ -61,7 +61,7 @@ export const GlobalStyle = () => (
     .filter-chip:hover,.filter-chip.active{background:var(--blue-dim);color:var(--blue);border-color:var(--blue)}
     .filter-select{padding:4px 8px;border-radius:6px;font-size:11px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-sec);cursor:pointer;font-family:var(--font-m)}
 
-    /* ── Mobile responsiveness (≤768px) ── */
+    /* — Mobile responsiveness (<=768px) — */
     .mobile-back{display:none;align-items:center;gap:6px;background:transparent;border:none;color:var(--blue);font-size:13px;cursor:pointer;padding:6px 0;margin-bottom:12px}
     .view-shell{display:flex;height:100%;overflow:hidden}
     .grid-resp-4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -170,9 +170,6 @@ export const Tex = ({ value, onChange, placeholder }) => (
   <textarea className="input" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||""} />
 );
 
-// Entity types that have a navigable master/detail view -> their master view id.
-// Gate used by SearchSelect: a selected value renders as a clickable EntityLink only
-// when its entityType is navigable here. Keys mirror recordListViewFor (RecordDetailView).
 const ENTITY_NAV = {
   contact: "crm", company: "companies", deal: "deals", document: "documents",
   project: "projects", task: "tasks", campaign: "marketing", invoice: "invoices",
@@ -180,9 +177,6 @@ const ENTITY_NAV = {
 };
 
 export const SearchSelect = ({ value, onChange, options, placeholder, entityType, navigate }) => {
-  // options: [{value:"1", label:"Name"}, ...]. value is the selected value string.
-  // entityType + navigate (optional): when both provided and a value is selected,
-  // the displayed label becomes a clickable EntityLink that navigates to that record.
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const selected = options.find(o => String(o.value) === String(value));
@@ -476,6 +470,7 @@ export const NAV = [
   {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
   {id:"voitra_gate",icon:Mic,label:"Voitra Agent Control"},
+  {id:"rc_controls",icon:Phone,label:"RC Controls"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
@@ -514,7 +509,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"associates",icon:BookOpen,label:"Associates"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
