@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, Save, Shield, Sparkles, Target, Trash2, Upload, Users, X, Calendar } from "lucide-react";
+import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, Save, Settings, Shield, Sparkles, Target, Trash2, Upload, Users, X, Calendar } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { blankDocument, buildDocOptions, docAssociationKey, docHasAssociation, formatDocSize, getDocEntityLabel, getDocKindLabel, nextId, normalizeDocId, recordPath, sc, uploadDocumentFile } from "../lib/utils";
 
@@ -469,8 +469,9 @@ export const NAV = [
   {id:"multi_llm",icon:MessageSquare,label:"AI Playground"},
   {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
-  {id:"voitra_gate",icon:Mic,label:"Voitra Agent Control"},
-  {id:"rc_controls",icon:Phone,label:"RC Controls"},
+  {id:"_ai_controls",icon:Settings,label:"AI Controls",group:true,children:["voitra_gate","rc_controls"]},
+  {id:"voitra_gate",icon:Mic,label:"Voitra Agent Control",parent:"_ai_controls"},
+  {id:"rc_controls",icon:Phone,label:"RC Controls",parent:"_ai_controls"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
@@ -509,7 +510,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"associates",icon:BookOpen,label:"Associates"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
