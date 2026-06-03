@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Phone, RefreshCw, Loader } from "lucide-react";
 
 const API_BASE = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/rc-queue-toggle";
@@ -20,27 +20,40 @@ export function RCControlsView() {
   const [busy, setBusy] = useState({});
   const [globalBusy, setGlobalBusy] = useState(false);
   const [logs, setLogs] = useState([]);
+  const mounted = useRef(true);
 
-  const log = useCallback((msg, type) => {
-    const time = new Date().toLocaleTimeString();
-    setLogs(prev => [{ msg, type, time, id: Date.now() + Math.random() }, ...prev].slice(0, 50));
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
   }, []);
 
-  const fetchStatus = useCallback(async () => {
+  const log = (msg, type) => {
+    const time = new Date().toLocaleTimeString();
+    setLogs(prev => [{ msg, type, time, id: Date.now() + Math.random() }, ...prev].slice(0, 50));
+  };
+
+  const fetchStatus = async () => {
     try {
       log("Checking current state...", "info");
       const resp = await fetch(`${API_BASE}?key=${API_KEY}&action=status`);
       const data = await resp.json();
-      setState(data);
-      log(`State: ${data.state.toUpperCase()}`, "success");
+      if (!mounted.current) return;
+      if (data && data.state) {
+        setState(data);
+        log(`State: ${data.state.toUpperCase()}`, "success");
+      } else if (data && data.error) {
+        log(`API error: ${data.error}`, "error");
+      } else {
+        log("Unexpected response format", "error");
+      }
     } catch (e) {
-      log(`Error: ${e.message}`, "error");
+      if (mounted.current) log(`Error: ${e.message}`, "error");
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
-  }, [log]);
+  };
 
-  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => { fetchStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doLine = async (phoneId, action) => {
     if (busy[phoneId] || globalBusy) return;
@@ -50,13 +63,16 @@ export function RCControlsView() {
     try {
       const resp = await fetch(`${API_BASE}?key=${API_KEY}&action=${action}&phoneId=${phoneId}`);
       const data = await resp.json();
+      if (!mounted.current) return;
       (data.results || []).forEach(r => log(`${r.phone} → ${r.target || "unknown"}: ${r.status}`, r.status === "success" ? "success" : "error"));
       if (data.currentState) setState(data.currentState);
     } catch (e) {
-      log(`Error: ${e.message}`, "error");
-      await fetchStatus();
+      if (mounted.current) {
+        log(`Error: ${e.message}`, "error");
+        await fetchStatus();
+      }
     } finally {
-      setBusy(b => ({ ...b, [phoneId]: false }));
+      if (mounted.current) setBusy(b => ({ ...b, [phoneId]: false }));
     }
   };
 
@@ -67,15 +83,18 @@ export function RCControlsView() {
     try {
       const resp = await fetch(`${API_BASE}?key=${API_KEY}&action=${action}`);
       const data = await resp.json();
+      if (!mounted.current) return;
       (data.results || []).forEach(r => log(`${r.phone} → ${r.target || "unknown"}: ${r.status}`, r.status === "success" ? "success" : "error"));
       if (data.currentState) setState(data.currentState);
       const allOk = data.results?.every(r => r.status === "success");
       log(allOk ? `All lines switched to ${action.toUpperCase()}` : "Some lines failed — check log", allOk ? "success" : "error");
     } catch (e) {
-      log(`Error: ${e.message}`, "error");
-      await fetchStatus();
+      if (mounted.current) {
+        log(`Error: ${e.message}`, "error");
+        await fetchStatus();
+      }
     } finally {
-      setGlobalBusy(false);
+      if (mounted.current) setGlobalBusy(false);
     }
   };
 
@@ -122,8 +141,9 @@ export function RCControlsView() {
       <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Per Line</div>
       {(state?.details || []).map(d => {
         const phoneId = d.phoneId;
-        const info = LINE_NAMES[phoneId] || { label: d.phone, onName: "AI", offName: "Normal" };
-        const routeName = ROUTE_NAMES[d.currentExt] || `Ext ${d.currentExt}`;
+        if (!phoneId) return null;
+        const info = LINE_NAMES[phoneId] || { label: d.phone || phoneId, onName: "AI Forward", offName: "Normal" };
+        const routeName = ROUTE_NAMES[d.currentExt] || `Ext ${d.currentExt || "?"}`;
         const isBusy = busy[phoneId] || globalBusy;
         const statusColor = isBusy ? "var(--blue)" : d.status === "on" ? "var(--green)" : "var(--text-sec)";
         return (
