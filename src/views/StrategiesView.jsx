@@ -21,7 +21,7 @@ export const StrategiesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const goals = (db.goals || []);
 
   useEffect(() => {
-    if (focus?.type === "strategy" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
+    if (focus?.type === "strategy" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
