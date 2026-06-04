@@ -19,7 +19,7 @@ export const DocumentsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const inlineFileInputRef = useRef(null);
 
   useEffect(() => {
-    if (focus?.type === "document" && focus.id) { setFilterType("all"); setSel(focus.id); } else setSel(null);
+    if (focus?.type === "document" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
