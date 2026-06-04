@@ -22,7 +22,7 @@ export const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sortBy, setSortBy] = useState("due");
 
   useEffect(() => {
-    if(focus?.type==="task" && focus.id) { setFStatus("all"); setSel(focus.id); } else setSel(null);
+    if(focus?.type==="task" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
