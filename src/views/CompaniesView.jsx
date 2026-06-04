@@ -14,7 +14,7 @@ export const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [editCompany, setEditCompany] = useState(null);
 
   useEffect(() => {
-    if(focus?.type==="company" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
+    if(focus?.type==="company" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
