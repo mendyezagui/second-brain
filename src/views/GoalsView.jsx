@@ -19,7 +19,7 @@ export const GoalsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [statusFilter, setStatusFilter] = useState("active");
 
   useEffect(() => {
-    if (focus?.type === "goal" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
+    if (focus?.type === "goal" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
