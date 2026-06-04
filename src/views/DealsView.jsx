@@ -15,7 +15,7 @@ export const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [stageFilter, setStageFilter] = useState("all");
 
   useEffect(() => {
-    if(focus?.type==="deal" && focus.id) { setStageFilter("all"); setSel(focus.id); } else setSel(null);
+    if(focus?.type==="deal" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
