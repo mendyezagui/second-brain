@@ -76,7 +76,7 @@ export const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
   }, [sel, db.contacts]);
 
   useEffect(() => {
-    if(focus?.type==="contact" && focus.id) { setCatFilter("all"); setSel(focus.id); } else setSel(null);
+    if(focus?.type==="contact" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   const filtered = db.contacts.filter(c => {
