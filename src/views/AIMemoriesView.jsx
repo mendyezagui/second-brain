@@ -25,10 +25,10 @@ export const AIMemoriesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const AI_SYSTEMS = ["claude","chatgpt","gemini","copilot","other"];
   const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
   const typeColors = { general:"var(--blue)", preference:"var(--purple)", feedback:"var(--amber)", context:"var(--green)", decision:"var(--red)", relationship:"var(--purple)", insight:"var(--blue)" };
-  const systemIcons = { claude:"\u2728", chatgpt:"\ud83e\udd16", gemini:"\ud83d\udc8e", copilot:"\u2708\ufe0f", other:"\ud83d\udccc" };
+  const systemIcons = { claude:"✨", chatgpt:"🤖", gemini:"💎", copilot:"✈️", other:"📌" };
 
   useEffect(() => {
-    if (focus?.type === "ai_memory" && focus.id) { setFilterType("all"); setSel(focus.id); } else setSel(null);
+    if (focus?.type === "ai_memory" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
