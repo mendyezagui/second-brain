@@ -11,7 +11,7 @@ const TABS = [
   { id:"campaigns", label:"Campaigns", icon:Megaphone, description:"Legacy campaigns CRM with leads, opens & conversions" },
 ];
 
-/* ── Marketing shell with tabs ──
+/* Marketing shell with tabs.
    Default tab is Pipelines (the new socialCampaigns + contentCalendar
    surface — full marketing/outbound campaigns with day-by-day activities
    and document links). Second tab keeps the legacy db.campaigns CRUD
@@ -50,7 +50,7 @@ export const MarketingView = (props) => {
   );
 };
 
-/* ── Legacy campaigns CRUD (kept intact, originally MarketingView) ── */
+/* Legacy campaigns CRUD (kept intact, originally MarketingView) */
 const LegacyCampaignsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
@@ -61,7 +61,7 @@ const LegacyCampaignsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [editCampaign, setEditCampaign] = useState(null);
 
   useEffect(() => {
-    if(focus?.type==="campaign" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
+    if(focus?.type==="campaign" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
