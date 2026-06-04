@@ -17,7 +17,7 @@ export const PaymentsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [filterMethod, setFilterMethod] = useState("all");
 
   useEffect(() => {
-    if (focus?.type === "payment" && focus.id) { setFilterMethod("all"); setSel(focus.id); } else setSel(null);
+    if (focus?.type === "payment" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
@@ -128,7 +128,7 @@ export const PaymentsView = ({ db, setDB, navigate, focus, setFocus }) => {
                 <div key={ai} style={{ display:"flex", gap:6, alignItems:"center", marginBottom:6 }}>
                   <select className="input" value={a.invoice_id} onChange={e=>{const all=[...editPay.allocations];all[ai]={...all[ai],invoice_id:parseInt(e.target.value)};setEditPay(p=>({...p,allocations:all}));}} style={{ flex:2, fontSize:12 }}>
                     <option value={0}>Select invoice…</option>
-                    {invoices.map(inv=><option key={inv.id} value={inv.id}>{inv.number} – {inv.client}</option>)}
+                    {invoices.map(inv=><option key={inv.id} value={inv.id}>{inv.number} — {inv.client}</option>)}
                   </select>
                   <input className="input" type="number" placeholder="Amount" value={a.amount} onChange={e=>{const all=[...editPay.allocations];all[ai]={...all[ai],amount:parseInt(e.target.value)||0};setEditPay(p=>({...p,allocations:all}));}} style={{ flex:1, fontSize:12 }}/>
                   <button onClick={()=>setEditPay(p=>({...p,allocations:p.allocations.filter((_,i)=>i!==ai)}))} style={{ background:"none", border:"none", color:"var(--red)", cursor:"pointer" }}><X size={14}/></button>
