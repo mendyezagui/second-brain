@@ -24,7 +24,7 @@ export const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const inlineFileInputRef = useRef(null);
 
   useEffect(() => {
-    if(focus?.type==="project" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
+    if(focus?.type==="project" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
