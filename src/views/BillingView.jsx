@@ -15,7 +15,7 @@ export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
-    if(focus?.type==="invoice" && focus.id) { setStatusFilter("all"); setSel(focus.id); } else setSel(null);
+    if(focus?.type==="invoice" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
   useEffect(() => {
