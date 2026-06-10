@@ -28,9 +28,10 @@ import { TasksView } from "./views/TasksView";
 import { VoiceView } from "./views/VoiceView";
 import { VoitraGateView } from "./views/VoitraGateView";
 import SocialMediaView from "./views/SocialMediaView";
+import { CadencesView } from "./views/CadencesView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","associates","mstack","crm","companies","deals","marketing","social","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
+  const VALID_VIEWS = ["dashboard","orchestrator","associates","mstack","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
   const routeFromHash = () => {
     const route = parseAppHash();
     return VALID_VIEWS.includes(route.view) ? route : { view:"dashboard", record:null, focus:null };
@@ -165,14 +166,14 @@ export default function App() {
             <div style={{ width:44, height:44, borderRadius:12, background:"var(--red-dim)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><AlertCircle size={22} color="var(--red)"/></div>
             <div><div className="display" style={{ fontSize:16, fontWeight:700 }}>Missing Environment Variables</div></div>
           </div>
-          <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.7 }}>Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel → Settings → Environment Variables.</p>
+          <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.7 }}>Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel &rarr; Settings &rarr; Environment Variables.</p>
         </div>
       </div>
     </>
   );
-  if (session === undefined) return <><GlobalStyle/><LoadingScreen msg="Checking auth…"/></>;
+  if (session === undefined) return <><GlobalStyle/><LoadingScreen msg="Checking auth..."/></>;
   if (!session) return <LoginScreen/>;
-  if (!db) return <><GlobalStyle/><LoadingScreen msg="Loading your data…"/></>;
+  if (!db) return <><GlobalStyle/><LoadingScreen msg="Loading your data..."/></>;
 
   const alerts = (() => {
     const openTasks = db.tasks.filter(t=>!t.done && t.status!=="done" && t.status!=="cancelled");
@@ -191,6 +192,7 @@ export default function App() {
     deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     marketing:    <MarketingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     social:       <SocialMediaView />,
+    cadences:     <CadencesView />,
     tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
@@ -216,7 +218,7 @@ export default function App() {
         <div style={{ height:46, background:"var(--bg-card)", borderBottom:"1px solid var(--border)", display:"flex", alignItems:"center", padding:"0 16px", gap:10, flexShrink:0, zIndex:10 }}>
           {mobile && <div style={{ width:28, height:28, borderRadius:7, background:"var(--blue-dim)", display:"flex", alignItems:"center", justifyContent:"center" }}><Brain size={14} color="var(--blue)"/></div>}
           <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginLeft:mobile?0:"auto" }}>
-            <span style={{ color:"var(--green)" }}>●</span> LIVE · {new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}
+            <span style={{ color:"var(--green)" }}>&#9679;</span> LIVE &middot; {new Date().toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}
           </div>
           <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
             {alerts > 0 && (
@@ -236,7 +238,7 @@ export default function App() {
         {/* Voice Lab Overlay */}
       {showVoiceLab && <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9998,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShowVoiceLab(false)}}>
         <div style={{background:"var(--card)",borderRadius:16,width:"90%",maxWidth:700,maxHeight:"85vh",overflow:"auto",position:"relative",padding:0}}>
-          <button onClick={()=>setShowVoiceLab(false)} style={{position:"absolute",top:12,right:12,zIndex:10,background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text)"}}>✕</button>
+          <button onClick={()=>setShowVoiceLab(false)} style={{position:"absolute",top:12,right:12,zIndex:10,background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text)"}}>&times;</button>
           <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>
         </div>
       </div>}
