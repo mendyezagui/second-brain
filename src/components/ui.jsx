@@ -61,7 +61,7 @@ export const GlobalStyle = () => (
     .filter-chip:hover,.filter-chip.active{background:var(--blue-dim);color:var(--blue);border-color:var(--blue)}
     .filter-select{padding:4px 8px;border-radius:6px;font-size:11px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-sec);cursor:pointer;font-family:var(--font-m)}
 
-    /* — Mobile responsiveness (<=768px) — */
+    /* Mobile responsiveness (max-width: 768px) */
     .mobile-back{display:none;align-items:center;gap:6px;background:transparent;border:none;color:var(--blue);font-size:13px;cursor:pointer;padding:6px 0;margin-bottom:12px}
     .view-shell{display:flex;height:100%;overflow:hidden}
     .grid-resp-4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -193,7 +193,7 @@ export const SearchSelect = ({ value, onChange, options, placeholder, entityType
           </EntityLink>
         </div>
       ) : (
-        <input className="input" value={open ? q : (selected?.label || "")} placeholder={placeholder || "Search…"}
+        <input className="input" value={open ? q : (selected?.label || "")} placeholder={placeholder || "Search..."}
           onFocus={() => { setOpen(true); setQ(""); }}
           onChange={e => { setQ(e.target.value); setOpen(true); }}
           style={{ fontSize:13, paddingRight: hasValue ? 28 : undefined }}
@@ -212,7 +212,7 @@ export const SearchSelect = ({ value, onChange, options, placeholder, entityType
         <>
           <div style={{ position:"fixed", inset:0, zIndex:998 }} onClick={() => setOpen(false)}/>
           <div style={{ position:"absolute", top:"100%", left:0, right:0, maxHeight:180, overflowY:"auto", background:"var(--bg-card)", border:"1px solid var(--border)", borderRadius:8, boxShadow:"0 8px 24px rgba(0,0,0,0.12)", zIndex:999, marginTop:2 }}>
-            <div style={{ padding:"6px 10px", fontSize:11, color:"var(--text-dim)", cursor:"pointer", borderBottom:"1px solid var(--border)" }} onClick={() => { onChange(""); setOpen(false); }}>— none —</div>
+            <div style={{ padding:"6px 10px", fontSize:11, color:"var(--text-dim)", cursor:"pointer", borderBottom:"1px solid var(--border)" }} onClick={() => { onChange(""); setOpen(false); }}>&mdash; none &mdash;</div>
             {filtered.slice(0, 20).map(o => (
               <div key={o.value} style={{ padding:"7px 10px", fontSize:12, cursor:"pointer", background:String(o.value)===String(value)?"var(--blue-dim)":"transparent" }}
                 onMouseDown={e => e.preventDefault()}
@@ -345,7 +345,7 @@ export const AssociatedDocumentsPanel = ({ db, setDB, entityType, entityId, titl
               {(d.file_name || d.storage_path) ? <Paperclip size={13} color="var(--blue)"/> : <ExternalLink size={13} color="var(--blue)"/>}
               <div style={{ flex:1, minWidth:0 }}>
                 <a href={d.url || "#"} target={d.url ? "_blank" : undefined} rel="noopener noreferrer" style={{ fontSize:12, fontWeight:600, color:d.url ? "var(--blue)" : "var(--text)", textDecoration:"none" }}>{d.title || d.file_name || "Untitled document"}</a>
-                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{getDocKindLabel(d)} · {(d.associations || []).length} association{(d.associations || []).length === 1 ? "" : "s"}{d.file_size ? ` · ${formatDocSize(d.file_size)}` : ""}</div>
+                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{getDocKindLabel(d)} &middot; {(d.associations || []).length} association{(d.associations || []).length === 1 ? "" : "s"}{d.file_size ? ` - ${formatDocSize(d.file_size)}` : ""}</div>
               </div>
               <button className="btn-icon" title="Edit associations" onClick={() => openEdit(d)}><Pencil size={13}/></button>
             </div>
@@ -392,7 +392,7 @@ export const ActivityTimeline = ({ events, entityType, entityId }) => {
           <Activity size={11} color="var(--text-sec)" style={{ flexShrink:0, marginTop:3 }}/>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:12, lineHeight:1.5 }}>{e.description}</div>
-            <div className="mono" style={{ fontSize:9, color:"var(--text-dim)", marginTop:2 }}>{e.ts ? new Date(e.ts).toLocaleDateString() : ""} · {e.source}</div>
+            <div className="mono" style={{ fontSize:9, color:"var(--text-dim)", marginTop:2 }}>{e.ts ? new Date(e.ts).toLocaleDateString() : ""} &middot; {e.source}</div>
           </div>
         </div>
       ))}
@@ -400,7 +400,7 @@ export const ActivityTimeline = ({ events, entityType, entityId }) => {
   );
 };
 
-export const LoadingScreen = ({ msg="Loading…" }) => (
+export const LoadingScreen = ({ msg="Loading..." }) => (
   <div style={{ height:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"var(--bg)", gap:14 }}>
     <div style={{ width:44, height:44, borderRadius:12, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center" }}>
       <Brain size={22} color="var(--blue)"/>
@@ -433,15 +433,15 @@ export const LoginScreen = () => {
             <Brain size={26} color="var(--blue)"/>
           </div>
           <div className="display" style={{ fontSize:20, fontWeight:800 }}>Second Brain</div>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>Life Operating System · Private Access</div>
+          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>Life Operating System &middot; Private Access</div>
         </div>
         {error && <div style={{ background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.25)", borderRadius:8, padding:"10px 14px", fontSize:12, color:"var(--red)", display:"flex", gap:7 }}><AlertCircle size={14} style={{ flexShrink:0, marginTop:1 }}/>{error}</div>}
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           <Field label="Email"><input className="input" type="email" value={email} placeholder="you@example.com" onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&signIn()}/></Field>
-          <Field label="Password"><input className="input" type="password" value={password} placeholder="••••••••" onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&signIn()}/></Field>
+          <Field label="Password"><input className="input" type="password" value={password} placeholder="********" onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&signIn()}/></Field>
         </div>
         <button className="btn btn-blue" onClick={signIn} disabled={loading} style={{ justifyContent:"center", opacity:loading?0.6:1, height:42, fontSize:14 }}>
-          {loading ? <><Loader size={14} className="spin"/>Signing in…</> : <><Shield size={14}/>Sign In</>}
+          {loading ? <><Loader size={14} className="spin"/>Signing in...</> : <><Shield size={14}/>Sign In</>}
         </button>
       </div>
     </div>
@@ -457,6 +457,7 @@ export const NAV = [
   {id:"companies",icon:Building2,label:"Companies"},
     {id:"marketing",icon:Megaphone,label:"Marketing"},
     {id:"social",icon:Calendar,label:"Social Media"},
+    {id:"cadences",icon:Activity,label:"Cadences"},
   {id:"projects",icon:Briefcase,label:"Projects"},
   {id:"documents",icon:FileText,label:"Documents"},
     {id:"_fin",icon:DollarSign,label:"Financials",group:true,children:["deals","invoices","payments"]},
@@ -510,7 +511,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"associates",icon:BookOpen,label:"Associates"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
