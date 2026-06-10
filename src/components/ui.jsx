@@ -450,6 +450,7 @@ export const LoginScreen = () => {
 
 export const NAV = [
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
+  {id:"brief",icon:Sparkles,label:"Morning Brief"},
   {id:"associates",icon:BookOpen,label:"Associates"},
   {id:"tasks",icon:CheckCircle,label:"Tasks"},
   {divider:true},
@@ -510,8 +511,8 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
-  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"associates",icon:BookOpen,label:"Associates"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
+  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
+  const secondary = [{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
