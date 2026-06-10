@@ -5,6 +5,8 @@ import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, Field, Inp, Sel, Tag, 
 
 export const blankInvoice = () => ({ number:"", client:"", amount:0, status:"draft", issued:"", due:"", notes:"" });
 
+const money = (n) => "$" + Number(n || 0).toLocaleString();
+
 export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
@@ -31,6 +33,11 @@ export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
     return true;
   });
   const invoice = sel ? db.invoices.find(x => x.id === sel) : null;
+  // Paid + Outstanding are maintained by DB triggers off payment_allocations.
+  // Fall back to a local compute for an invoice created this session but not yet reloaded.
+  const paidAmt = invoice ? (invoice.amount_paid || 0) : 0;
+  const outstandingAmt = invoice ? (invoice.outstanding ?? ((invoice.amount || 0) - paidAmt)) : 0;
+  const invAllocs = invoice ? (db.payment_allocations || []).filter(a => a.invoice_id === invoice.id) : [];
 
   const saveInline = () => {
     if (!editInv) return;
@@ -75,6 +82,9 @@ export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2 }}>
                 <div className="mono" style={{ fontSize:11, fontWeight:600 }}>{fmt(inv.amount)}</div>
+                {(inv.outstanding ?? 1) !== 0 && (inv.amount_paid || 0) > 0
+                  ? <div className="mono" style={{ fontSize:9, color:"var(--amber)" }}>{money(inv.outstanding)} due</div>
+                  : null}
                 <Tag label={inv.status}/>
               </div>
             </div>
@@ -99,9 +109,9 @@ export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
             </div>
 
             <div className="grid-resp-4" style={{ marginBottom:20 }}>
-              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--blue)" }}>{fmt(invoice.amount)}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Amount</div></div>
-              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:13, fontWeight:600 }}>{invoice.issued||"—"}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Issued</div></div>
-              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:13, fontWeight:600 }}>{invoice.due||"—"}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Due</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--blue)" }}>{money(invoice.amount)}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Total</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color:"var(--green)" }}>{money(paidAmt)}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Paid</div></div>
+              <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:20, fontWeight:700, fontFamily:"var(--font-d)", color: outstandingAmt > 0 ? "var(--red)" : "var(--green)" }}>{money(outstandingAmt)}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Outstanding</div></div>
               <div className="card-el" style={{ padding:14, textAlign:"center" }}><div style={{ fontSize:13, fontWeight:600 }}>{invoice.status}</div><div style={{ fontSize:11, color:"var(--text-sec)" }}>Status</div></div>
             </div>
 
@@ -115,6 +125,28 @@ export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
                 <Field label="Due Date"><Inp type="date" value={editInv.due||""} onChange={v=>setEditInv(p=>({...p,due:v}))}/></Field>
               </div>
               <Field label="Notes"><Tex value={editInv.notes||""} onChange={v=>setEditInv(p=>({...p,notes:v}))}/></Field>
+            </div>
+
+            <div className="card" style={{ padding:20, marginBottom:16 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                <span style={{ fontSize:13, fontWeight:700 }}>Payments Applied</span>
+                <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>{money(paidAmt)} of {money(invoice.amount)}</span>
+              </div>
+              {invAllocs.length === 0 ? (
+                <div style={{ fontSize:12, color:"var(--text-sec)" }}>No payments applied yet. Apply one from the Payments view.</div>
+              ) : invAllocs.map(a => {
+                const pay = (db.payments || []).find(p => p.id === a.payment_id);
+                return (
+                  <div key={a.id} className="row-hover" onClick={()=>{ if (pay) navigate("record",{type:"payment",id:pay.id}); }}
+                    style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"9px 6px", borderTop:"1px solid var(--border)", cursor: pay ? "pointer" : "default" }}>
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:600 }}>{pay ? pay.payer : "Payment #" + a.payment_id}</div>
+                      <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{pay ? `${pay.date || ""}${pay.method ? " · " + pay.method : ""}` : ""}</div>
+                    </div>
+                    <div className="mono" style={{ fontSize:12, fontWeight:600, color:"var(--green)" }}>{money(a.amount)}</div>
+                  </div>
+                );
+              })}
             </div>
 
             <AssociatedDocumentsPanel db={db} setDB={setDB} entityType="invoice" entityId={invoice.id}/>
