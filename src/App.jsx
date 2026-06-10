@@ -29,9 +29,10 @@ import { VoiceView } from "./views/VoiceView";
 import { VoitraGateView } from "./views/VoitraGateView";
 import SocialMediaView from "./views/SocialMediaView";
 import { CadencesView } from "./views/CadencesView";
+import { MorningBriefView } from "./views/MorningBriefView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","orchestrator","associates","mstack","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
+  const VALID_VIEWS = ["dashboard","brief","orchestrator","associates","mstack","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
   const routeFromHash = () => {
     const route = parseAppHash();
     return VALID_VIEWS.includes(route.view) ? route : { view:"dashboard", record:null, focus:null };
@@ -184,6 +185,7 @@ export default function App() {
   })();
   const VIEWS = {
     dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} setShowVoiceLab={setShowVoiceLab} />,
+    brief:        <MorningBriefView />,
     orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
     associates:   <AssociatesView db={db} setDB={setDB} navigate={navigate}/>,
     mstack:       <AssociatesView db={db} setDB={setDB} navigate={navigate}/>,
