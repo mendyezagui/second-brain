@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Briefcase, ChevronRight, FileText, Loader, Plus, Save, Search, Target, Trash2, Upload, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { nextId } from "../lib/utils";
-import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, Sel, Tag, Tex } from "../components/ui";
+import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, Sel, Tag, Tex, useListControls } from "../components/ui";
 
 export const blankStrategy = () => ({ name:"", description:"", goalId:"", status:"active", priority:"medium", notes:"", links:[], files:[] });
+
+const asArray = (v) => Array.isArray(v) ? v : (v && typeof v === "object") ? Object.entries(v).map(([label, url]) => ({ label, url: String(url) })) : [];
 
 export const StrategiesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
@@ -12,8 +14,6 @@ export const StrategiesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [sd, setSD] = useState(blankStrategy());
   const [editStrategy, setEditStrategy] = useState(null);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -27,14 +27,21 @@ export const StrategiesView = ({ db, setDB, navigate, focus, setFocus }) => {
   useEffect(() => {
     if (sel) {
       const s = strategies.find(x => x.id === sel);
-      if (s) setEditStrategy({...s, goalId: String(s.goalId || ""), links: s.links || [], files: s.files || []});
+      if (s) setEditStrategy({...s, goalId: String(s.goalId || ""), links: asArray(s.links), files: asArray(s.files)});
     } else setEditStrategy(null);
   }, [sel, db.strategies]);
 
-  const filtered = strategies.filter(s => {
-    if (query && !s.name.toLowerCase().includes(query.toLowerCase())) return false;
-    if (statusFilter !== "all" && s.status !== statusFilter) return false;
-    return true;
+  const { rows: filtered, controls } = useListControls(strategies, {
+    search: { keys: ["name"], placeholder: "Search strategies…" },
+    facets: [
+      { key: "status", label: "Status", field: "status", default: "active", options: ["active", "completed", "paused", "cancelled"] },
+      { key: "priority", label: "Priority", field: "priority", options: ["critical", "high", "medium", "low"] },
+    ],
+    sorts: [
+      { key: "name", label: "Name", field: "name" },
+      { key: "priority", label: "Priority", field: (s) => ({ critical: 0, high: 1, medium: 2, low: 3 }[s.priority] ?? 9) },
+    ],
+    defaultSort: { key: "name", dir: "asc" },
   });
   const strategy = sel ? strategies.find(x => x.id === sel) : null;
   const strategyGoal = strategy && strategy.goalId ? goals.find(g => g.id === strategy.goalId) : null;
@@ -119,15 +126,7 @@ export const StrategiesView = ({ db, setDB, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Strategies</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setSD(blankStrategy());setDrawer({mode:"add"});}}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-            {["all","active","completed","paused","cancelled"].map(s=>(
-              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
-            ))}
-          </div>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(s=>(

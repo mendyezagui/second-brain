@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Briefcase, Check, ChevronRight, FileText, Loader, Plus, Save, Search, Sparkles, Target, Trash2, Upload, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { callClaude, nextId, sc, today } from "../lib/utils";
-import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, SearchSelect, Sel, Tag, Tex } from "../components/ui";
+import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, SearchSelect, Sel, Tag, Tex, useListControls } from "../components/ui";
+
+const asArray = (v) => Array.isArray(v) ? v : (v && typeof v === "object") ? Object.entries(v).map(([label, url]) => ({ label, url: String(url) })) : [];
 import { blankTask } from "./TasksView";
 
 export const blankProject = () => ({ name:"", client:"", companyId:"", type:"client", status:"active", progress:0, dueDate:"", priority:"medium", notes:"", links:[], files:[], strategyId:"" });
@@ -18,8 +20,6 @@ export const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [aiProposals, setAiProposals] = useState(null);
   const [selectedProposals, setSelectedProposals] = useState({});
   const [uploading, setUploading] = useState(false);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const fileInputRef = useRef(null);
   const inlineFileInputRef = useRef(null);
 
@@ -30,14 +30,24 @@ export const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
   useEffect(() => {
     if (sel) {
       const p = db.projects.find(x => x.id === sel);
-      if (p) setEditProject({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:p.links||[], files:p.files||[]});
+      if (p) setEditProject({...p, progress:String(p.progress), companyId:String(p.companyId||""), strategyId:String(p.strategyId||""), links:asArray(p.links), files:asArray(p.files)});
     } else setEditProject(null);
   }, [sel, db.projects]);
 
-  const filtered = db.projects.filter(p => {
-    if (query && !`${p.name} ${p.client||""}`.toLowerCase().includes(query.toLowerCase())) return false;
-    if (statusFilter !== "all" && p.status !== statusFilter) return false;
-    return true;
+  const { rows: filtered, controls } = useListControls(db.projects, {
+    search: { keys: ["name", "client"], placeholder: "Search projects…" },
+    facets: [
+      { key: "status", label: "Status", field: "status", default: "active", options: ["active", "stalled", "complete", "on-hold", "closed"] },
+      { key: "type", label: "Type", field: (p) => p.type || "client", options: ["client", "strategic"] },
+      { key: "priority", label: "Priority", field: "priority", options: ["critical", "high", "medium", "low"] },
+    ],
+    sorts: [
+      { key: "name", label: "Name", field: "name" },
+      { key: "progress", label: "Progress", field: (p) => p.progress || 0 },
+      { key: "dueDate", label: "Due date", field: "dueDate" },
+      { key: "priority", label: "Priority", field: (p) => ({ critical: 0, high: 1, medium: 2, low: 3 }[p.priority] ?? 9) },
+    ],
+    defaultSort: { key: "name", dir: "asc" },
   });
   const project = sel ? db.projects.find(p => p.id === sel) : null;
   const projectTasks = project ? db.tasks.filter(t => t.projectId === project.id) : [];
@@ -139,15 +149,7 @@ export const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Projects</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setPD(blankProject());setDrawer({mode:"add",type:"project"});}}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-            {["all","active","stalled","complete","on-hold"].map(s=>(
-              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
-            ))}
-          </div>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search..." value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(p => {
@@ -203,7 +205,7 @@ export const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
                 <Field label="Client"><Inp value={editProject.client||""} onChange={v=>setEditProject(p=>({...p,client:v}))}/></Field>
                 <Field label="Company"><SearchSelect value={editProject.companyId} onChange={v=>setEditProject(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search..."/></Field>
-                <Field label="Status"><Sel value={editProject.status} onChange={v=>setEditProject(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
+                <Field label="Status"><Sel value={editProject.status} onChange={v=>setEditProject(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold","closed"]}/></Field>
                 <Field label="Type"><Sel value={editProject.type||"client"} onChange={v=>setEditProject(p=>({...p,type:v}))} options={["client","strategic"]}/></Field>
                 <Field label="Priority"><Sel value={editProject.priority} onChange={v=>setEditProject(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
                 <Field label="Progress (%)"><Inp type="number" value={editProject.progress} onChange={v=>setEditProject(p=>({...p,progress:v}))}/></Field>
@@ -309,7 +311,7 @@ export const ProjectsView = ({ db, setDB, navigate, focus, setFocus }) => {
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
           <Field label="Client"><Inp value={pd.client} onChange={v=>setPD(p=>({...p,client:v}))}/></Field>
           <Field label="Company"><SearchSelect value={pd.companyId||""} onChange={v=>setPD(p=>({...p,companyId:v}))} options={db.companies.map(c=>({value:String(c.id),label:c.name}))} placeholder="Search..."/></Field>
-          <Field label="Status"><Sel value={pd.status} onChange={v=>setPD(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold"]}/></Field>
+          <Field label="Status"><Sel value={pd.status} onChange={v=>setPD(p=>({...p,status:v}))} options={["active","stalled","complete","on-hold","closed"]}/></Field>
           <Field label="Type"><Sel value={pd.type||"client"} onChange={v=>setPD(p=>({...p,type:v}))} options={["client","strategic"]}/></Field>
           <Field label="Priority"><Sel value={pd.priority} onChange={v=>setPD(p=>({...p,priority:v}))} options={["critical","high","medium","low"]}/></Field>
           <Field label="Due Date"><Inp type="date" value={pd.dueDate} onChange={v=>setPD(p=>({...p,dueDate:v}))}/></Field>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, Megaphone, Plus, Save, Search, Target, Trash2 } from "lucide-react";
 import { fmt, nextId } from "../lib/utils";
-import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, ScoreBadge, Sel, Tag, Tex } from "../components/ui";
+import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, ScoreBadge, Sel, Tag, Tex, useListControls } from "../components/ui";
 import PipelinesView from "./PipelinesView";
 
 export const blankCampaign = () => ({ name:"", type:"Email", status:"draft", leads:0, opens:0, conversions:0, startDate:"" });
@@ -56,8 +56,6 @@ const LegacyCampaignsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankCampaign());
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [editCampaign, setEditCampaign] = useState(null);
 
   useEffect(() => {
@@ -71,10 +69,18 @@ const LegacyCampaignsView = ({ db, setDB, navigate, focus, setFocus }) => {
     } else setEditCampaign(null);
   }, [sel, db.campaigns]);
 
-  const filtered = (db.campaigns||[]).filter(c => {
-    if (query && !c.name.toLowerCase().includes(query.toLowerCase())) return false;
-    if (statusFilter !== "all" && c.status !== statusFilter) return false;
-    return true;
+  const { rows: filtered, controls } = useListControls(db.campaigns || [], {
+    search: { keys: ["name"], placeholder: "Search campaigns…" },
+    facets: [
+      { key: "status", label: "Status", field: "status", default: "active", options: ["draft", "active", "paused", "complete"] },
+      { key: "type", label: "Type", field: "type", options: ["Email", "Social", "Referral", "Paid", "Event", "Other"] },
+    ],
+    sorts: [
+      { key: "name", label: "Name", field: "name" },
+      { key: "startDate", label: "Start date", field: "startDate" },
+      { key: "leads", label: "Leads", field: (c) => c.leads || 0 },
+    ],
+    defaultSort: { key: "name", dir: "asc" },
   });
 
   const campaign = sel ? db.campaigns.find(c=>c.id===sel) : null;
@@ -98,15 +104,7 @@ const LegacyCampaignsView = ({ db, setDB, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Campaigns</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setD(blankCampaign());setDrawer("add");}}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-            {["all","draft","active","paused","complete"].map(s=>(
-              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
-            ))}
-          </div>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search campaigns…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(c=>(

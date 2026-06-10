@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Brain, Check, ChevronRight, Copy, FileText, Loader, Paperclip, Plus, Save, Search, Trash2, Upload, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
-import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, Field, Inp, Sel, Tag, Tex } from "../components/ui";
+import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, Field, Inp, Sel, Tag, Tex, useListControls } from "../components/ui";
 
 export const MEMORY_TYPES = ["general","preference","feedback","context","decision","relationship","insight"];
 
@@ -15,9 +15,6 @@ export const AIMemoriesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [md, setMd] = useState({});
   const [editMem, setEditMem] = useState(null);
-  const [query, setQuery] = useState("");
-  const [filterType, setFilterType] = useState("all");
-  const [filterSystem, setFilterSystem] = useState("all");
   const [copied, setCopied] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
@@ -38,15 +35,18 @@ export const AIMemoriesView = ({ db, setDB, navigate, focus, setFocus }) => {
     } else setEditMem(null);
   }, [sel, db.ai_memories]);
 
-  const filtered = (db.ai_memories||[]).filter(m => {
-    if (filterType !== "all" && m.memory_type !== filterType) return false;
-    if (filterSystem !== "all" && m.ai_system !== filterSystem) return false;
-    if (query) {
-      const s = query.toLowerCase();
-      if (!(m.subject||"").toLowerCase().includes(s) && !(m.memory_summary||"").toLowerCase().includes(s)) return false;
-    }
-    return true;
-  }).sort((a,b) => (b.id||0)-(a.id||0));
+  const { rows: filtered, controls } = useListControls(db.ai_memories || [], {
+    search: { keys: ["subject", "memory_summary", "source_context"], placeholder: "Search memories…" },
+    facets: [
+      { key: "memory_type", label: "Type", field: "memory_type", options: MEMORY_TYPES },
+      { key: "ai_system", label: "System", field: "ai_system", options: AI_SYSTEMS },
+    ],
+    sorts: [
+      { key: "recent", label: "Recently added", field: (m) => m.id || 0 },
+      { key: "subject", label: "Subject", field: "subject" },
+    ],
+    defaultSort: { key: "recent", dir: "desc" },
+  });
   const memory = sel ? (db.ai_memories||[]).find(m => m.id === sel) : null;
 
   const saveInline = () => {
@@ -99,19 +99,7 @@ export const AIMemoriesView = ({ db, setDB, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>AI Memories</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setMd({subject:"",memory_summary:"",ai_system:"claude",memory_type:"general",source_context:"",files:[]});setDrawer("add");}}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:6 }}>
-            {["all",...MEMORY_TYPES].map(t=>(
-              <button key={t} className={`filter-chip${filterType===t?" active":""}`} onClick={()=>setFilterType(t)}>{t}</button>
-            ))}
-          </div>
-          <select className="filter-select" value={filterSystem} onChange={e=>setFilterSystem(e.target.value)} style={{ marginBottom:8, width:"100%" }}>
-            <option value="all">All Systems</option>
-            {AI_SYSTEMS.map(s=><option key={s} value={s}>{systemIcons[s]} {s}</option>)}
-          </select>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search memories…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(m=>(

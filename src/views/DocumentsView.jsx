@@ -3,7 +3,7 @@ import { ChevronRight, ExternalLink, FileText, Loader, Paperclip, Plus, Save, Se
 import { DOCUMENT_ENTITY_TYPES } from "../lib/constants";
 import { supabase } from "../lib/supabase";
 import { blankDocument, formatDocSize, getDocKindLabel, nextId, uploadDocumentFile } from "../lib/utils";
-import { ConfirmDelete, DocumentAssociationEditor, Drawer, Field, Inp } from "../components/ui";
+import { ConfirmDelete, DocumentAssociationEditor, Drawer, Field, Inp, useListControls } from "../components/ui";
 
 export const DocumentsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
@@ -11,8 +11,6 @@ export const DocumentsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [doc, setDoc] = useState(blankDocument());
   const [editDoc, setEditDoc] = useState(null);
-  const [query, setQuery] = useState("");
-  const [filterType, setFilterType] = useState("all");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
   const drawerFileInputRef = useRef(null);
@@ -29,12 +27,17 @@ export const DocumentsView = ({ db, setDB, navigate, focus, setFocus }) => {
     } else setEditDoc(null);
   }, [sel, db.documents]);
 
-  const docs = (db.documents || []).filter(d => {
-    const q = query.toLowerCase();
-    const matchesSearch = !q || [d.title, d.file_name, d.description, d.url].some(v => (v || "").toLowerCase().includes(q));
-    const matchesType = filterType === "all" || (d.associations || []).some(a => a.type === filterType);
-    return matchesSearch && matchesType;
-  }).sort((a,b) => (b.id || 0) - (a.id || 0));
+  const { rows: docs, controls } = useListControls(db.documents || [], {
+    search: { keys: ["title", "file_name", "description", "url"], placeholder: "Search documents…" },
+    facets: [
+      { key: "assoc", label: "Linked to", options: DOCUMENT_ENTITY_TYPES.map((t) => ({ value: t.type, label: t.label, test: (d) => (d.associations || []).some((a) => a.type === t.type) })) },
+    ],
+    sorts: [
+      { key: "recent", label: "Recently added", field: (d) => d.id || 0 },
+      { key: "title", label: "Title", field: "title" },
+    ],
+    defaultSort: { key: "recent", dir: "desc" },
+  });
   const selDoc = sel ? (db.documents||[]).find(d => d.id === sel) : null;
 
   const saveInline = () => {
@@ -94,14 +97,7 @@ export const DocumentsView = ({ db, setDB, navigate, focus, setFocus }) => {
               <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setDoc(blankDocument());setDrawer("add");}}><Plus size={12}/>Add</button>
             </div>
           </div>
-          <select className="filter-select" value={filterType} onChange={e=>setFilterType(e.target.value)} style={{ width:"100%", marginBottom:8 }}>
-            <option value="all">All associations</option>
-            {DOCUMENT_ENTITY_TYPES.map(t=><option key={t.type} value={t.type}>{t.label}</option>)}
-          </select>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search documents…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {docs.map(d => (

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, CheckCircle, ChevronRight, Plus, Save, Search, Trash2 } from "lucide-react";
 import { TASK_CATEGORIES, TASK_STATUSES } from "../lib/constants";
 import { nextId, today } from "../lib/utils";
-import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, SearchSelect, Sel, Tag, Tex } from "../components/ui";
+import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, SearchSelect, Sel, Tag, Tex, useListControls } from "../components/ui";
 
 export const blankTask = () => ({ title:"", projectId:"", contactId:"", companyId:"", dealId:"", due:"", done:false, priority:"medium", assignedTo:"", notes:"", status:"todo", category:"follow_up", source:"manual", recurrence:"none", reschedule_count:0 });
 
@@ -13,13 +13,6 @@ export const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [td, setTD] = useState(blankTask());
   const [editTask, setEditTask] = useState(null);
 
-  // Task filters
-  const [fStatus, setFStatus] = useState("open");
-  const [fPriority, setFPriority] = useState("all");
-  const [fCategory, setFCategory] = useState("all");
-  const [fSource, setFSource] = useState("all");
-  const [searchQ, setSearchQ] = useState("");
-  const [sortBy, setSortBy] = useState("due");
 
   useEffect(() => {
     if(focus?.type==="task" && focus.id) { setSel(focus.id); } else setSel(null);
@@ -32,32 +25,33 @@ export const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
     } else setEditTask(null);
   }, [sel, db.tasks]);
 
-  const filteredTasks = useMemo(() => {
-    let tasks = db.tasks;
-    if (fStatus === "open") tasks = tasks.filter(t => !t.done && t.status !== "done" && t.status !== "cancelled");
-    else if (fStatus !== "all") tasks = tasks.filter(t => t.status === fStatus);
-    if (fPriority !== "all") tasks = tasks.filter(t => t.priority === fPriority);
-    if (fCategory !== "all") tasks = tasks.filter(t => t.category === fCategory);
-    if (fSource === "mine") tasks = tasks.filter(t => !(t.source||"").startsWith("agent:"));
-    else if (fSource === "agent") tasks = tasks.filter(t => (t.source||"").startsWith("agent:"));
-    if (searchQ.trim()) {
-      const q = searchQ.toLowerCase();
-      tasks = tasks.filter(t => {
-        const contact = db.contacts.find(c=>c.id===t.contactId);
-        const company = db.companies.find(c=>c.id===t.companyId);
-        const project = db.projects.find(p=>p.id===t.projectId);
-        return (t.title||"").toLowerCase().includes(q) || (t.notes||"").toLowerCase().includes(q) || (contact?.name||"").toLowerCase().includes(q) || (company?.name||"").toLowerCase().includes(q) || (project?.name||"").toLowerCase().includes(q);
-      });
-    }
-
-    const priOrder = { critical:0, high:1, medium:2, low:3 };
-    tasks = [...tasks].sort((a,b) => {
-      if (sortBy === "due") return (a.due||"9999").localeCompare(b.due||"9999");
-      if (sortBy === "priority") return (priOrder[a.priority]||9) - (priOrder[b.priority]||9);
-      return 0;
-    });
-    return tasks;
-  }, [db.tasks, fStatus, fPriority, fCategory, fSource, searchQ, sortBy, db.contacts, db.companies, db.projects]);
+  const { rows: filteredTasks, controls } = useListControls(db.tasks, {
+    search: {
+      keys: ["title", "notes",
+        (t) => db.contacts.find((c) => c.id === t.contactId)?.name,
+        (t) => db.companies.find((c) => c.id === t.companyId)?.name,
+        (t) => db.projects.find((p) => p.id === t.projectId)?.name],
+      placeholder: "Search tasks…",
+    },
+    facets: [
+      { key: "status", label: "Status", field: "status", default: "open", options: [
+        { value: "open", label: "Open", test: (t) => !t.done && t.status !== "done" && t.status !== "cancelled" },
+        ...TASK_STATUSES,
+      ] },
+      { key: "priority", label: "Priority", field: "priority", options: ["critical", "high", "medium", "low"] },
+      { key: "category", label: "Category", field: "category", options: TASK_CATEGORIES },
+      { key: "source", label: "Source", options: [
+        { value: "mine", label: "Mine", test: (t) => !(t.source || "").startsWith("agent:") },
+        { value: "agent", label: "Agent", test: (t) => (t.source || "").startsWith("agent:") },
+      ] },
+    ],
+    sorts: [
+      { key: "due", label: "Due date", field: (t) => t.due || "9999" },
+      { key: "priority", label: "Urgency", field: (t) => ({ critical: 0, high: 1, medium: 2, low: 3 }[t.priority] ?? 9) },
+      { key: "created", label: "Recently added", field: (t) => t.id || 0 },
+    ],
+    defaultSort: { key: "due", dir: "asc" },
+  });
 
   const saveInline = () => {
     if (!editTask) return;
@@ -96,25 +90,7 @@ export const TasksView = ({ db, setDB, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Tasks</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setTD(blankTask());setDrawer({mode:"add",type:"task"});}}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:6 }}>
-            {["open","all","todo","in_progress","waiting","done","cancelled"].map(s=>(
-              <button key={s} className={`filter-chip${fStatus===s?" active":""}`} onClick={()=>setFStatus(s)}>{s.replace(/_/g," ")}</button>
-            ))}
-          </div>
-          <div style={{ display:"flex", gap:6, marginBottom:8 }}>
-            <select className="filter-select" value={fPriority} onChange={e=>setFPriority(e.target.value)} style={{ flex:1 }}>
-              <option value="all">Any Priority</option>
-              {["critical","high","medium","low"].map(p=><option key={p} value={p}>{p}</option>)}
-            </select>
-            <select className="filter-select" value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ flex:1 }}>
-              <option value="due">Due Date</option>
-              <option value="priority">Urgency</option>
-            </select>
-          </div>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search..." value={searchQ} onChange={e=>setSearchQ(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
           <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:6 }}>{filteredTasks.length} task{filteredTasks.length!==1?"s":""}</div>
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, Save, Settings, Shield, Sparkles, Target, Trash2, Upload, Users, X, Calendar } from "lucide-react";
+import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, Save, Search, Settings, Shield, SlidersHorizontal, Sparkles, Target, Trash2, Upload, Users, X, Calendar } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { blankDocument, buildDocOptions, docAssociationKey, docHasAssociation, formatDocSize, getDocEntityLabel, getDocKindLabel, nextId, normalizeDocId, recordPath, sc, uploadDocumentFile } from "../lib/utils";
 
@@ -541,4 +541,137 @@ export const BottomNav = ({ view, setView }) => {
       </div>
     </>
   );
+};
+
+// ─── Unified Filter + Sort ("funnel") used across every list view ───────────
+const _flGet = (row, field) => (typeof field === "function" ? field(row) : row?.[field]);
+const _flOptVal = (o) => (o && typeof o === "object" ? o.value : o);
+const _flPretty = (s) => (s === "all" ? "All" : String(s).replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
+const _flOptLabel = (o) => (o && typeof o === "object" ? (o.label ?? _flPretty(o.value)) : _flPretty(o));
+
+export const FilterSort = ({ search, query, setQuery, facets, facetState, setFacet, sorts, sortKey, setSortKey, sortDir, setSortDir, activeCount, clearAll }) => {
+  const [open, setOpen] = useState(false);
+  const activePills = [
+    ...facets.filter((f) => (facetState[f.key] ?? "all") !== "all").map((f) => {
+      const v = facetState[f.key];
+      const opt = (f.options || []).find((o) => _flOptVal(o) === v);
+      return { key: "f:" + f.key, label: `${f.label}: ${opt ? _flOptLabel(opt) : _flPretty(v)}`, clear: () => setFacet(f.key, "all") };
+    }),
+    ...(query ? [{ key: "q", label: `“${query}”`, clear: () => setQuery("") }] : []),
+  ];
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      {search && (
+        <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+          <Search size={13} color="var(--text-sec)" style={{ position: "absolute", left: 10, top: 10, pointerEvents: "none" }} />
+          <input className="input" placeholder={search.placeholder || "Search…"} value={query} onChange={(e) => setQuery(e.target.value)} style={{ paddingLeft: 30, fontSize: 13 }} />
+        </div>
+      )}
+      <div style={{ position: "relative", flexShrink: 0 }}>
+        <button className="btn btn-ghost" onClick={() => setOpen((o) => !o)}
+          style={{ padding: "7px 11px", fontSize: 12, gap: 6, ...(activeCount > 0 ? { color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-dim)" } : {}) }}>
+          <SlidersHorizontal size={14} /> Filters
+          {activeCount > 0 && <span className="mono" style={{ background: "var(--blue)", color: "#fff", borderRadius: 9, fontSize: 10, padding: "1px 6px" }}>{activeCount}</span>}
+        </button>
+        {open && (
+          <>
+            <div style={{ position: "fixed", inset: 0, zIndex: 998 }} onClick={() => setOpen(false)} />
+            <div className="card" style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: 300, maxHeight: 440, overflowY: "auto", zIndex: 999, boxShadow: "var(--shadow-lg)" }}>
+              {activePills.length > 0 && (
+                <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", background: "var(--bg-el)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)", letterSpacing: ".04em" }}>ACTIVE</span>
+                    <span style={{ fontSize: 11, color: "var(--blue)", cursor: "pointer" }} onClick={clearAll}>Clear all</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {activePills.map((p) => (
+                      <span key={p.key} className="filter-chip active" style={{ cursor: "default" }}>
+                        {p.label}<X size={11} style={{ cursor: "pointer" }} onClick={p.clear} />
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {facets.map((f) => (
+                <div key={f.key} style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", letterSpacing: ".04em", marginBottom: 8 }}>{f.label.toUpperCase()}</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {[{ value: "all", label: "All" }, ...(f.options || [])].map((o) => {
+                      const v = _flOptVal(o);
+                      const active = (facetState[f.key] ?? "all") === v;
+                      return <button key={String(v)} className={`filter-chip${active ? " active" : ""}`} onClick={() => setFacet(f.key, v)}>{_flOptLabel(o)}</button>;
+                    })}
+                  </div>
+                </div>
+              ))}
+              {sorts && sorts.length > 0 && (
+                <div style={{ padding: "12px 14px" }}>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", letterSpacing: ".04em", marginBottom: 8 }}>SORT BY</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select className="input" value={sortKey} onChange={(e) => setSortKey(e.target.value)} style={{ flex: 1, fontSize: 12, padding: "7px 10px" }}>
+                      {sorts.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    </select>
+                    <div style={{ display: "flex", border: "1px solid var(--border-hi)", borderRadius: 8, overflow: "hidden", flexShrink: 0 }}>
+                      <button title="Ascending" onClick={() => setSortDir("asc")} style={{ padding: "7px 9px", border: "none", cursor: "pointer", background: sortDir === "asc" ? "var(--blue-dim)" : "#fff", color: sortDir === "asc" ? "var(--blue)" : "var(--text-sec)", display: "flex" }}><ArrowUp size={14} /></button>
+                      <button title="Descending" onClick={() => setSortDir("desc")} style={{ padding: "7px 9px", border: "none", borderLeft: "1px solid var(--border-hi)", cursor: "pointer", background: sortDir === "desc" ? "var(--blue-dim)" : "#fff", color: sortDir === "desc" ? "var(--blue)" : "var(--text-sec)", display: "flex" }}><ArrowDown size={14} /></button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const useListControls = (rows, config) => {
+  const { facets = [], sorts = [], defaultSort, search } = config;
+  const searchKeys = search?.keys || [];
+  const [query, setQuery] = useState("");
+  const [facetState, setFacetState] = useState(() => Object.fromEntries(facets.map((f) => [f.key, f.default ?? "all"])));
+  const [sortKey, setSortKey] = useState(defaultSort?.key ?? sorts[0]?.key ?? "");
+  const [sortDir, setSortDir] = useState(defaultSort?.dir ?? "asc");
+
+  const matchFacet = (f, row) => {
+    const v = facetState[f.key] ?? "all";
+    if (v === "all") return true;
+    const opt = (f.options || []).find((o) => _flOptVal(o) === v);
+    if (opt && typeof opt.test === "function") return opt.test(row);
+    return String(_flGet(row, f.field ?? f.key) ?? "") === String(v);
+  };
+
+  let out = (rows || []).filter((r) => {
+    if (query && searchKeys.length) {
+      const hay = searchKeys.map((k) => String(_flGet(r, k) ?? "")).join(" ").toLowerCase();
+      if (!hay.includes(query.toLowerCase())) return false;
+    }
+    return facets.every((f) => matchFacet(f, r));
+  });
+
+  const sortCfg = sorts.find((s) => s.key === sortKey);
+  if (sortCfg) {
+    out = [...out].sort((a, b) => {
+      const av = _flGet(a, sortCfg.field ?? sortCfg.key);
+      const bv = _flGet(b, sortCfg.field ?? sortCfg.key);
+      const ae = av === null || av === undefined || av === "";
+      const be = bv === null || bv === undefined || bv === "";
+      if (ae && be) return 0;
+      if (ae) return 1;
+      if (be) return -1;
+      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv), undefined, { numeric: true });
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }
+
+  const setFacet = (key, val) => setFacetState((s) => ({ ...s, [key]: val }));
+  const clearAll = () => { setFacetState(Object.fromEntries(facets.map((f) => [f.key, "all"]))); setQuery(""); };
+  const activeCount = facets.filter((f) => (facetState[f.key] ?? "all") !== "all").length + (query ? 1 : 0);
+
+  const controls = (
+    <FilterSort search={search} query={query} setQuery={setQuery} facets={facets} facetState={facetState} setFacet={setFacet}
+      sorts={sorts} sortKey={sortKey} setSortKey={setSortKey} sortDir={sortDir} setSortDir={setSortDir} activeCount={activeCount} clearAll={clearAll} />
+  );
+  return { rows: out, controls };
 };

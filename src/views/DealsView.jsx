@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, Plus, Save, Search, Target, Trash2 } from "lucide-react";
 import { fmt, nextId, today } from "../lib/utils";
-import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, SearchSelect, Sel, Tag, Tex } from "../components/ui";
+import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, SearchSelect, Sel, Tag, Tex, useListControls } from "../components/ui";
 
 export const blankDeal = () => ({ name:"", contactId:"", companyId:"", value:0, stage:"discovery", probability:50, closeDate:"", notes:"" });
 
@@ -11,8 +11,6 @@ export const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankDeal());
   const [editDeal, setEditDeal] = useState(null);
-  const [query, setQuery] = useState("");
-  const [stageFilter, setStageFilter] = useState("all");
 
   useEffect(() => {
     if(focus?.type==="deal" && focus.id) { setSel(focus.id); } else setSel(null);
@@ -28,10 +26,21 @@ export const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const STAGES = ["outreach","discovery","proposal","negotiation","at-risk","won","lost"];
   const stageColor = { outreach:"var(--text-sec)", discovery:"var(--purple)", proposal:"var(--blue)", negotiation:"var(--amber)", "at-risk":"var(--red)", won:"var(--green)", lost:"var(--text-sec)" };
 
-  const filtered = db.deals.filter(deal => {
-    if (query && !deal.name.toLowerCase().includes(query.toLowerCase())) return false;
-    if (stageFilter !== "all" && deal.stage !== stageFilter) return false;
-    return true;
+  const { rows: filtered, controls } = useListControls(db.deals, {
+    search: { keys: ["name"], placeholder: "Search deals…" },
+    facets: [
+      { key: "stage", label: "Stage", field: "stage", default: "open", options: [
+        { value: "open", label: "Open", test: (d) => d.stage !== "won" && d.stage !== "lost" },
+        ...STAGES,
+      ] },
+    ],
+    sorts: [
+      { key: "value", label: "Value", field: (d) => d.value || 0 },
+      { key: "probability", label: "Probability", field: (d) => d.probability || 0 },
+      { key: "closeDate", label: "Close date", field: "closeDate" },
+      { key: "name", label: "Name", field: "name" },
+    ],
+    defaultSort: { key: "value", dir: "desc" },
   });
 
   const deal = sel ? db.deals.find(x => x.id === sel) : null;
@@ -110,15 +119,7 @@ export const DealsView = ({ db, setDB, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Deals</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setD(blankDeal());setDrawer("add");}}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-            {["all", ...STAGES].map(s=>(
-              <button key={s} className={`filter-chip${stageFilter===s?" active":""}`} onClick={()=>setStageFilter(s)}>{s}</button>
-            ))}
-          </div>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search deals…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(dx=>(

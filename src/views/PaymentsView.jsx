@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, CreditCard, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { nextId, today } from "../lib/utils";
-import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, Field, Inp, Sel, Tex } from "../components/ui";
+import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, Field, Inp, Sel, Tex, useListControls } from "../components/ui";
 
 export const PAYMENT_METHODS = ["check","wire","ach","card","cash","other"];
 
@@ -13,8 +13,6 @@ export const PaymentsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [pd, setPD] = useState(blankPayment());
   const [editPay, setEditPay] = useState(null);
-  const [query, setQuery] = useState("");
-  const [filterMethod, setFilterMethod] = useState("all");
 
   useEffect(() => {
     if (focus?.type === "payment" && focus.id) { setSel(focus.id); } else setSel(null);
@@ -30,7 +28,18 @@ export const PaymentsView = ({ db, setDB, navigate, focus, setFocus }) => {
     } else setEditPay(null);
   }, [sel, db.payments, db.payment_allocations]);
 
-  const payments = useMemo(() => { let p = [...(db.payments || [])]; if (filterMethod !== "all") p = p.filter(x => x.method === filterMethod); if (query) p = p.filter(x => `${x.payer||""} ${x.reference||""}`.toLowerCase().includes(query.toLowerCase())); return p.sort((a, b) => (b.date || "").localeCompare(a.date || "")); }, [db.payments, filterMethod, query]);
+  const { rows: payments, controls } = useListControls(db.payments || [], {
+    search: { keys: ["payer", "reference"], placeholder: "Search payments…" },
+    facets: [
+      { key: "method", label: "Method", field: "method", options: PAYMENT_METHODS },
+    ],
+    sorts: [
+      { key: "date", label: "Date", field: "date" },
+      { key: "amount", label: "Amount", field: (p) => p.amount || 0 },
+      { key: "payer", label: "Payer", field: "payer" },
+    ],
+    defaultSort: { key: "date", dir: "desc" },
+  });
   const invoices = db.invoices || [];
   const totalReceived = (db.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
   const totalAllocated = (db.payment_allocations || []).reduce((s, a) => s + (a.amount || 0), 0);
@@ -71,14 +80,7 @@ export const PaymentsView = ({ db, setDB, navigate, focus, setFocus }) => {
           <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setPD(blankPayment());setDrawer({mode:"add"});}}><Plus size={12}/>Add</button>
         </div>
         <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>{"$"+(totalReceived/100).toLocaleString()} received · {"$"+(unallocated/100).toLocaleString()} unallocated</div>
-        <select className="filter-select" value={filterMethod} onChange={e=>setFilterMethod(e.target.value)} style={{ width:"100%", marginBottom:8 }}>
-          <option value="all">All Methods</option>
-          {PAYMENT_METHODS.map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
-        </select>
-        <div style={{ position:"relative" }}>
-          <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-          <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-        </div>
+        {controls}
       </div>
       <div style={{ overflowY:"auto", flex:1 }}>
         {payments.map(p=>(

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, DollarSign, Plus, Save, Search, Trash2 } from "lucide-react";
 import { fmt, nextId } from "../lib/utils";
-import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, Field, Inp, Sel, Tag, Tex } from "../components/ui";
+import { AssociatedDocumentsPanel, ConfirmDelete, Drawer, Field, Inp, Sel, Tag, Tex, useListControls } from "../components/ui";
 
 export const blankInvoice = () => ({ number:"", client:"", amount:0, status:"draft", issued:"", due:"", notes:"" });
 
@@ -13,8 +13,6 @@ export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [d, setD] = useState(blankInvoice());
   const [editInv, setEditInv] = useState(null);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     if(focus?.type==="invoice" && focus.id) { setSel(focus.id); } else setSel(null);
@@ -27,10 +25,21 @@ export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
     } else setEditInv(null);
   }, [sel, db.invoices]);
 
-  const filtered = db.invoices.filter(inv => {
-    if (query && !(`${inv.number} ${inv.client}`.toLowerCase().includes(query.toLowerCase()))) return false;
-    if (statusFilter !== "all" && inv.status !== statusFilter) return false;
-    return true;
+  const { rows: filtered, controls } = useListControls(db.invoices, {
+    search: { keys: ["number", "client"], placeholder: "Search invoices…" },
+    facets: [
+      { key: "status", label: "Status", field: "status", default: "unpaid", options: [
+        { value: "unpaid", label: "Unpaid", test: (i) => i.status !== "paid" && i.status !== "void" },
+        "draft", "pending", "paid", "overdue", "void",
+      ] },
+    ],
+    sorts: [
+      { key: "due", label: "Due date", field: "due" },
+      { key: "amount", label: "Amount", field: (i) => i.amount || 0 },
+      { key: "issued", label: "Issued date", field: "issued" },
+      { key: "number", label: "Number", field: "number" },
+    ],
+    defaultSort: { key: "due", dir: "asc" },
   });
   const invoice = sel ? db.invoices.find(x => x.id === sel) : null;
   // Paid + Outstanding are maintained by DB triggers off payment_allocations.
@@ -61,16 +70,8 @@ export const BillingView = ({ db, setDB, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Invoices</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setD(blankInvoice());setDrawer("add");}}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-            {["all","draft","pending","paid","overdue","void"].map(s=>(
-              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
-            ))}
-          </div>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
-          {overdue>0 && <div className="mono" style={{ fontSize:10, color:"var(--red)", marginTop:6 }}>{db.invoices.filter(i=>i.status==="overdue").length} overdue · {fmt(overdue)}</div>}
+          {controls}
+          {overdue>0 &&<div className="mono" style={{ fontSize:10, color:"var(--red)", marginTop:6 }}>{db.invoices.filter(i=>i.status==="overdue").length} overdue · {fmt(overdue)}</div>}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(inv => (

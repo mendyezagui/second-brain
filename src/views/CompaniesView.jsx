@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Building2, ChevronRight, Globe, Linkedin, Newspaper, Plus, Save, Search, Trash2 } from "lucide-react";
 import { fmt, nextId, today } from "../lib/utils";
-import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, ScoreBadge, Sel, Tag, Tex } from "../components/ui";
+import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, ScoreBadge, Sel, Tag, Tex, useListControls } from "../components/ui";
 
 export const blankCompany = () => ({ name:"", industry:"", website:"", linkedin_url:"", news_keywords:"", status:"prospect", notes:"", created_at:today() });
 
@@ -9,8 +9,6 @@ export const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [editCompany, setEditCompany] = useState(null);
 
   useEffect(() => {
@@ -24,10 +22,16 @@ export const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
     } else setEditCompany(null);
   }, [sel, db.companies]);
 
-  const filtered = db.companies.filter(c => {
-    if (query && !c.name.toLowerCase().includes(query.toLowerCase())) return false;
-    if (statusFilter !== "all" && c.status !== statusFilter) return false;
-    return true;
+  const { rows: filtered, controls } = useListControls(db.companies, {
+    search: { keys: ["name", "industry"], placeholder: "Search companies…" },
+    facets: [
+      { key: "status", label: "Status", field: "status", options: ["prospect", "customer", "partner", "parked", "churned"] },
+    ],
+    sorts: [
+      { key: "name", label: "Name", field: "name" },
+      { key: "status", label: "Status", field: "status" },
+    ],
+    defaultSort: { key: "name", dir: "asc" },
   });
 
   const company = sel ? db.companies.find(c=>c.id===sel) : null;
@@ -52,15 +56,7 @@ export const CompaniesView = ({ db, setDB, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Companies</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"add",data:blankCompany()})}><Plus size={12}/>Add</button>
           </div>
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-            {["all","prospect","customer","partner","parked","churned"].map(s=>(
-              <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
-            ))}
-          </div>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(c=>{

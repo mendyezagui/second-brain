@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowRightCircle, Building2, ChevronRight, Globe, Linkedin, Mail, Phone, Plus, Save, Search, Star, Trash2, Users } from "lucide-react";
 import { CONTACT_CATEGORIES } from "../lib/constants";
 import { fmt, logEvent, nextId, sc, today } from "../lib/utils";
-import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, ScoreBadge, SearchSelect, Sel, Tag, Tex } from "../components/ui";
+import { ActivityTimeline, AssociatedDocumentsPanel, ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, ScoreBadge, SearchSelect, Sel, Tag, Tex, useListControls } from "../components/ui";
 
 export const blankContact = () => ({ name:"", co:"", role:"", email:"", phone:"", status:"prospect", score:50, notes:"", lastTouch:today(), tags:[], linkedin_url:"", headline:"", connected_date:"", messaging_activity:"", priority:"Medium", follow_up:"", category:"customer_lead", companyId:"", source:"", referredBy:"", campaignId:"" });
 
@@ -63,8 +63,6 @@ export const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
   const [sel, setSel] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [confirm, setConfirm] = useState(null);
-  const [query, setQuery] = useState("");
-  const [catFilter, setCatFilter] = useState("all");
   const [editContact, setEditContact] = useState(null);
 
   // Sync editContact when selection changes
@@ -79,10 +77,18 @@ export const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
     if(focus?.type==="contact" && focus.id) { setSel(focus.id); } else setSel(null);
   }, [focus]);
 
-  const filtered = db.contacts.filter(c => {
-    if (query && !c.name.toLowerCase().includes(query.toLowerCase()) && !(c.co||"").toLowerCase().includes(query.toLowerCase())) return false;
-    if (catFilter !== "all" && c.category !== catFilter) return false;
-    return true;
+  const { rows: filtered, controls } = useListControls(db.contacts, {
+    search: { keys: ["name", "co"], placeholder: "Search contacts…" },
+    facets: [
+      { key: "category", label: "Category", field: "category", options: CONTACT_CATEGORIES },
+      { key: "status", label: "Status", field: "status", options: ["active", "client", "at-risk", "prospect", "inactive"] },
+    ],
+    sorts: [
+      { key: "name", label: "Name", field: "name" },
+      { key: "score", label: "Score", field: (c) => c.score || 0 },
+      { key: "recent", label: "Recently added", field: (c) => c.id || 0 },
+    ],
+    defaultSort: { key: "name", dir: "asc" },
   });
 
   const contact = sel ? db.contacts.find(c=>c.id===sel) : null;
@@ -135,18 +141,7 @@ export const CRMView = ({ db, setDB, setView, navigate, focus, setFocus }) => {
             <div className="display" style={{ fontSize:16, fontWeight:700 }}>Contacts</div>
             <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>setDrawer({mode:"add",data:blankContact()})}><Plus size={12}/>Add</button>
           </div>
-          {/* Category filter chips */}
-          <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-            {["all",...CONTACT_CATEGORIES].map(cat=>(
-              <button key={cat} className={`filter-chip${catFilter===cat?" active":""}`} onClick={()=>setCatFilter(cat)}>
-                {cat==="all"?"All":cat.replace(/_/g," ")}
-              </button>
-            ))}
-          </div>
-          <div style={{ position:"relative" }}>
-            <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-            <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-          </div>
+          {controls}
         </div>
         <div style={{ overflowY:"auto", flex:1 }}>
           {filtered.map(c=>(

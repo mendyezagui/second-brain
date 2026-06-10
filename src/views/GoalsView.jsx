@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Award, ChevronRight, Plus, Save, Search, Trash2 } from "lucide-react";
 import { nextId, today } from "../lib/utils";
-import { ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, Sel, Tag, Tex } from "../components/ui";
+import { ConfirmDelete, Drawer, EntityLink, Field, Inp, RowActions, Sel, Tag, Tex, useListControls } from "../components/ui";
 
 export const GOAL_STATUSES = ["active","completed","paused","cancelled"];
 
@@ -15,8 +15,6 @@ export const GoalsView = ({ db, setDB, navigate, focus, setFocus }) => {
   const [confirm, setConfirm] = useState(null);
   const [gd, setGD] = useState(blankGoal());
   const [editGoal, setEditGoal] = useState(null);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("active");
 
   useEffect(() => {
     if (focus?.type === "goal" && focus.id) { setSel(focus.id); } else setSel(null);
@@ -29,11 +27,18 @@ export const GoalsView = ({ db, setDB, navigate, focus, setFocus }) => {
     } else setEditGoal(null);
   }, [sel, db.goals]);
 
-  const filtered = (db.goals || []).filter(g => {
-    if (query && !g.name.toLowerCase().includes(query.toLowerCase())) return false;
-    if (statusFilter !== "all" && g.status !== statusFilter) return false;
-    return true;
-  }).sort((a, b) => (a.priority_order || 0) - (b.priority_order || 0));
+  const { rows: filtered, controls } = useListControls(db.goals || [], {
+    search: { keys: ["name"], placeholder: "Search goals…" },
+    facets: [
+      { key: "status", label: "Status", field: "status", default: "active", options: GOAL_STATUSES },
+      { key: "category", label: "Category", field: "category", options: GOAL_CATEGORIES },
+    ],
+    sorts: [
+      { key: "priority_order", label: "Priority order", field: (g) => g.priority_order || 0 },
+      { key: "name", label: "Name", field: "name" },
+    ],
+    defaultSort: { key: "priority_order", dir: "asc" },
+  });
   const goal = sel ? (db.goals || []).find(g => g.id === sel) : null;
   const goalStrategies = goal ? (db.strategies || []).filter(s => s.goalId === goal.id) : [];
 
@@ -53,15 +58,7 @@ export const GoalsView = ({ db, setDB, navigate, focus, setFocus }) => {
           <div className="display" style={{ fontSize:16, fontWeight:700 }}>Goals</div>
           <button className="btn btn-blue" style={{ padding:"5px 10px", fontSize:12 }} onClick={()=>{setGD(blankGoal());setDrawer({mode:"add"});}}><Plus size={12}/>Add</button>
         </div>
-        <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
-          {["all", ...GOAL_STATUSES].map(s=>(
-            <button key={s} className={`filter-chip${statusFilter===s?" active":""}`} onClick={()=>setStatusFilter(s)}>{s}</button>
-          ))}
-        </div>
-        <div style={{ position:"relative" }}>
-          <Search size={13} color="var(--text-sec)" style={{ position:"absolute", left:10, top:10, pointerEvents:"none" }}/>
-          <input className="input" placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)} style={{ paddingLeft:30, fontSize:13 }}/>
-        </div>
+        {controls}
       </div>
       <div style={{ overflowY:"auto", flex:1 }}>
         {filtered.map(g=>(
