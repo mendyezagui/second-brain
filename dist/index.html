@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Second Brain</title>
+    <style>
+      /* Mobile fix: the record-table views (.view-shell) are styled
+         height:100%; overflow:hidden. On mobile they stack vertically
+         (flex-direction:column), and flex items default to min-height:auto,
+         so the list/detail panes expand past the viewport and get clipped —
+         killing vertical scroll and cutting off a selected record's details.
+         Let the page's <main> (overflow-y:auto) handle scrolling on phones.
+         !important beats the app's runtime-injected, non-!important rules. */
+      @media (max-width: 768px) {
+        .view-shell { height: auto !important; overflow: visible !important; }
+        .view-shell .list-pane { overflow: visible !important; max-height: none !important; }
+        .view-shell .detail-pane { overflow: visible !important; }
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-ps7SaRTn.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

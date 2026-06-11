@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Loader, AlertCircle, Mail, Phone, Linkedin, Activity, Target, Calendar, ChevronRight, Copy, Check, User, Building2, FileText, ExternalLink } from "lucide-react";
+import { Sparkles, Loader, AlertCircle, Mail, Phone, Linkedin, Activity, Target, Calendar, ChevronRight, Copy, Check, User, Building2, FileText, ExternalLink, Zap, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { recordPath } from "../lib/utils";
 
@@ -122,6 +122,80 @@ export function MorningBriefView() {
   const [busy, setBusy] = useState({});
   const toggle = (id) => setOpenId((cur) => (cur === id ? null : id));
 
+  // ── Mid-day orchestrator: live streaming run ──
+  const [running, setRunning] = useState(false);
+  const [steps, setSteps] = useState([]);
+  const [result, setResult] = useState(null);
+  const [runErr, setRunErr] = useState("");
+  const runOrchestrator = async () => {
+    setRunning(true); setSteps([]); setResult(null); setRunErr("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) { setRunErr("Not signed in."); setRunning(false); return; }
+      const resp = await fetch("/api/orchestrator-run", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } });
+      if (!resp.ok || !resp.body) {
+        let msg = `HTTP ${resp.status}`;
+        try { const j = await resp.json(); if (j.error) msg = j.error; } catch { /* not json */ }
+        setRunErr(msg); setRunning(false); return;
+      }
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      const upsert = (ev) => setSteps((prev) => {
+        const i = prev.findIndex((s) => s.key === ev.key);
+        if (i >= 0) { const n = [...prev]; n[i] = ev; return n; }
+        return [...prev, ev];
+      });
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const chunks = buf.split("\n\n"); buf = chunks.pop();
+        for (const ch of chunks) {
+          const line = ch.split("\n").find((l) => l.startsWith("data:"));
+          if (!line) continue;
+          let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+          if (ev.error) setRunErr(ev.error);
+          else if (ev.done) setResult(ev);
+          else if (ev.key) upsert(ev);
+        }
+      }
+    } catch (e) { setRunErr(String(e.message || e)); }
+    setRunning(false);
+  };
+
+  // ── Cadence: advance one step / exit the sequence ──
+  const advanceCadence = async (c) => {
+    const k = "cc" + c.enrollment_id; setBusy((b) => ({ ...b, [k]: true }));
+    try {
+      if (!c.next_step_no) {
+        await supabase.from("cadence_enrollments").update({ last_step_at: todayStr(), status: "completed" }).eq("id", c.enrollment_id);
+      } else {
+        const { data: enr } = await supabase.from("cadence_enrollments").select("cadence_id").eq("id", c.enrollment_id).single();
+        const { data: steps } = await supabase.from("cadence_steps").select("step_no,day_offset").eq("cadence_id", enr.cadence_id);
+        const doneStep = (steps || []).find((s) => s.step_no === c.next_step_no);
+        const after = (steps || []).find((s) => s.step_no === c.next_step_no + 1);
+        if (after) {
+          const gap = Math.max(1, (after.day_offset || 0) - (doneStep?.day_offset || 0));
+          const nd = new Date(); nd.setDate(nd.getDate() + gap);
+          await supabase.from("cadence_enrollments").update({ current_step: c.next_step_no, last_step_at: todayStr(), next_action_at: nd.toISOString().slice(0, 10) }).eq("id", c.enrollment_id);
+        } else {
+          await supabase.from("cadence_enrollments").update({ current_step: c.next_step_no, last_step_at: todayStr(), status: "completed" }).eq("id", c.enrollment_id);
+        }
+      }
+      setD((p) => ({ ...p, cadence: p.cadence.filter((x) => x.enrollment_id !== c.enrollment_id) }));
+    } catch (e) { setErr(e.message || String(e)); }
+    setBusy((b) => { const n = { ...b }; delete n[k]; return n; });
+  };
+  const exitCadence = async (c) => {
+    const k = "cx" + c.enrollment_id; setBusy((b) => ({ ...b, [k]: true }));
+    const { error } = await supabase.from("cadence_enrollments").update({ status: "completed", last_step_at: todayStr() }).eq("id", c.enrollment_id);
+    setBusy((b) => { const n = { ...b }; delete n[k]; return n; });
+    if (!error) setD((p) => ({ ...p, cadence: p.cadence.filter((x) => x.enrollment_id !== c.enrollment_id) }));
+    else setErr(error.message);
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -219,6 +293,43 @@ export function MorningBriefView() {
       </div>
       <div style={{ fontSize: 12, color: "var(--text-sec)", marginBottom: 18 }}>Each line shows where it came from. Check it off to mark it complete; click to expand the next move, ready text, and contact details.</div>
 
+      <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <Zap size={15} color="var(--blue)" />
+          <div className="display" style={{ fontSize: 14, fontWeight: 700 }}>Orchestrator</div>
+          <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>re-run mid-day · quick · writes today's plan to agentlogs</span>
+          <button className="btn btn-blue" style={{ marginLeft: "auto", padding: "6px 12px", fontSize: 12 }} disabled={running} onClick={runOrchestrator}>
+            {running ? <><Loader size={12} className="spin" />Running…</> : <><Zap size={12} />Run now</>}
+          </button>
+        </div>
+        {(steps.length > 0 || runErr || result) && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 5 }}>
+            {steps.map((s) => (
+              <div key={s.key} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12 }}>
+                <span style={{ marginTop: 1, flexShrink: 0, width: 14, display: "flex", justifyContent: "center" }}>
+                  {s.state === "run" ? <Loader size={12} className="spin" color="var(--blue)" />
+                    : s.state === "skip" ? <span className="mono" style={{ color: "var(--text-dim)" }}>—</span>
+                      : <Check size={12} color="var(--green)" />}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ color: s.state === "skip" ? "var(--text-dim)" : "var(--text)" }}>{s.label}</span>
+                  {s.detail && <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 1 }}>{s.detail}</div>}
+                </div>
+              </div>
+            ))}
+            {running && <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", paddingLeft: 22 }}>working…</div>}
+            {runErr && <div style={{ fontSize: 12, color: "var(--red)", display: "flex", gap: 6, alignItems: "center" }}><AlertCircle size={12} />{runErr}</div>}
+            {result?.plan && (
+              <div className="card-el" style={{ padding: 12, marginTop: 6 }}>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>ACTION PLAN · {result.ts} · {result.logs} log{result.logs === 1 ? "" : "s"} written</div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{result.plan}</div>
+                <div style={{ marginTop: 8 }}><button className="btn btn-ghost" style={{ fontSize: 11, padding: "4px 8px" }} onClick={() => { window.location.hash = "#/orchestrator"; }}><Activity size={12} />Open Orchestrator log</button></div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <Section icon={Mail} title="Email — follow-ups & triage" count={d.emailTasks.length || "none"}>
         {d.emailTasks.length === 0 ? (
           <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>No open email-sourced tasks.</div>
@@ -246,12 +357,20 @@ export function MorningBriefView() {
             const v = c.variables || {};
             return (
               <Row key={id} open={openId === id} onToggle={() => toggle(id)}
-                left={<span className="tag" style={{ color: chColor[c.next_channel] || "var(--text-sec)", background: "var(--bg-el)", border: "1px solid var(--border)" }}>{c.next_channel}</span>}
+                left={<div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  <CompleteBtn busy={!!busy["cc" + c.enrollment_id]} onDone={() => advanceCadence(c)} title="Mark this step done — advance the cadence" />
+                  <span className="tag" style={{ color: chColor[c.next_channel] || "var(--text-sec)", background: "var(--bg-el)", border: "1px solid var(--border)" }}>{c.next_channel}</span>
+                </div>}
                 title={<>{c.name} <span style={{ color: "var(--text-sec)", fontWeight: 400 }}>· {c.co}</span></>}
                 sub={<><OriginChip label="Cadence" color="var(--purple)" /> {c.entry_type} · {c.next_action}</>}>
                 <div style={{ fontSize: 12.5, color: "var(--text)", marginBottom: 2 }}><b>What to do:</b> {c.next_action}</div>
                 <DraftBlock subject={v.subject} draft={v.draft} email={contact?.email} />
                 <ContactActions c={contact} />
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn btn-ghost" style={{ fontSize: 11, padding: "4px 8px", color: "var(--red)" }} disabled={!!busy["cx" + c.enrollment_id]} onClick={(e) => { e.stopPropagation(); exitCadence(c); }}>
+                    {busy["cx" + c.enrollment_id] ? <Loader size={12} className="spin" /> : <X size={12} />} Exit cadence
+                  </button>
+                </div>
               </Row>
             );
           })}
