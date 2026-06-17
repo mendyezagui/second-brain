@@ -1,9 +1,9 @@
-import { AlertCircle, Award, Calendar, CheckCircle, ChevronRight, Clock, Loader, RefreshCw, Target, TrendingUp, Users, Zap } from "lucide-react";
+import { AlertCircle, Award, Calendar, CheckCircle, ChevronRight, Clock, Loader, Mic, RefreshCw, Target, TrendingUp, Users, Zap } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { daysBetween, fmt, sc, today } from "../lib/utils";
 import { AgentBadge, MetricCard, Tag } from "../components/ui";
 
-export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sweepRunning }) => {
+export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sweepRunning, setShowVoiceLab }) => {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const userName = session?.user?.user_metadata?.full_name?.split(" ")[0] || session?.user?.email?.split("@")[0] || "there";
@@ -49,7 +49,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
               {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} Â· {agentCount} agents active
             </div>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={13} className="spin"/>:<Zap size={13}/>} {sweepRunning?"Running...":"AI Sweep"}</button></div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={13} className="spin"/>:<Zap size={13}/>} {sweepRunning?"Running...":"AI Sweep"}</button><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{setShowVoiceLab&&setShowVoiceLab(true)}}><Mic size={13}/> Voice</button></div>
         </div>
         {(dueTodayOrOverdue.length > 0 || criticalItems.length > 0 || decayedContacts.length > 0 || todayEvents.length > 0) && (
           <div style={{ marginTop:14, display:"flex", flexDirection:"column", gap:6 }}>
