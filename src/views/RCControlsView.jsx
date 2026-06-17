@@ -1,8 +1,13 @@
 import { useEffect, useState, useRef } from "react";
 import { Phone, RefreshCw, Loader } from "lucide-react";
+import { supabase } from "../lib/supabase";
 
 const API_BASE = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/rc-queue-toggle";
-const API_KEY = "rmc-toggle-2026-rapidmedical";
+
+const authHeaders = async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session ? { Authorization: "Bearer " + session.access_token } : {};
+};
 
 const LINE_NAMES = {
   "2148739036": { label: "IDEXX", onName: "AI Forward IDEXX", offName: "IDEXX" },
@@ -35,7 +40,7 @@ export function RCControlsView() {
   const fetchStatus = async () => {
     try {
       log("Checking current state...", "info");
-      const resp = await fetch(`${API_BASE}?key=${API_KEY}&action=status`);
+      const resp = await fetch(`${API_BASE}?action=status`, { headers: await authHeaders() });
       const data = await resp.json();
       if (!mounted.current) return;
       if (data && data.state) {
@@ -59,12 +64,12 @@ export function RCControlsView() {
     if (busy[phoneId] || globalBusy) return;
     setBusy(b => ({ ...b, [phoneId]: true }));
     const info = LINE_NAMES[phoneId] || { label: phoneId };
-    log(`${info.label} → switching ${action.toUpperCase()}...`, "info");
+    log(`${info.label} â switching ${action.toUpperCase()}...`, "info");
     try {
-      const resp = await fetch(`${API_BASE}?key=${API_KEY}&action=${action}&phoneId=${phoneId}`);
+      const resp = await fetch(`${API_BASE}?action=${action}&phoneId=${phoneId}`, { headers: await authHeaders() });
       const data = await resp.json();
       if (!mounted.current) return;
-      (data.results || []).forEach(r => log(`${r.phone} → ${r.target || "unknown"}: ${r.status}`, r.status === "success" ? "success" : "error"));
+      (data.results || []).forEach(r => log(`${r.phone} â ${r.target || "unknown"}: ${r.status}`, r.status === "success" ? "success" : "error"));
       if (data.currentState) setState(data.currentState);
     } catch (e) {
       if (mounted.current) {
@@ -81,13 +86,13 @@ export function RCControlsView() {
     setGlobalBusy(true);
     log(`Switching ALL to ${action.toUpperCase()}...`, "info");
     try {
-      const resp = await fetch(`${API_BASE}?key=${API_KEY}&action=${action}`);
+      const resp = await fetch(`${API_BASE}?action=${action}`, { headers: await authHeaders() });
       const data = await resp.json();
       if (!mounted.current) return;
-      (data.results || []).forEach(r => log(`${r.phone} → ${r.target || "unknown"}: ${r.status}`, r.status === "success" ? "success" : "error"));
+      (data.results || []).forEach(r => log(`${r.phone} â ${r.target || "unknown"}: ${r.status}`, r.status === "success" ? "success" : "error"));
       if (data.currentState) setState(data.currentState);
       const allOk = data.results?.every(r => r.status === "success");
-      log(allOk ? `All lines switched to ${action.toUpperCase()}` : "Some lines failed — check log", allOk ? "success" : "error");
+      log(allOk ? `All lines switched to ${action.toUpperCase()}` : "Some lines failed â check log", allOk ? "success" : "error");
     } catch (e) {
       if (mounted.current) {
         log(`Error: ${e.message}`, "error");
@@ -106,7 +111,7 @@ export function RCControlsView() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
         <div>
           <h2 className="display" style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>RC Controls</h2>
-          <p className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>Rapid Medical — RingCentral AI Queue Router</p>
+          <p className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>Rapid Medical â RingCentral AI Queue Router</p>
         </div>
         <button className="btn btn-ghost" style={{ fontSize: 11, padding: "6px 10px" }} onClick={fetchStatus} disabled={loading}>
           {loading ? <Loader size={13} className="spin" /> : <RefreshCw size={13} />} Refresh
