@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Sparkles, Loader, AlertCircle, Mail, Phone, Linkedin, Activity, Target, Calendar, ChevronRight, Copy, Check, User, Building2, FileText, ExternalLink, Zap, X } from "lucide-react";
+import { Sparkles, Loader, AlertCircle, Mail, Phone, Linkedin, Activity, Target, Calendar, ChevronRight, Copy, Check, User, Building2, FileText, ExternalLink, Zap, X, Newspaper } from "lucide-react";
 import { supabase } from "../lib/supabase";
-import { recordPath } from "../lib/utils";
+import { callClaude, recordPath } from "../lib/utils";
 
 const fmt$ = (n) => (n == null ? "" : "$" + Number(n).toLocaleString());
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -13,7 +13,7 @@ const daysUntil = (d) => {
 };
 const openRecord = (type, id) => { if (id) window.location.hash = recordPath(type, id); };
 
-// ─── Origin identification: where a row came from in Second Brain ───
+// ââ Origin identification: where a row came from in Second Brain ââ
 const isEmailTask = (t) => /^(gmail|thread:|email)/i.test(t?.source || "");
 const taskOrigin = (t) => {
   if (isEmailTask(t)) return { label: "Email", color: "var(--blue)" };
@@ -122,11 +122,14 @@ export function MorningBriefView() {
   const [busy, setBusy] = useState({});
   const toggle = (id) => setOpenId((cur) => (cur === id ? null : id));
 
-  // ── Mid-day orchestrator: live streaming run ──
+  // ââ Mid-day orchestrator: live streaming run ââ
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState([]);
   const [result, setResult] = useState(null);
   const [runErr, setRunErr] = useState("");
+  // ââ News engine scan (folded in from the retired Orchestrator view) ââ
+  const [newsBusy, setNewsBusy] = useState(false);
+  const [newsResult, setNewsResult] = useState(null);
   const runOrchestrator = async () => {
     setRunning(true); setSteps([]); setResult(null); setRunErr("");
     try {
@@ -165,7 +168,52 @@ export function MorningBriefView() {
     setRunning(false);
   };
 
-  // ── Cadence: advance one step / exit the sequence ──
+  // News Engine: Claude scans tracked companies, writes company_news + action tasks.
+  const runNewsScan = async () => {
+    setNewsBusy(true); setNewsResult(null);
+    try {
+      const { data: companies } = await supabase.from("companies").select("id,name,news_keywords,status");
+      const live = (companies || []).filter((c) => c.name && c.status !== "parked");
+      if (!live.length) { setNewsResult({ ok: true, news: 0, tasks: 0, msg: "No companies to monitor." }); setNewsBusy(false); return; }
+      const { data: contacts } = await supabase.from("contacts").select("id,name,companyId");
+      const companyList = live.map((c) => `${c.name}${c.news_keywords ? ` (keywords: ${c.news_keywords})` : ""}`).join(", ");
+      const contactContext = (contacts || []).filter((c) => c.companyId).map((c) => `${c.name} at company ID ${c.companyId}`).join(", ");
+      const raw = await callClaude(
+        "You are a News Intelligence Agent. Search for recent news about these companies and return actionable intelligence. Return ONLY a JSON array.",
+        `Companies to monitor: ${companyList}\n\nContacts: ${contactContext}\n\nFor each company, find 1-2 recent news items (funding, partnerships, leadership changes, product launches, industry trends). Return JSON array: [{"companyName":"","companyId":null,"headline":"","summary":"","relevance_score":1-10,"published_date":"","suggested_action":"","suggested_contact":"","action_priority":"high|medium|low"}]`,
+        2000
+      );
+      let items = [];
+      try { const m = raw.match(/\[[\s\S]*\]/); if (m) items = JSON.parse(m[0]); } catch { items = []; }
+      if (!items.length) { setNewsResult({ ok: true, news: 0, tasks: 0, msg: "No news found." }); setNewsBusy(false); return; }
+      const t = todayStr();
+      const in3 = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+      const [maxN, maxT] = await Promise.all([
+        supabase.from("company_news").select("id").order("id", { ascending: false }).limit(1),
+        supabase.from("tasks").select("id").order("id", { ascending: false }).limit(1),
+      ]);
+      let nid = ((maxN.data?.[0]?.id) || 0) + 1;
+      let tid = ((maxT.data?.[0]?.id) || 0) + 1;
+      const newsRows = []; const taskRows = [];
+      items.forEach((item) => {
+        const company = live.find((c) => c.name === item.companyName) || (item.companyId ? live.find((c) => c.id === item.companyId) : null);
+        if (!company) return;
+        newsRows.push({ id: nid++, companyId: company.id, headline: item.headline || "", source_url: "", summary: item.summary || "", relevance_score: item.relevance_score || 5, published_date: item.published_date || t, action_taken: false, taskId: null, created_at: t });
+        if ((item.relevance_score || 0) >= 7 && item.suggested_action) {
+          const contact = (contacts || []).find((c) => c.companyId === company.id);
+          taskRows.push({ id: tid++, title: `News: ${String(item.suggested_action).slice(0, 80)}`, projectId: null, contactId: contact?.id || null, companyId: company.id, dealId: null, due: in3, done: false, priority: item.action_priority || "medium", assignedTo: "CRM Agent", notes: `News: "${item.headline}"\n${item.summary}\n\nSuggested action: ${item.suggested_action}`, status: "todo", category: "outreach", source: "agent:news_engine", recurrence: "none" });
+        }
+      });
+      if (newsRows.length) { const { error } = await supabase.from("company_news").insert(newsRows); if (error) throw error; }
+      if (taskRows.length) { const { error } = await supabase.from("tasks").insert(taskRows); if (error) throw error; }
+      setNewsResult({ ok: true, news: newsRows.length, tasks: taskRows.length });
+    } catch (e) {
+      setNewsResult({ ok: false, msg: String(e.message || e) });
+    }
+    setNewsBusy(false);
+  };
+
+  // ââ Cadence: advance one step / exit the sequence ââ
   const advanceCadence = async (c) => {
     const k = "cc" + c.enrollment_id; setBusy((b) => ({ ...b, [k]: true }));
     try {
@@ -212,7 +260,7 @@ export function MorningBriefView() {
         const cad = cadence.data || [], dls = deals.data || [], open = openTasks.data || [];
         const taskById = Object.fromEntries(open.map((x) => [x.id, x]));
 
-        // "Do today" — scored tasks enriched with source/notes; email-origin ones move to the Email section.
+        // "Do today" â scored tasks enriched with source/notes; email-origin ones move to the Email section.
         const scored = (scores.data || []).map((s) => ({ ...s, ...taskById[s.id], id: s.id, score: s.score }));
         const todayTasks = scored.filter((x) => !isEmailTask(x)).slice(0, 12);
         const emailTasks = open.filter(isEmailTask).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
@@ -254,7 +302,7 @@ export function MorningBriefView() {
   if (err) return <div style={{ padding: 24 }} className="mono">Could not load brief: {err}</div>;
   if (!d) return (
     <div style={{ padding: 24, display: "flex", alignItems: "center", gap: 8, color: "var(--text-sec)" }}>
-      <Loader size={14} className="spin" color="var(--blue)" /><span className="mono">Building today's brief…</span>
+      <Loader size={14} className="spin" color="var(--blue)" /><span className="mono">Building today's briefâ¦</span>
     </div>
   );
 
@@ -271,7 +319,7 @@ export function MorningBriefView() {
       <Row key={id} open={openId === id} onToggle={() => toggle(id)}
         left={<CompleteBtn busy={!!busy[id]} onDone={() => completeContent(c.id)} title="Mark posted" />}
         title={c.videoTitle || c.contentType || "Untitled content"}
-        sub={<><OriginChip label="Content" color="var(--purple)" /> {c.platform || "—"} · {c.status}{c.account ? ` · ${c.account}` : ""}</>}>
+        sub={<><OriginChip label="Content" color="var(--purple)" /> {c.platform || "â"} Â· {c.status}{c.account ? ` Â· ${c.account}` : ""}</>}>
         {c.script && <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: 6 }}><b>Script:</b> {c.script}</div>}
         {c.caption && <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "var(--text-sec)" }}><b>Caption:</b> {c.caption}</div>}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
@@ -289,7 +337,7 @@ export function MorningBriefView() {
           <Sparkles size={17} color="var(--blue)" />
         </div>
         <div className="display" style={{ fontSize: 22, fontWeight: 800 }}>Morning Brief</div>
-        <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-sec)" }}>{dateLabel} · revenue-weighted</span>
+        <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-sec)" }}>{dateLabel} Â· revenue-weighted</span>
       </div>
       <div style={{ fontSize: 12, color: "var(--text-sec)", marginBottom: 18 }}>Each line shows where it came from. Check it off to mark it complete; click to expand the next move, ready text, and contact details.</div>
 
@@ -297,18 +345,30 @@ export function MorningBriefView() {
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Zap size={15} color="var(--blue)" />
           <div className="display" style={{ fontSize: 14, fontWeight: 700 }}>Orchestrator</div>
-          <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>re-run mid-day · quick · writes today's plan to agentlogs</span>
-          <button className="btn btn-blue" style={{ marginLeft: "auto", padding: "6px 12px", fontSize: 12 }} disabled={running} onClick={runOrchestrator}>
-            {running ? <><Loader size={12} className="spin" />Running…</> : <><Zap size={12} />Run now</>}
-          </button>
+          <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>re-run mid-day Â· quick Â· writes today's plan to agentlogs</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} disabled={newsBusy} onClick={runNewsScan}>
+              {newsBusy ? <><Loader size={12} className="spin" />Scanning newsâ¦</> : <><Newspaper size={12} />Scan company news</>}
+            </button>
+            <button className="btn btn-blue" style={{ padding: "6px 12px", fontSize: 12 }} disabled={running} onClick={runOrchestrator}>
+              {running ? <><Loader size={12} className="spin" />Runningâ¦</> : <><Zap size={12} />Run now</>}
+            </button>
+          </div>
         </div>
+        {newsResult && (
+          <div className="mono" style={{ fontSize: 11, marginTop: 10, color: newsResult.ok ? "var(--text-sec)" : "var(--red)" }}>
+            {newsResult.ok
+              ? `News scan: ${newsResult.news} article${newsResult.news === 1 ? "" : "s"} added${newsResult.tasks ? `, ${newsResult.tasks} task${newsResult.tasks === 1 ? "" : "s"} created` : ""}.${newsResult.msg ? " " + newsResult.msg : ""} Reload to see new tasks.`
+              : `News scan failed: ${newsResult.msg}`}
+          </div>
+        )}
         {(steps.length > 0 || runErr || result) && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 5 }}>
             {steps.map((s) => (
               <div key={s.key} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12 }}>
                 <span style={{ marginTop: 1, flexShrink: 0, width: 14, display: "flex", justifyContent: "center" }}>
                   {s.state === "run" ? <Loader size={12} className="spin" color="var(--blue)" />
-                    : s.state === "skip" ? <span className="mono" style={{ color: "var(--text-dim)" }}>—</span>
+                    : s.state === "skip" ? <span className="mono" style={{ color: "var(--text-dim)" }}>â</span>
                       : <Check size={12} color="var(--green)" />}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -317,20 +377,19 @@ export function MorningBriefView() {
                 </div>
               </div>
             ))}
-            {running && <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", paddingLeft: 22 }}>working…</div>}
+            {running && <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", paddingLeft: 22 }}>workingâ¦</div>}
             {runErr && <div style={{ fontSize: 12, color: "var(--red)", display: "flex", gap: 6, alignItems: "center" }}><AlertCircle size={12} />{runErr}</div>}
             {result?.plan && (
               <div className="card-el" style={{ padding: 12, marginTop: 6 }}>
-                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>ACTION PLAN · {result.ts} · {result.logs} log{result.logs === 1 ? "" : "s"} written</div>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>ACTION PLAN Â· {result.ts} Â· {result.logs} log{result.logs === 1 ? "" : "s"} written</div>
                 <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{result.plan}</div>
-                <div style={{ marginTop: 8 }}><button className="btn btn-ghost" style={{ fontSize: 11, padding: "4px 8px" }} onClick={() => { window.location.hash = "#/orchestrator"; }}><Activity size={12} />Open Orchestrator log</button></div>
               </div>
             )}
           </div>
         )}
       </div>
 
-      <Section icon={Mail} title="Email — follow-ups & triage" count={d.emailTasks.length || "none"}>
+      <Section icon={Mail} title="Email â follow-ups & triage" count={d.emailTasks.length || "none"}>
         {d.emailTasks.length === 0 ? (
           <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>No open email-sourced tasks.</div>
         ) : d.emailTasks.map((t) => {
@@ -340,7 +399,7 @@ export function MorningBriefView() {
             <Row key={id} open={openId === id} onToggle={() => toggle(id)}
               left={<CompleteBtn busy={!!busy[id]} onDone={() => completeTask(t.id)} />}
               title={t.title}
-              sub={<><OriginChip label="Email" color="var(--blue)" /> {t.source}{t.due ? ` · due ${t.due}` : ""}</>}>
+              sub={<><OriginChip label="Email" color="var(--blue)" /> {t.source}{t.due ? ` Â· due ${t.due}` : ""}</>}>
               {t.notes ? <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}><b>What to do:</b> {t.notes}</div>
                 : <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>No detail on this task.</div>}
               <ContactActions c={contact} gmailUrl={gmailSearch(t, contact)} />
@@ -358,11 +417,11 @@ export function MorningBriefView() {
             return (
               <Row key={id} open={openId === id} onToggle={() => toggle(id)}
                 left={<div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                  <CompleteBtn busy={!!busy["cc" + c.enrollment_id]} onDone={() => advanceCadence(c)} title="Mark this step done — advance the cadence" />
+                  <CompleteBtn busy={!!busy["cc" + c.enrollment_id]} onDone={() => advanceCadence(c)} title="Mark this step done â advance the cadence" />
                   <span className="tag" style={{ color: chColor[c.next_channel] || "var(--text-sec)", background: "var(--bg-el)", border: "1px solid var(--border)" }}>{c.next_channel}</span>
                 </div>}
-                title={<>{c.name} <span style={{ color: "var(--text-sec)", fontWeight: 400 }}>· {c.co}</span></>}
-                sub={<><OriginChip label="Cadence" color="var(--purple)" /> {c.entry_type} · {c.next_action}</>}>
+                title={<>{c.name} <span style={{ color: "var(--text-sec)", fontWeight: 400 }}>Â· {c.co}</span></>}
+                sub={<><OriginChip label="Cadence" color="var(--purple)" /> {c.entry_type} Â· {c.next_action}</>}>
                 <div style={{ fontSize: 12.5, color: "var(--text)", marginBottom: 2 }}><b>What to do:</b> {c.next_action}</div>
                 <DraftBlock subject={v.subject} draft={v.draft} email={contact?.email} />
                 <ContactActions c={contact} />
@@ -396,18 +455,18 @@ export function MorningBriefView() {
             </Row>
           );
         })}
-        <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8 }}>Old overdue items score high too — triage stale ones so they stop topping the list.</div>
+        <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8 }}>Old overdue items score high too â triage stale ones so they stop topping the list.</div>
       </Section>
 
-      <Section icon={FileText} title="Content — post today / create tomorrow" count={d.content.length}>
+      <Section icon={FileText} title="Content â post today / create tomorrow" count={d.content.length}>
         {d.content.length === 0 ? <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>Nothing scheduled for today or tomorrow.</div> : (
           <>
             {postToday.length > 0 && <>
-              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: ".04em", margin: "2px 0 6px" }}>Post today · {postToday.length}</div>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: ".04em", margin: "2px 0 6px" }}>Post today Â· {postToday.length}</div>
               {postToday.map(renderContent)}
             </>}
             {createTomorrow.length > 0 && <>
-              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: ".04em", margin: "10px 0 6px" }}>Create for tomorrow · {createTomorrow.length}</div>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: ".04em", margin: "10px 0 6px" }}>Create for tomorrow Â· {createTomorrow.length}</div>
               {createTomorrow.map(renderContent)}
             </>}
           </>
@@ -419,7 +478,7 @@ export function MorningBriefView() {
           <div key={"d" + x.id} onClick={() => openRecord("deal", x.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 11px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg)", marginBottom: 5, cursor: "pointer" }}>
             <span className="mono" style={{ fontSize: 12, color: "var(--green)", minWidth: 70 }}>{fmt$(x.value)}</span>
             <div style={{ flex: 1, fontSize: 13 }}>{x.name}</div>
-            <span className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>{x.stage} · {x.probability}%</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>{x.stage} Â· {x.probability}%</span>
           </div>
         ))}
       </Section>
@@ -433,7 +492,7 @@ export function MorningBriefView() {
           ))}
           {italyDays > 0 && italyDays <= 30 && (
             <div className="mono" style={{ fontSize: 12, color: "var(--amber)", display: "flex", gap: 6, alignItems: "center" }}>
-              <AlertCircle size={12} /> Italy OOO 7/5–7/12 in {italyDays} days — close what you can before you fly.
+              <AlertCircle size={12} /> Italy OOO 7/5â7/12 in {italyDays} days â close what you can before you fly.
             </div>
           )}
           {closingSoon.length === 0 && !(italyDays > 0 && italyDays <= 30) && (
