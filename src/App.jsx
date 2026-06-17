@@ -13,9 +13,7 @@ import { CRMView } from "./views/CRMView";
 import { Dashboard } from "./views/Dashboard";
 import { DealsView } from "./views/DealsView";
 import { DocumentsView } from "./views/DocumentsView";
-import { GCalView } from "./views/GCalView";
 import { GoalsView } from "./views/GoalsView";
-import { InboxView } from "./views/InboxView";
 import { MarketingView } from "./views/MarketingView";
 import { MultiLLMView } from "./views/MultiLLMView";
 import { OrchestratorView } from "./views/OrchestratorView";
@@ -32,7 +30,7 @@ import { CadencesView } from "./views/CadencesView";
 import { MorningBriefView } from "./views/MorningBriefView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","brief","orchestrator","associates","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
+  const VALID_VIEWS = ["dashboard","brief","orchestrator","associates","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
   const VIEW_ALIASES = { mstack: "associates" };
   const routeFromHash = () => {
     const route = parseAppHash();
@@ -209,8 +207,6 @@ export default function App() {
     projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
-    inbox:        <InboxView session={session}/>,
-    gcal:         <GCalView session={session} db={db} setDB={setDB}/>,
     admin:        <AdminView session={session}/>,
   };
 
