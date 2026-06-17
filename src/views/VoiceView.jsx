@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabase";
 
 const LLM_PROXY_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/llm-proxy";
 
-export const VoiceView = ({ db, setDB, autoRecord }) => {
+export const VoiceView = ({ db, setDB }) => {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -19,7 +19,6 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
   const recRef = useRef(null);     // MediaRecorder
   const chunksRef = useRef([]);    // recorded audio chunks
   const streamRef = useRef(null);  // mic stream
-  const autoStarted = useRef(false);
 
   const pickMime = () => {
     const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
@@ -28,11 +27,11 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
   };
 
   // Record audio with MediaRecorder (works in every browser), then transcribe
-  // server-side via Whisper â no dependency on the browser's speech engine.
+  // server-side via Whisper - no dependency on the browser's speech engine.
   const start = async () => {
     setMicError("");
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setMicError("Audio recording isn't supported in this browser â type your note below and hit Analyze.");
+      setMicError("Audio recording isn't supported in this browser - type your note below and hit Analyze.");
       return;
     }
     let stream;
@@ -53,7 +52,7 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       const type = mr.mimeType || mime || "audio/webm";
       const blob = new Blob(chunksRef.current, { type });
-      if (!blob.size) { setMicError("No audio captured â try again and speak after tapping."); return; }
+      if (!blob.size) { setMicError("No audio captured - try again and speak after tapping."); return; }
       await transcribeBlob(blob);
     };
     try {
@@ -92,7 +91,7 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
       const d = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(d?.error || `HTTP ${resp.status}`);
       const text = (d.text || "").trim();
-      if (!text) setMicError("Transcription came back empty â try again, speaking a little longer.");
+      if (!text) setMicError("Transcription came back empty - try again, speaking a little longer.");
       else setTranscript((prev) => (prev.trim() ? prev.trim() + " " + text : text));
     } catch (e) {
       setMicError("Transcription failed: " + (e?.message || e));
@@ -100,31 +99,29 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
     setTranscribing(false);
   };
 
-  // Auto-start recording when opened via the floating mic button
-  useEffect(() => {
-    if (autoRecord && !autoStarted.current && !recording) {
-      autoStarted.current = true;
-      setTimeout(() => start(), 300);
-    }
-  }, [autoRecord]);
+  // Release the mic / stop the recorder when the panel closes (unmount).
+  useEffect(() => () => {
+    try { if (recRef.current && recRef.current.state !== "inactive") recRef.current.stop(); } catch { /* noop */ }
+    try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch { /* noop */ }
+  }, []);
 
   const buildContext = () => {
-    const contacts = (db.contacts||[]).filter(c=>{const comp=(db.companies||[]).find(co=>co.name===c.co);return !comp||comp.status!=="parked"}).map(c=>`[Contact id:${c.id}] ${c.name} â ${c.co||""} â ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
-    const companies = (db.companies||[]).filter(c=>c.status!=="parked").map(c=>`[Company id:${c.id}] ${c.name} â ${c.industry||""} (status:${c.status||"prospect"})`).join("\n");
-    const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} â $${d.value} â stage:${d.stage} (prob:${d.probability}%)`).join("\n");
-    const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} (${p.type||"client"}) â status:${p.status} priority:${p.priority||"medium"} (progress:${p.progress}%)`).join("\n");
-    const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} â due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
+    const contacts = (db.contacts||[]).filter(c=>{const comp=(db.companies||[]).find(co=>co.name===c.co);return !comp||comp.status!=="parked"}).map(c=>`[Contact id:${c.id}] ${c.name} | ${c.co||""} | ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
+    const companies = (db.companies||[]).filter(c=>c.status!=="parked").map(c=>`[Company id:${c.id}] ${c.name} | ${c.industry||""} (status:${c.status||"prospect"})`).join("\n");
+    const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} | $${d.value} | stage:${d.stage} (prob:${d.probability}%)`).join("\n");
+    const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} (${p.type||"client"}) | status:${p.status} priority:${p.priority||"medium"} (progress:${p.progress}%)`).join("\n");
+    const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} | due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
     return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}`;
   };
 
   /* Describe an operation in human-readable form */
   const describeOp = (op) => {
-    if(op.action==="create_task") return {icon:"Zap",color:"var(--amber)",text:`Create task: ${op.data?.title||"Untitled"}`,detail:`Due: ${op.data?.due||"none"} Â· Priority: ${op.data?.priority||"medium"} Â· Category: ${op.data?.category||"â"}`};
+    if(op.action==="create_task") return {icon:"Zap",color:"var(--amber)",text:`Create task: ${op.data?.title||"Untitled"}`,detail:`Due: ${op.data?.due||"none"} | Priority: ${op.data?.priority||"medium"} | Category: ${op.data?.category||"-"}`};
     if(op.action==="update_contact") { const c=(db.contacts||[]).find(c=>c.id===op.data?.id); return {icon:"Users",color:"var(--blue)",text:`Update contact: ${c?.name||"ID "+op.data?.id}`,detail:`Fields: ${Object.keys(op.data?.fields||{}).join(", ")}`}; }
-    if(op.action==="create_deal") return {icon:"Briefcase",color:"var(--green)",text:`Create deal: ${op.data?.name||"Untitled"}`,detail:`Value: $${op.data?.value||0} Â· Stage: ${op.data?.stage||"discovery"}`};
+    if(op.action==="create_deal") return {icon:"Briefcase",color:"var(--green)",text:`Create deal: ${op.data?.name||"Untitled"}`,detail:`Value: $${op.data?.value||0} | Stage: ${op.data?.stage||"discovery"}`};
     if(op.action==="update_deal") { const d=(db.deals||[]).find(d=>d.id===op.data?.id); return {icon:"Briefcase",color:"var(--purple)",text:`Update deal: ${d?.name||"ID "+op.data?.id}`,detail:`Fields: ${Object.keys(op.data?.fields||{}).join(", ")}`}; }
     if(op.action==="update_project") { const p=(db.projects||[]).find(p=>p.id===op.data?.id); return {icon:"Target",color:"var(--blue)",text:`Update project: ${p?.name||"ID "+op.data?.id}`,detail:`Fields: ${Object.keys(op.data?.fields||{}).join(", ")}`}; }
-    if(op.action==="create_contact") return {icon:"Users",color:"var(--green)",text:`Create contact: ${op.data?.name||"Unknown"}`,detail:`${op.data?.co||""} Â· ${op.data?.role||""} Â· Category: ${op.data?.category||"â"}`};
+    if(op.action==="create_contact") return {icon:"Users",color:"var(--green)",text:`Create contact: ${op.data?.name||"Unknown"}`,detail:`${op.data?.co||""} | ${op.data?.role||""} | Category: ${op.data?.category||"-"}`};
     if(op.action==="log_event") return {icon:"FileText",color:"var(--text-sec)",text:`Log event: ${op.data?.event_type||"voice_note"}`,detail:op.data?.description||""};
     return {icon:"AlertCircle",color:"var(--text-dim)",text:`Unknown: ${op.action}`,detail:""};
   };
@@ -138,7 +135,7 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
     return <AlertCircle size={13} style={{flexShrink:0}}/>;
   };
 
-  /* Step 1: Analyze â send to Claude, get proposed operations back */
+  /* Step 1: Analyze - send to Claude, get proposed operations back */
   const analyze = async () => {
     if(!transcript.trim())return;
     setLoading(true);setProposals(null);setCommitted(null);setSelected({});
@@ -167,7 +164,7 @@ Rules:
 - Create tasks for any follow-ups, action items, or reminders mentioned
 - Link tasks to the right contact/company/deal/project by id
 - If a new person is mentioned who is NOT in the database, create_contact
-- Be thorough â capture EVERYTHING actionable from the note
+- Be thorough - capture EVERYTHING actionable from the note
 - For dates, today is ${today()}`;
 
       const raw = await callClaude(sysPrompt, `DATABASE STATE:\n${ctx}\n\nVOICE NOTE:\n"${transcript}"`, 1500);
@@ -261,18 +258,17 @@ Rules:
     setSelected(sel);
   };
 
-  const busyRec = recording || transcribing;
   const statusText = recording
-    ? <span className="blink" style={{color:"var(--red)"}}>Recordingâ¦ tap to stop</span>
+    ? <span className="blink" style={{color:"var(--red)"}}>Recording... tap to stop</span>
     : transcribing
-    ? <span style={{color:"var(--blue)"}}>Transcribingâ¦</span>
-    : "Tap to record a note";
+    ? <span style={{color:"var(--blue)"}}>Transcribing...</span>
+    : "Tap to record - or type below";
 
   return (
     <div style={{ padding:24, maxWidth:720, display:"flex", flexDirection:"column", gap:20 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div className="display" style={{ fontSize:18, fontWeight:700 }}>Voice Agent</div>
-        <div style={{ fontSize:11, color:"var(--text-dim)", fontFamily:"var(--font-m)" }}>Record â Review â Commit</div>
+        <div style={{ fontSize:11, color:"var(--text-dim)", fontFamily:"var(--font-m)" }}>Record / Review / Commit</div>
       </div>
 
       {/* Recording + Transcript */}
@@ -280,17 +276,18 @@ Rules:
         <div onClick={()=>{ if(transcribing) return; recording?stop():start(); }} style={{ width:80, height:80, borderRadius:"50%", background:recording?"var(--red-dim)":"var(--blue-dim)", border:`3px solid ${recording?"var(--red)":"var(--blue)"}`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px", cursor:transcribing?"default":"pointer", transition:"all .2s", opacity:transcribing?0.6:1 }}>
           {transcribing?<Loader size={28} className="spin" color="var(--blue)"/>:recording?<MicOff size={28} color="var(--red)"/>:<Mic size={28} color="var(--blue)"/>}
         </div>
-        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{statusText}</p>
+        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:6 }}>{statusText}</p>
+        <p className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginBottom:14 }}>Tap the mic, speak, then tap again to stop. Your words appear after a moment.</p>
         {micError && <div style={{ display:"flex", gap:8, alignItems:"flex-start", textAlign:"left", background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.3)", borderRadius:8, padding:"10px 12px", marginBottom:14, color:"var(--red)", fontSize:12, lineHeight:1.5 }}>
           <AlertCircle size={14} style={{ flexShrink:0, marginTop:1 }}/><span>{micError}</span>
         </div>}
         <textarea className="input" placeholder='Example: "Had a great call with Dave Scott. He wants to expand the project to 3 more communities. Set up a follow-up meeting next week. Also need to send the SOW to Michael Torres by Friday."' value={transcript} onChange={e=>setTranscript(e.target.value)} style={{ marginBottom:14, minHeight:100 }}/>
-        <button className="btn btn-blue" onClick={analyze} disabled={!transcript.trim()||loading||busyRec} style={{ width:"100%", justifyContent:"center", padding:"11px 20px", fontSize:14, opacity:(!transcript.trim()||loading||busyRec)?0.5:1 }}>
-          {loading?<><Loader size={14} className="spin"/>Analyzingâ¦</>:<><Sparkles size={14}/>Analyze</>}
+        <button className="btn btn-blue" onClick={analyze} disabled={!transcript.trim()||loading} style={{ width:"100%", justifyContent:"center", padding:"11px 20px", fontSize:14, opacity:(!transcript.trim()||loading)?0.5:1 }}>
+          {loading?<><Loader size={14} className="spin"/>Analyzing...</>:<><Sparkles size={14}/>Analyze</>}
         </button>
       </div>
 
-      {/* Proposed Operations â select which to commit */}
+      {/* Proposed Operations - select which to commit */}
       {proposals&&!committed&&<div className="card slide-in" style={{ padding:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
@@ -325,7 +322,7 @@ Rules:
 
         <div style={{ display:"flex", gap:8 }}>
           <button className="btn btn-blue" onClick={commitSelected} disabled={selectedCount===0||committing} style={{ flex:1, justifyContent:"center", padding:"10px 18px", fontSize:13, opacity:selectedCount===0?0.4:1 }}>
-            {committing?<><Loader size={13} className="spin"/>Committingâ¦</>:<><CheckCircle size={13}/>Commit {selectedCount} of {totalCount}</>}
+            {committing?<><Loader size={13} className="spin"/>Committing...</>:<><CheckCircle size={13}/>Commit {selectedCount} of {totalCount}</>}
           </button>
           <button className="btn btn-ghost" onClick={()=>{setProposals(null);setSelected({});}} style={{ padding:"10px 18px", fontSize:13 }}>
             Discard
@@ -359,7 +356,7 @@ Rules:
           <div key={i} className="card-el" style={{ padding:"10px 13px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:12, fontWeight:500, marginBottom:2 }}>{h.summary}</div>
-              <div style={{ fontSize:11, color:"var(--text-dim)" }}>{h.transcript.substring(0,80)}{h.transcript.length>80?"â¦":""}</div>
+              <div style={{ fontSize:11, color:"var(--text-dim)" }}>{h.transcript.substring(0,80)}{h.transcript.length>80?"...":""}</div>
             </div>
             <div style={{ textAlign:"right", flexShrink:0, marginLeft:12 }}>
               <div className="tag" style={{ background:"var(--blue-dim)", color:"var(--blue)" }}>{h.count} ops</div>
