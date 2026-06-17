@@ -498,7 +498,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
               </div>; }
               if(n.parent) return null;
               const act=view===n.id;
-              return <button key={i} onClick={()=>setView(n.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 12px",border:"none",background:act?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:act?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.85rem"}}><n.icon size={16}/>{n.label}{n.id==="orchestrator"&&(db.tasks||[]).filter(t=>t.priority==="critical"&&t.status!=="done").length>0&&<span style={{marginLeft:"auto",background:"var(--red,#e53e3e)",color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:"0.7rem"}}>{(db.tasks||[]).filter(t=>t.priority==="critical"&&t.status!=="done").length}</span>}</button>;
+              return <button key={i} onClick={()=>setView(n.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 12px",border:"none",background:act?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:act?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.85rem"}}><n.icon size={16}/>{n.label}</button>;
             })}
     <div style={{ marginTop:"auto" }}>
       <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 6px" }}>
@@ -511,7 +511,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
-  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"orchestrator",icon:Brain,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
+  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
   const secondary = [{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
@@ -543,7 +543,7 @@ export const BottomNav = ({ view, setView }) => {
   );
 };
 
-// ─── Unified Filter + Sort ("funnel") used across every list view ───────────
+// âââ Unified Filter + Sort ("funnel") used across every list view âââââââââââ
 const _flGet = (row, field) => (typeof field === "function" ? field(row) : row?.[field]);
 const _flOptVal = (o) => (o && typeof o === "object" ? o.value : o);
 const _flPretty = (s) => (s === "all" ? "All" : String(s).replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
@@ -557,14 +557,14 @@ export const FilterSort = ({ search, query, setQuery, facets, facetState, setFac
       const opt = (f.options || []).find((o) => _flOptVal(o) === v);
       return { key: "f:" + f.key, label: `${f.label}: ${opt ? _flOptLabel(opt) : _flPretty(v)}`, clear: () => setFacet(f.key, "all") };
     }),
-    ...(query ? [{ key: "q", label: `“${query}”`, clear: () => setQuery("") }] : []),
+    ...(query ? [{ key: "q", label: `â${query}â`, clear: () => setQuery("") }] : []),
   ];
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
       {search && (
         <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
           <Search size={13} color="var(--text-sec)" style={{ position: "absolute", left: 10, top: 10, pointerEvents: "none" }} />
-          <input className="input" placeholder={search.placeholder || "Search…"} value={query} onChange={(e) => setQuery(e.target.value)} style={{ paddingLeft: 30, fontSize: 13 }} />
+          <input className="input" placeholder={search.placeholder || "Searchâ¦"} value={query} onChange={(e) => setQuery(e.target.value)} style={{ paddingLeft: 30, fontSize: 13 }} />
         </div>
       )}
       <div style={{ position: "relative", flexShrink: 0 }}>
