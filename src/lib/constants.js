@@ -1,10 +1,5 @@
 import { fmt } from "./utils";
 
-export const revenueData = [
-  {m:"Oct",rev:32000},{m:"Nov",rev:28000},{m:"Dec",rev:41000},
-  {m:"Jan",rev:37000},{m:"Feb",rev:31000},{m:"Mar",rev:47000},
-];
-
 export const CONTACT_CATEGORIES = ["customer_lead","partner_lead","customer","partner","vendor"];
 
 export const TASK_STATUSES = ["todo","in_progress","waiting","done","cancelled"];
@@ -38,7 +33,7 @@ export const DOCUMENT_ENTITY_TYPES = [
   { type:"campaign", key:"campaigns", label:"Campaign", name:r=>r.name },
   { type:"deal", key:"deals", label:"Deal", name:r=>r.name },
   { type:"invoice", key:"invoices", label:"Invoice", name:r=>r.number || r.client },
-  { type:"payment", key:"payments", label:"Payment", name:r=>`${r.date || "Payment"} · ${fmt(r.amount || 0)}` },
+  { type:"payment", key:"payments", label:"Payment", name:r=>`${r.date || "Payment"} Â· ${fmt(r.amount || 0)}` },
   { type:"strategy", key:"strategies", label:"Strategy", name:r=>r.name },
   { type:"goal", key:"goals", label:"Goal", name:r=>r.name },
   { type:"ai_memory", key:"ai_memories", label:"AI Memory", name:r=>r.subject || r.memory_summary },
