@@ -1,4 +1,4 @@
-// api/orchestrator-run.js — on-demand, STREAMING orchestrator (quick run, no news).
+// api/orchestrator-run.js â on-demand, STREAMING orchestrator (quick run, no news).
 // Triggered by a logged-in app user from the Morning Brief. Streams Server-Sent
 // Events so the UI can show exactly what it's doing, phase by phase, then writes
 // the results to agentlogs (type "midday-sweep") just like the nightly api/sweep.js.
@@ -19,7 +19,7 @@ async function callClaude(system, user, max = 600) {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: max,
       system,
       messages: [{ role: "user", content: user }],
@@ -49,8 +49,8 @@ export default async function handler(req, res) {
   const send = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch { /* client gone */ } };
 
   try {
-    // ── 1) Pull live data ──────────────────────────────────────────────
-    send({ key: "data", state: "run", label: "Pulling live data from Second Brain…" });
+    // ââ 1) Pull live data ââââââââââââââââââââââââââââââââââââââââââââââ
+    send({ key: "data", state: "run", label: "Pulling live data from Second Brainâ¦" });
     const [contacts, deals, tasks, projects, invoices, allInvoices, goals, instructions] = await Promise.all([
       admin.from("contacts").select("*"),
       admin.from("deals").select("*"),
@@ -67,10 +67,10 @@ export default async function handler(req, res) {
       goals: goals.data || [], instructions: instructions.data || [],
     };
     const allInv = allInvoices.data || [];
-    send({ key: "data", state: "ok", label: "Pulled live data", detail: `${db.contacts.length} contacts · ${db.deals.length} deals · ${db.tasks.length} open tasks · ${db.projects.length} projects · ${db.invoices.length} unpaid invoices` });
+    send({ key: "data", state: "ok", label: "Pulled live data", detail: `${db.contacts.length} contacts Â· ${db.deals.length} deals Â· ${db.tasks.length} open tasks Â· ${db.projects.length} projects Â· ${db.invoices.length} unpaid invoices` });
 
-    // ── 2) Compute metrics ─────────────────────────────────────────────
-    send({ key: "metrics", state: "run", label: "Computing metrics…" });
+    // ââ 2) Compute metrics âââââââââââââââââââââââââââââââââââââââââââââ
+    send({ key: "metrics", state: "run", label: "Computing metricsâ¦" });
     const overdueInv = db.invoices.filter((i) => i.status === "overdue");
     const criticalTasks = db.tasks.filter((t) => t.priority === "critical");
     const atRiskContacts = db.contacts.filter((c) => c.status === "at-risk");
@@ -86,7 +86,7 @@ export default async function handler(req, res) {
     const goalsBlock = db.goals.length
       ? db.goals.slice().sort((a, b) => (a.priority_order ?? 99) - (b.priority_order ?? 99)).map((g) => `- [${g.category || "general"}] ${g.name}: ${g.current_value ?? 0}/${g.target_value} ${g.unit || ""} (${g.period || ""})`).join("\n")
       : "(no active goals defined)";
-    send({ key: "metrics", state: "ok", label: "Computed metrics", detail: `weighted pipeline ${fmt(weightedPipe)} · revenue gap ${fmt(revenueGap)} (${pipelineCoverage}% coverage) · overdue A/R ${fmt(overdueAR)} · ${criticalTasks.length} critical tasks · ${atRiskContacts.length} at-risk` });
+    send({ key: "metrics", state: "ok", label: "Computed metrics", detail: `weighted pipeline ${fmt(weightedPipe)} Â· revenue gap ${fmt(revenueGap)} (${pipelineCoverage}% coverage) Â· overdue A/R ${fmt(overdueAR)} Â· ${criticalTasks.length} critical tasks Â· ${atRiskContacts.length} at-risk` });
 
     const snap = {
       goals: db.goals.map((g) => ({ name: g.name, target: g.target_value, current: g.current_value, unit: g.unit, period: g.period, category: g.category, priority_order: g.priority_order })),
@@ -100,37 +100,37 @@ export default async function handler(req, res) {
     };
     const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
-    // ── 3) Orchestrator action plan ────────────────────────────────────
-    send({ key: "plan", state: "run", label: "Drafting daily action plan (Orchestrator agent)…" });
+    // ââ 3) Orchestrator action plan ââââââââââââââââââââââââââââââââââââ
+    send({ key: "plan", state: "run", label: "Drafting daily action plan (Orchestrator agent)â¦" });
     const orchestratorMsg = await callClaude(
-      `You are Mendy Ezagui's Orchestrator Agent — his proactive daily strategist. He's an independent AI ops consultant in LA targeting property management/HOA companies. His active goals (with live progress) are in the snapshot under "goals" — weigh every recommendation against them, prioritizing the lowest priority_order (most important) first. His primary revenue goal is ${fmt(revenueTarget)}/year; he has collected ${fmt(collectedRevenue)} so far (gap ${fmt(revenueGap)}, weighted pipeline ${fmt(weightedPipe)} = ${pipelineCoverage}% coverage). Projects are typed "client" or "strategic" with priorities (high/medium/low); high-priority strategic projects should drive weekly focus. The snapshot's "instructions" array holds Mendy's standing orders — follow them and let them override default behavior. It is mid-day — focus on what's still actionable before end of day. Be specific — name names, cite dollar amounts, reference deadlines.`,
-      `Mid-day check-in — today is ${today}.\n\nYOUR GOALS (most important first):\n${goalsBlock}\n\nREVENUE: collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} target — gap ${fmt(revenueGap)}; weighted pipeline ${fmt(weightedPipe)} (${pipelineCoverage}% coverage).\n\nLive database snapshot:\n${JSON.stringify(snap, null, 2)}\n\nGenerate Mendy's Action Plan for the rest of today:\n\nTOP PRIORITIES — The 1-2 most urgent items still open, tied to the goals they advance.\n\nDEAL MOVES — Specific next actions on active deals, ranked by revenue potential and urgency. Flag stale deals (no activity >7 days).\n\nSTRATEGIC PLAYS — One move to advance a high-priority strategic project before EOD.\n\nSMART NUDGES — Follow-ups due, relationships going cold, deadlines, billing issues.\n\nBe direct. Name people, amounts, dates. Max 8 sentences total.`,
+      `You are Mendy Ezagui's Orchestrator Agent â his proactive daily strategist. He's an independent AI ops consultant in LA targeting property management/HOA companies. His active goals (with live progress) are in the snapshot under "goals" â weigh every recommendation against them, prioritizing the lowest priority_order (most important) first. His primary revenue goal is ${fmt(revenueTarget)}/year; he has collected ${fmt(collectedRevenue)} so far (gap ${fmt(revenueGap)}, weighted pipeline ${fmt(weightedPipe)} = ${pipelineCoverage}% coverage). Projects are typed "client" or "strategic" with priorities (high/medium/low); high-priority strategic projects should drive weekly focus. The snapshot's "instructions" array holds Mendy's standing orders â follow them and let them override default behavior. It is mid-day â focus on what's still actionable before end of day. Be specific â name names, cite dollar amounts, reference deadlines.`,
+      `Mid-day check-in â today is ${today}.\n\nYOUR GOALS (most important first):\n${goalsBlock}\n\nREVENUE: collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} target â gap ${fmt(revenueGap)}; weighted pipeline ${fmt(weightedPipe)} (${pipelineCoverage}% coverage).\n\nLive database snapshot:\n${JSON.stringify(snap, null, 2)}\n\nGenerate Mendy's Action Plan for the rest of today:\n\nTOP PRIORITIES â The 1-2 most urgent items still open, tied to the goals they advance.\n\nDEAL MOVES â Specific next actions on active deals, ranked by revenue potential and urgency. Flag stale deals (no activity >7 days).\n\nSTRATEGIC PLAYS â One move to advance a high-priority strategic project before EOD.\n\nSMART NUDGES â Follow-ups due, relationships going cold, deadlines, billing issues.\n\nBe direct. Name people, amounts, dates. Max 8 sentences total.`,
       800
     );
-    send({ key: "plan", state: "ok", label: "Daily action plan ready", detail: orchestratorMsg.slice(0, 96).replace(/\n/g, " ") + (orchestratorMsg.length > 96 ? "…" : "") });
+    send({ key: "plan", state: "ok", label: "Daily action plan ready", detail: orchestratorMsg.slice(0, 96).replace(/\n/g, " ") + (orchestratorMsg.length > 96 ? "â¦" : "") });
 
-    // ── 4) Billing agent (only if overdue) ─────────────────────────────
+    // ââ 4) Billing agent (only if overdue) âââââââââââââââââââââââââââââ
     let billingMsg = null;
     if (overdueAR > 0) {
-      send({ key: "billing", state: "run", label: "Billing agent — overdue A/R…" });
+      send({ key: "billing", state: "run", label: "Billing agent â overdue A/Râ¦" });
       billingMsg = await callClaude(`You are a billing agent. Be direct and specific. One sentence max.`, `Overdue invoices: ${JSON.stringify(overdueInv.map((i) => ({ client: i.client, amount: i.amount, number: i.number, due: i.due })))}. What is the single most urgent collection action?`, 150);
       send({ key: "billing", state: "ok", label: "Billing agent", detail: billingMsg });
     } else {
-      send({ key: "billing", state: "skip", label: "Billing agent", detail: "No overdue invoices — skipped" });
+      send({ key: "billing", state: "skip", label: "Billing agent", detail: "No overdue invoices â skipped" });
     }
 
-    // ── 5) CRM agent (only if at-risk contacts) ────────────────────────
+    // ââ 5) CRM agent (only if at-risk contacts) ââââââââââââââââââââââââ
     let crmMsg = null;
     if (atRiskContacts.length > 0) {
-      send({ key: "crm", state: "run", label: "CRM agent — at-risk relationships…" });
+      send({ key: "crm", state: "run", label: "CRM agent â at-risk relationshipsâ¦" });
       crmMsg = await callClaude(`You are a CRM agent. Be direct and specific. One sentence max.`, `At-risk contacts: ${JSON.stringify(atRiskContacts.map((c) => ({ name: c.name, co: c.co, score: c.score, lastTouch: c.lastTouch, notes: c.notes })))}. What is the most important relationship action today?`, 150);
       send({ key: "crm", state: "ok", label: "CRM agent", detail: crmMsg });
     } else {
-      send({ key: "crm", state: "skip", label: "CRM agent", detail: "No at-risk contacts — skipped" });
+      send({ key: "crm", state: "skip", label: "CRM agent", detail: "No at-risk contacts â skipped" });
     }
 
-    // ── 6) Write to agentlogs ──────────────────────────────────────────
-    send({ key: "write", state: "run", label: "Writing results to agentlogs…" });
+    // ââ 6) Write to agentlogs ââââââââââââââââââââââââââââââââââââââââââ
+    send({ key: "write", state: "run", label: "Writing results to agentlogsâ¦" });
     const ts = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "America/Los_Angeles" });
     const nowIso = new Date().toISOString();
     const { data: lastLog } = await admin.from("agentlogs").select("id").order("id", { ascending: false }).limit(1);
@@ -139,13 +139,13 @@ export default async function handler(req, res) {
       { id: nextId++, agent: "Orchestrator", type: "midday-sweep", message: orchestratorMsg, ts, priority: "high", modified_by: "orchestrator-manual", modified_at: nowIso },
       billingMsg ? { id: nextId++, agent: "Billing Agent", type: "alert", message: billingMsg, ts, priority: "critical", modified_by: "orchestrator-manual", modified_at: nowIso } : null,
       crmMsg ? { id: nextId++, agent: "CRM Agent", type: "risk", message: crmMsg, ts, priority: "high", modified_by: "orchestrator-manual", modified_at: nowIso } : null,
-      { id: nextId++, agent: "System", type: "sweep-summary", message: `Mid-day sweep — ${db.contacts.length} contacts, ${activeDeals.length} active deals, ${fmt(overdueAR)} overdue A/R, ${criticalTasks.length} critical tasks, ${atRiskContacts.length} at-risk. Collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} (${pipelineCoverage}% coverage).`, ts, priority: "medium", modified_by: "orchestrator-manual", modified_at: nowIso },
+      { id: nextId++, agent: "System", type: "sweep-summary", message: `Mid-day sweep â ${db.contacts.length} contacts, ${activeDeals.length} active deals, ${fmt(overdueAR)} overdue A/R, ${criticalTasks.length} critical tasks, ${atRiskContacts.length} at-risk. Collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} (${pipelineCoverage}% coverage).`, ts, priority: "medium", modified_by: "orchestrator-manual", modified_at: nowIso },
     ].filter(Boolean);
     const { error: insErr } = await admin.from("agentlogs").insert(logs);
     if (insErr) throw new Error("Failed to write agentlogs: " + insErr.message);
     send({ key: "write", state: "ok", label: `Wrote ${logs.length} entries to agentlogs` });
 
-    // ── Done ───────────────────────────────────────────────────────────
+    // ââ Done âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     send({ done: true, plan: orchestratorMsg, billing: billingMsg, crm: crmMsg, logs: logs.length, ts });
     res.end();
   } catch (err) {
