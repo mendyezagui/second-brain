@@ -1,4 +1,4 @@
-// api/sweep.js — Nightly Orchestrator Sweep
+// api/sweep.js â Nightly Orchestrator Sweep
 // Vercel cron: runs at 6:30 AM PST (14:30 UTC) every day
 // Reads live Supabase data -> calls Claude -> writes insights back to agentlogs
 // Also runs a small, best-effort real-news refresh at the end (folded in here
@@ -23,7 +23,7 @@ async function callClaude(system, user, max = 600) {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: max,
       system,
       messages: [{ role: "user", content: user }],
@@ -78,7 +78,7 @@ async function refreshNews({ batch = 4, maxSearches = 4 } = {}) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 3000,
         system,
         messages: [{ role: "user", content: `Companies to research: ${companyList}` }],
@@ -240,8 +240,8 @@ export default async function handler(req, res) {
     const [orchestratorMsg, billingMsg, crmMsg] = await Promise.all([
 
       callClaude(
-        `You are Mendy Ezagui's Orchestrator Agent — his proactive daily strategist. He's an independent AI ops consultant in LA targeting property management/HOA companies. His active goals (with live progress) are in the snapshot under "goals" — weigh every recommendation against them, prioritizing the lowest priority_order (most important) first. His primary revenue goal is ${fmt(revenueTarget)}/year; he has collected ${fmt(collectedRevenue)} so far (gap ${fmt(revenueGap)}, weighted pipeline ${fmt(weightedPipe)} = ${pipelineCoverage}% coverage). Projects are typed "client" or "strategic" with priorities (high/medium/low); high-priority strategic projects should drive weekly focus. The snapshot's "instructions" array holds Mendy's standing orders — follow them and let them override default behavior. Be specific — name names, cite dollar amounts, reference deadlines.`,
-        `Good morning — today is ${today}.\n\nYOUR GOALS (most important first):\n${goalsBlock}\n\nREVENUE: collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} target — gap ${fmt(revenueGap)}; weighted pipeline ${fmt(weightedPipe)} (${pipelineCoverage}% coverage).\n\nLive database snapshot:\n${JSON.stringify(snap, null, 2)}\n\nGenerate Mendy's Daily Action Plan:\n\nTOP PRIORITIES — The 1-2 most urgent items from critical tasks, high-priority strategic projects, and approaching deadlines, tied to the goals they advance.\n\nDEAL MOVES — Specific next actions on active deals, ranked by revenue potential and urgency. Flag stale deals (no activity >7 days).\n\nSTRATEGIC PLAYS — One move to advance a high-priority strategic project today.\n\nSMART NUDGES — Follow-ups due, relationships going cold, upcoming deadlines, billing issues.\n\nBe direct. Name people, amounts, dates. Max 8 sentences total.`,
+        `You are Mendy Ezagui's Orchestrator Agent â his proactive daily strategist. He's an independent AI ops consultant in LA targeting property management/HOA companies. His active goals (with live progress) are in the snapshot under "goals" â weigh every recommendation against them, prioritizing the lowest priority_order (most important) first. His primary revenue goal is ${fmt(revenueTarget)}/year; he has collected ${fmt(collectedRevenue)} so far (gap ${fmt(revenueGap)}, weighted pipeline ${fmt(weightedPipe)} = ${pipelineCoverage}% coverage). Projects are typed "client" or "strategic" with priorities (high/medium/low); high-priority strategic projects should drive weekly focus. The snapshot's "instructions" array holds Mendy's standing orders â follow them and let them override default behavior. Be specific â name names, cite dollar amounts, reference deadlines.`,
+        `Good morning â today is ${today}.\n\nYOUR GOALS (most important first):\n${goalsBlock}\n\nREVENUE: collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} target â gap ${fmt(revenueGap)}; weighted pipeline ${fmt(weightedPipe)} (${pipelineCoverage}% coverage).\n\nLive database snapshot:\n${JSON.stringify(snap, null, 2)}\n\nGenerate Mendy's Daily Action Plan:\n\nTOP PRIORITIES â The 1-2 most urgent items from critical tasks, high-priority strategic projects, and approaching deadlines, tied to the goals they advance.\n\nDEAL MOVES â Specific next actions on active deals, ranked by revenue potential and urgency. Flag stale deals (no activity >7 days).\n\nSTRATEGIC PLAYS â One move to advance a high-priority strategic project today.\n\nSMART NUDGES â Follow-ups due, relationships going cold, upcoming deadlines, billing issues.\n\nBe direct. Name people, amounts, dates. Max 8 sentences total.`,
         800
       ),
 
@@ -279,7 +279,7 @@ export default async function handler(req, res) {
         id: nextId++,
         agent: "System",
         type: "sweep-summary",
-        message: `Morning sweep complete — ${db.contacts.length} contacts, ${activeDeals.length} active deals, ${fmt(overdueAR)} overdue A/R, ${criticalTasks.length} critical tasks, ${atRiskContacts.length} at-risk contacts. Collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} (${pipelineCoverage}% pipeline coverage). ${db.instructions.length} standing instructions, ${db.goals.length} active goals.`,
+        message: `Morning sweep complete â ${db.contacts.length} contacts, ${activeDeals.length} active deals, ${fmt(overdueAR)} overdue A/R, ${criticalTasks.length} critical tasks, ${atRiskContacts.length} at-risk contacts. Collected ${fmt(collectedRevenue)} of ${fmt(revenueTarget)} (${pipelineCoverage}% pipeline coverage). ${db.instructions.length} standing instructions, ${db.goals.length} active goals.`,
         ts,
         priority: "medium",
       },
