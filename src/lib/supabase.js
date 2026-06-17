@@ -40,7 +40,7 @@ export const loadAllFromDB = async () => {
     const { data, error } = fetches[i];
     if (!error && data && data.length > 0) { result[key] = data; }
     else if (!hasAnyData) { result[key] = seed[key]; toSeed.push({ key, i }); }
-    else { result[key] = []; } // Table is empty but DB is not fresh — don't re-seed
+    else { result[key] = []; } // Table is empty but DB is not fresh â don't re-seed
   });
   if (toSeed.length > 0) {
     await Promise.all(toSeed.map(({ key, i }) => {
@@ -65,7 +65,12 @@ export const syncToDB = async (prev, next) => {
       if (!prevIds.has(r.id)) return true;
       const old = prevRows.find(p => p.id === r.id);
       return JSON.stringify(r) !== JSON.stringify(old);
-    }).map(r => ({ ...r, modified_by: modifiedBy, modified_at: modifiedAt }));
+    }).map(r => {
+      const row = { ...r, modified_by: modifiedBy, modified_at: modifiedAt };
+      // tasks.due is a date column; the form emits "" for no due date.
+      if (tbl === "tasks" && row.due === "") row.due = null;
+      return row;
+    });
     if (toUpsert.length > 0) await supabase.from(tbl).upsert(toUpsert);
     const deleted = [...prevIds].filter(id => !nextIds.has(id));
     if (deleted.length > 0) {
