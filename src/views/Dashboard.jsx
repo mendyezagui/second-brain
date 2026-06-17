@@ -82,12 +82,11 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
             {todayEvents.length > 0 && <>
               <div className="mono" style={{ fontSize:10, color:"var(--blue)", marginTop:6 }}>TODAY'S SCHEDULE</div>
               {todayEvents.slice(0,4).map(evt => (
-                <div key={evt.id} onClick={()=>setView("gcal")} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"rgba(0,119,204,0.06)", borderRadius:6, cursor:"pointer", borderLeft:`3px solid ${({meeting:"var(--blue)",call:"var(--purple)",reminder:"var(--amber)",event:"var(--green)"}[evt.type]||"var(--blue)")}` }}>
+                <div key={evt.id} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"rgba(0,119,204,0.06)", borderRadius:6, borderLeft:`3px solid ${({meeting:"var(--blue)",call:"var(--purple)",reminder:"var(--amber)",event:"var(--green)"}[evt.type]||"var(--blue)")}` }}>
                   <Calendar size={12} color="var(--blue)"/>
                   <span className="mono" style={{ fontSize:11, color:"var(--text-sec)", flexShrink:0 }}>{evt.start_time}</span>
                   <span style={{ fontWeight:500 }}>{evt.title}</span>
                   {evt.location&&<span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>ð {evt.location}</span>}
-                  <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0, marginLeft:"auto"}}/>
                 </div>
               ))}
             </>}
