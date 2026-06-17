@@ -19,6 +19,7 @@ export const DB_TABLES = [
   ["campaigns",   "campaigns"],
   ["invoices",    "invoices"],
   ["agentLogs",   "agentlogs"],
+  ["voiceNotes",  "voicenotes"],
   ["companies",   "companies"],
   ["companyNews", "company_news"],
   ["goals",       "goals"],
