@@ -16,7 +16,6 @@ import { DocumentsView } from "./views/DocumentsView";
 import { GoalsView } from "./views/GoalsView";
 import { MarketingView } from "./views/MarketingView";
 import { MultiLLMView } from "./views/MultiLLMView";
-import { OrchestratorView } from "./views/OrchestratorView";
 import { PaymentsView } from "./views/PaymentsView";
 import { ProjectsView } from "./views/ProjectsView";
 import { RCControlsView } from "./views/RCControlsView";
@@ -29,8 +28,8 @@ import { CadencesView } from "./views/CadencesView";
 import { MorningBriefView } from "./views/MorningBriefView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","brief","orchestrator","associates","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
-  const VIEW_ALIASES = { mstack: "associates" };
+  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
+  const VIEW_ALIASES = { mstack: "associates", orchestrator: "brief" };
   const routeFromHash = () => {
     const route = parseAppHash();
     const view = VIEW_ALIASES[route.view] || route.view;
@@ -182,7 +181,6 @@ export default function App() {
   const VIEWS = {
     dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} />,
     brief:        <MorningBriefView />,
-    orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
     associates:   <AssociatesView db={db} setDB={setDB} navigate={navigate}/>,
     crm:          <CRMView db={db} setDB={setDB} setView={setView} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     companies:    <CompaniesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
