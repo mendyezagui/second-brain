@@ -31,10 +31,17 @@ export const today = () => new Date().toISOString().split("T")[0];
 export async function callClaude(system, user, max=800, extra={}) {
   const r = await fetch("/api/claude", {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:max, system, messages:[{role:"user",content:user}], ...extra }),
+    body: JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:max, system, messages:[{role:"user",content:user}], ...extra }),
   });
-  const d = await r.json();
-  return d.content?.[0]?.text || "";
+  let d = null;
+  try { d = await r.json(); } catch { /* non-JSON / empty body */ }
+  if (!r.ok) {
+    const msg = d?.error?.message || (typeof d?.error === "string" ? d.error : null) || `HTTP ${r.status}`;
+    throw new Error(`Claude request failed: ${msg}`);
+  }
+  const text = d?.content?.[0]?.text;
+  if (typeof text !== "string" || !text.trim()) throw new Error("Claude returned an empty response.");
+  return text;
 }
 
 export const logEvent = (db, setDB, entityType, entityId, eventType, description, source="system") => {
