@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Briefcase, Check, CheckCircle, FileText, Loader, Mic, MicOff, Sparkles, Target, Users, Zap } from "lucide-react";
 import { callClaude, nextId, today } from "../lib/utils";
+import { supabase } from "../lib/supabase";
+
+const LLM_PROXY_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/llm-proxy";
 
 export const VoiceView = ({ db, setDB, autoRecord }) => {
   const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [micError, setMicError] = useState("");
   const [proposals, setProposals] = useState(null); // AI-proposed operations
@@ -12,53 +16,91 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
   const [loading, setLoading] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [history, setHistory] = useState([]);
-  const recRef = useRef(null);
+  const recRef = useRef(null);     // MediaRecorder
+  const chunksRef = useRef([]);    // recorded audio chunks
+  const streamRef = useRef(null);  // mic stream
   const autoStarted = useRef(false);
+
+  const pickMime = () => {
+    const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    for (const m of cands) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+    return "";
+  };
+
+  // Record audio with MediaRecorder (works in every browser), then transcribe
+  // server-side via Whisper â no dependency on the browser's speech engine.
   const start = async () => {
     setMicError("");
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      setMicError("Speech recognition isn't supported in this browser. Use Chrome or Edge on desktop â or just type your note below and hit Analyze.");
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setMicError("Audio recording isn't supported in this browser â type your note below and hit Analyze.");
       return;
     }
-    // Explicitly request mic access so a blocked/denied mic surfaces clearly
-    // (otherwise recognition.start() fails silently with no transcript).
+    let stream;
     try {
-      if (navigator.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((t) => t.stop()); // only needed the permission grant
-      }
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      setMicError("Microphone is blocked. Click the camera/lock icon in your browser's address bar, allow the microphone, then tap the mic again. (Or type your note below.)");
+      setMicError("Microphone is blocked. Click the lock/camera icon in your browser's address bar, allow the microphone, then tap the mic again. (Or type your note below.)");
       return;
     }
+    streamRef.current = stream;
+    chunksRef.current = [];
+    const mime = pickMime();
+    let mr;
+    try { mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
+    catch { mr = new MediaRecorder(stream); }
+    mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+    mr.onstop = async () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      const type = mr.mimeType || mime || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type });
+      if (!blob.size) { setMicError("No audio captured â try again and speak after tapping."); return; }
+      await transcribeBlob(blob);
+    };
     try {
-      const r = new SR();
-      r.continuous = true; r.interimResults = true; r.lang = "en-US";
-      r.onresult = e => { let t=""; for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript; setTranscript(t); };
-      r.onerror = e => {
-        const code = e?.error || "unknown";
-        setMicError(
-          code === "not-allowed" || code === "service-not-allowed"
-            ? "Microphone access was denied. Allow the mic in your browser settings and try again."
-            : code === "no-speech"
-            ? "Didn't catch any speech â try again, closer to the mic."
-            : "Recording error: " + code
-        );
-        setRecording(false);
-      };
-      r.onend = () => setRecording(false);
-      r.start();
-      recRef.current = r;
+      mr.start();
+      recRef.current = mr;
       setRecording(true);
     } catch (err) {
       setMicError("Couldn't start recording: " + (err?.message || err));
+      streamRef.current?.getTracks().forEach((t) => t.stop());
       setRecording(false);
     }
   };
-  const stop = () => {recRef.current?.stop();setRecording(false);};
 
-  // Auto-start recording when opened via floating button
+  const stop = () => {
+    try { recRef.current?.stop(); } catch { /* already stopped */ }
+    setRecording(false);
+  };
+
+  const transcribeBlob = async (blob) => {
+    setTranscribing(true);
+    setMicError("");
+    try {
+      const dataUrl = await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = () => rej(new Error("Could not read audio"));
+        fr.readAsDataURL(blob);
+      });
+      const b64 = String(dataUrl).split(",")[1] || "";
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(LLM_PROXY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session ? { Authorization: "Bearer " + session.access_token } : {}) },
+        body: JSON.stringify({ mode: "transcribe", audioB64: b64, mimeType: blob.type, language: "en" }),
+      });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(d?.error || `HTTP ${resp.status}`);
+      const text = (d.text || "").trim();
+      if (!text) setMicError("Transcription came back empty â try again, speaking a little longer.");
+      else setTranscript((prev) => (prev.trim() ? prev.trim() + " " + text : text));
+    } catch (e) {
+      setMicError("Transcription failed: " + (e?.message || e));
+    }
+    setTranscribing(false);
+  };
+
+  // Auto-start recording when opened via the floating mic button
   useEffect(() => {
     if (autoRecord && !autoStarted.current && !recording) {
       autoStarted.current = true;
@@ -219,6 +261,13 @@ Rules:
     setSelected(sel);
   };
 
+  const busyRec = recording || transcribing;
+  const statusText = recording
+    ? <span className="blink" style={{color:"var(--red)"}}>Recordingâ¦ tap to stop</span>
+    : transcribing
+    ? <span style={{color:"var(--blue)"}}>Transcribingâ¦</span>
+    : "Tap to record a note";
+
   return (
     <div style={{ padding:24, maxWidth:720, display:"flex", flexDirection:"column", gap:20 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -228,15 +277,15 @@ Rules:
 
       {/* Recording + Transcript */}
       <div className="card" style={{ padding:24, textAlign:"center" }}>
-        <div onClick={recording?stop:start} style={{ width:80, height:80, borderRadius:"50%", background:recording?"var(--red-dim)":"var(--blue-dim)", border:`3px solid ${recording?"var(--red)":"var(--blue)"}`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px", cursor:"pointer", transition:"all .2s" }}>
-          {recording?<MicOff size={28} color="var(--red)"/>:<Mic size={28} color="var(--blue)"/>}
+        <div onClick={()=>{ if(transcribing) return; recording?stop():start(); }} style={{ width:80, height:80, borderRadius:"50%", background:recording?"var(--red-dim)":"var(--blue-dim)", border:`3px solid ${recording?"var(--red)":"var(--blue)"}`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px", cursor:transcribing?"default":"pointer", transition:"all .2s", opacity:transcribing?0.6:1 }}>
+          {transcribing?<Loader size={28} className="spin" color="var(--blue)"/>:recording?<MicOff size={28} color="var(--red)"/>:<Mic size={28} color="var(--blue)"/>}
         </div>
-        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{recording?<span className="blink" style={{color:"var(--red)"}}>Recordingâ¦ tap to stop</span>:"Tap to record a note"}</p>
+        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{statusText}</p>
         {micError && <div style={{ display:"flex", gap:8, alignItems:"flex-start", textAlign:"left", background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.3)", borderRadius:8, padding:"10px 12px", marginBottom:14, color:"var(--red)", fontSize:12, lineHeight:1.5 }}>
           <AlertCircle size={14} style={{ flexShrink:0, marginTop:1 }}/><span>{micError}</span>
         </div>}
         <textarea className="input" placeholder='Example: "Had a great call with Dave Scott. He wants to expand the project to 3 more communities. Set up a follow-up meeting next week. Also need to send the SOW to Michael Torres by Friday."' value={transcript} onChange={e=>setTranscript(e.target.value)} style={{ marginBottom:14, minHeight:100 }}/>
-        <button className="btn btn-blue" onClick={analyze} disabled={!transcript.trim()||loading} style={{ width:"100%", justifyContent:"center", padding:"11px 20px", fontSize:14, opacity:(!transcript.trim()||loading)?0.5:1 }}>
+        <button className="btn btn-blue" onClick={analyze} disabled={!transcript.trim()||loading||busyRec} style={{ width:"100%", justifyContent:"center", padding:"11px 20px", fontSize:14, opacity:(!transcript.trim()||loading||busyRec)?0.5:1 }}>
           {loading?<><Loader size={14} className="spin"/>Analyzingâ¦</>:<><Sparkles size={14}/>Analyze</>}
         </button>
       </div>
