@@ -1,6 +1,5 @@
 import { AlertCircle, Award, Calendar, CheckCircle, ChevronRight, Clock, Loader, Mic, RefreshCw, Target, TrendingUp, Users, Zap } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { revenueData } from "../lib/constants";
 import { daysBetween, fmt, sc, today } from "../lib/utils";
 import { AgentBadge, MetricCard, Tag } from "../components/ui";
 
@@ -19,6 +18,26 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
   const decayedContacts = db.contacts.filter(c => c.lastTouch && c.score >= 60 && daysBetween(c.lastTouch, today()) > 14);
   const todayEvents = (db.events||[]).filter(e=>e.date===today()).sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||""));
 
+  // Real revenue trend: paid invoices bucketed into the trailing 6 months.
+  const revSeries = (() => {
+    const now = new Date();
+    const buckets = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      buckets.push({ key: d.getFullYear() + "-" + d.getMonth(), m: d.toLocaleDateString("en-US", { month: "short" }), rev: 0 });
+    }
+    const idx = {};
+    buckets.forEach((b, n) => { idx[b.key] = n; });
+    (db.invoices || []).filter(i => i.status === "paid" && i.issued).forEach(i => {
+      const d = new Date(i.issued);
+      if (isNaN(d.getTime())) return;
+      const k = d.getFullYear() + "-" + d.getMonth();
+      if (k in idx) buckets[idx[k]].rev += (i.amount || 0);
+    });
+    return buckets;
+  })();
+  const agentCount = new Set((db.agentLogs || []).map(l => l.agent).filter(Boolean)).size;
+
   return (
     <div style={{ padding:24, display:"flex", flexDirection:"column", gap:22 }}>
       {/* Morning Brief */}
@@ -27,7 +46,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
           <div>
             <div className="display" style={{ fontSize:22, fontWeight:800, marginBottom:4 }}>{greeting}, {userName}.</div>
             <div className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>
-              {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} · 6 agents running
+              {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} Â· {agentCount} agents active
             </div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={13} className="spin"/>:<Zap size={13}/>} {sweepRunning?"Running...":"AI Sweep"}</button><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{setShowVoiceLab(true)}}><Mic size={13}/> Voice</button></div>
@@ -56,7 +75,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
             {decayedContacts.slice(0,2).map(c => (
               <div key={c.id} onClick={()=>navigate("crm",{type:"contact",id:c.id})} style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, padding:"6px 10px", background:"var(--blue-dim)", borderRadius:6, cursor:"pointer", transition:"filter .15s" }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.95)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
                 <Users size={12} color="var(--blue)"/>
-                <span>Reconnect with <strong>{c.name}</strong> ({c.co}) — {daysBetween(c.lastTouch, today())} days since last touch</span>
+                <span>Reconnect with <strong>{c.name}</strong> ({c.co}) â {daysBetween(c.lastTouch, today())} days since last touch</span>
                 <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0}}/>
               </div>
             ))}
@@ -67,7 +86,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
                   <Calendar size={12} color="var(--blue)"/>
                   <span className="mono" style={{ fontSize:11, color:"var(--text-sec)", flexShrink:0 }}>{evt.start_time}</span>
                   <span style={{ fontWeight:500 }}>{evt.title}</span>
-                  {evt.location&&<span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>📍 {evt.location}</span>}
+                  {evt.location&&<span className="mono" style={{ fontSize:10, color:"var(--text-dim)" }}>ð {evt.location}</span>}
                   <ChevronRight size={12} color="var(--text-dim)" style={{flexShrink:0, marginLeft:"auto"}}/>
                 </div>
               ))}
@@ -76,7 +95,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
         )}
       </div>
 
-      {/* AI Nudges — latest orchestrator sweep */}
+      {/* AI Nudges â latest orchestrator sweep */}
       {(()=>{
         const latestSweep = (db.agentLogs||[]).find(l=>l.agent==="Orchestrator"&&l.type==="sweep");
         if(!latestSweep) return null;
@@ -105,7 +124,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
 
       {/* Metrics */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:12 }}>
-        <MetricCard icon={TrendingUp} label="YTD Revenue" value={fmt(paid)} sub={`${fmt(goal.target_value)} target · ${goalPct}%`} color="--blue" trend={12}/>
+        <MetricCard icon={TrendingUp} label="YTD Revenue" value={fmt(paid)} sub={`${fmt(goal.target_value)} target Â· ${goalPct}%`} color="--blue" trend={12}/>
         <MetricCard icon={Target} label="Wtd Pipeline" value={fmt(Math.round(pipeline))} sub={`${db.deals.length} deals`} color="--amber" trend={8}/>
         <MetricCard icon={AlertCircle} label="Overdue A/R" value={fmt(overdue)} color="--red"/>
         <MetricCard icon={CheckCircle} label="Tasks Due" value={dueTodayOrOverdue.length} sub={`${openTasks.length} total open`} color="--green"/>
@@ -124,7 +143,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
           <div style={{ height:"100%", width:`${Math.min(goalPct,100)}%`, background:goalPct>=80?"var(--green)":goalPct>=40?"var(--amber)":"var(--red)", borderRadius:4, transition:"width .5s" }}/>
         </div>
         <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:6 }}>
-          {goalPct}% of target · {fmt(goal.target_value - paid)} remaining · Pipeline coverage: {Math.round((pipeline/(goal.target_value-paid))*100)}%
+          {goalPct}% of target Â· {fmt(goal.target_value - paid)} remaining Â· Pipeline coverage: {Math.round((pipeline/(goal.target_value-paid))*100)}%
         </div>
       </div>
 
@@ -132,10 +151,10 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
       <div className="card" style={{ padding:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700 }}>Revenue Trend</div>
-          <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Oct → Mar</span>
+          <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{revSeries[0].m} - {revSeries[revSeries.length-1].m}</span>
         </div>
         <ResponsiveContainer width="100%" height={130}>
-          <AreaChart data={revenueData}>
+          <AreaChart data={revSeries}>
             <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0077cc" stopOpacity={.15}/><stop offset="95%" stopColor="#0077cc" stopOpacity={0}/></linearGradient></defs>
             <XAxis dataKey="m" tick={{fill:"var(--text-sec)",fontSize:11}} axisLine={false} tickLine={false}/>
             <YAxis tick={{fill:"var(--text-sec)",fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`$${v/1000}K`}/>
