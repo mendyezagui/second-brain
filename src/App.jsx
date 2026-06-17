@@ -32,10 +32,12 @@ import { CadencesView } from "./views/CadencesView";
 import { MorningBriefView } from "./views/MorningBriefView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","brief","orchestrator","associates","mstack","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
+  const VALID_VIEWS = ["dashboard","brief","orchestrator","associates","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
+  const VIEW_ALIASES = { mstack: "associates" };
   const routeFromHash = () => {
     const route = parseAppHash();
-    return VALID_VIEWS.includes(route.view) ? route : { view:"dashboard", record:null, focus:null };
+    const view = VIEW_ALIASES[route.view] || route.view;
+    return VALID_VIEWS.includes(view) ? { ...route, view } : { view:"dashboard", record:null, focus:null };
   };
   const initialRoute = routeFromHash();
   const [session, setSession] = useState(undefined);
@@ -188,7 +190,6 @@ export default function App() {
     brief:        <MorningBriefView />,
     orchestrator: <OrchestratorView db={db} setDB={setDB} navigate={navigate}/>,
     associates:   <AssociatesView db={db} setDB={setDB} navigate={navigate}/>,
-    mstack:       <AssociatesView db={db} setDB={setDB} navigate={navigate}/>,
     crm:          <CRMView db={db} setDB={setDB} setView={setView} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     companies:    <CompaniesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
