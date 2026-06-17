@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { supabase } from "../lib/supabase";
 
 export const VOITRA_GATE_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/voitra-gate";
 
 export const VOITRA_ADMIN_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/voitra-admin";
-
-export const VOITRA_ADMIN_TOKEN = "vt-mendy-shomer-9f3k2m";
 
 export const VoitraGateView = () => {
   const [state, setState] = useState(null);
@@ -35,7 +34,10 @@ export const VoitraGateView = () => {
   const act = async (action) => {
     setPending(action);
     try {
-      await fetch(VOITRA_ADMIN_URL + "?t=" + encodeURIComponent(VOITRA_ADMIN_TOKEN) + "&do=" + action);
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch(VOITRA_ADMIN_URL + "?do=" + action, {
+        headers: session ? { Authorization: "Bearer " + session.access_token } : {},
+      });
       await refresh();
     } catch (e) {
       setErr("Action failed: " + (e?.message || e));
@@ -55,8 +57,8 @@ export const VoitraGateView = () => {
   };
 
   const reasonLabel = {
-    auto_open: "Open — following the schedule",
-    auto_nightly: "Closed for the nightly window (11pm–6am PT)",
+    auto_open: "Open â following the schedule",
+    auto_nightly: "Closed for the nightly window (11pmâ6am PT)",
     auto_shabbat: "Closed for Shabbat",
     manual_on: "Forced ON (manual override)",
     manual_off: "Paused manually",
@@ -106,7 +108,7 @@ export const VoitraGateView = () => {
         </div>
         <button onClick={refresh} disabled={loading}
           style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "var(--text-sec)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-          <RefreshCw size={14}/>{loading ? "Loading…" : "Refresh"}
+          <RefreshCw size={14}/>{loading ? "Loadingâ¦" : "Refresh"}
         </button>
       </div>
 
@@ -114,7 +116,7 @@ export const VoitraGateView = () => {
         {err}
       </div>}
 
-      {!state ? <div style={{ color: "var(--text-dim)", fontSize: 13, padding: 32, textAlign: "center" }}>Loading status…</div> :
+      {!state ? <div style={{ color: "var(--text-dim)", fontSize: 13, padding: 32, textAlign: "center" }}>Loading statusâ¦</div> :
         <div style={{ padding: 22, borderRadius: 12, background: statusBg, border: "1px solid " + statusColor, marginBottom: 22 }}>
           <div style={{ display: "inline-block", padding: "4px 10px", borderRadius: 999, background: statusColor, color: "#fff", fontWeight: 700, fontSize: 11, letterSpacing: ".04em" }}>
             {enabled ? "AGENTS LIVE" : "AGENTS OFF"}
@@ -138,22 +140,22 @@ export const VoitraGateView = () => {
             {state.shabbat?.start && state.shabbat?.end ? (
               <>
                 <span style={{ fontWeight: 600 }}>{fmtTime(state.shabbat.start)}</span>
-                <span style={{ color: "var(--text-sec)" }}> → </span>
+                <span style={{ color: "var(--text-sec)" }}> â </span>
                 <span style={{ fontWeight: 600 }}>{fmtTime(state.shabbat.end)}</span>
               </>
-            ) : <span style={{ color: "var(--text-dim)" }}>(times unavailable — Hebcal unreachable)</span>}
+            ) : <span style={{ color: "var(--text-dim)" }}>(times unavailable â Hebcal unreachable)</span>}
           </div>
           <div style={{ color: "var(--text-sec)" }}>Every night</div>
           <div>
             <span style={{ fontWeight: 600 }}>{fmtHour(state.nightly?.start_hour ?? 23)}</span>
-            <span style={{ color: "var(--text-sec)" }}> → </span>
+            <span style={{ color: "var(--text-sec)" }}> â </span>
             <span style={{ fontWeight: 600 }}>{fmtHour(state.nightly?.end_hour ?? 6)} next day</span>
           </div>
           <div style={{ color: "var(--text-sec)" }}>Timezone</div>
           <div style={{ fontWeight: 600 }}>{state.tz || "America/Los_Angeles"}</div>
         </div>
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 12, lineHeight: 1.55 }}>
-          Shabbat times pull live from Hebcal each week (Los Angeles, geonameid 5368361, candle-lighting 18 min before sunset, default Havdalah). Once Saturday's Havdalah passes, the schedule rolls forward to next Friday automatically — no manual update needed. Cached up to 6 hours.
+          Shabbat times pull live from Hebcal each week (Los Angeles, geonameid 5368361, candle-lighting 18 min before sunset, default Havdalah). Once Saturday's Havdalah passes, the schedule rolls forward to next Friday automatically â no manual update needed. Cached up to 6 hours.
         </div>
       </div>}
 
@@ -163,7 +165,7 @@ export const VoitraGateView = () => {
         </h3>
         {pauseActions.map(a => (
           <button key={a.do} onClick={() => act(a.do)} disabled={!!pending} style={buttonStyle("pause")}>
-            {pending === a.do ? "Saving…" : a.label}
+            {pending === a.do ? "Savingâ¦" : a.label}
           </button>
         ))}
       </div>
@@ -174,7 +176,7 @@ export const VoitraGateView = () => {
         </h3>
         {resumeActions.map(a => (
           <button key={a.do} onClick={() => act(a.do)} disabled={!!pending} style={buttonStyle(a.flavor)}>
-            {pending === a.do ? "Saving…" : a.label}
+            {pending === a.do ? "Savingâ¦" : a.label}
           </button>
         ))}
       </div>
