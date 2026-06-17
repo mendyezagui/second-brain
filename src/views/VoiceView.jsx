@@ -5,6 +5,7 @@ import { callClaude, nextId, today } from "../lib/utils";
 export const VoiceView = ({ db, setDB, autoRecord }) => {
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [micError, setMicError] = useState("");
   const [proposals, setProposals] = useState(null); // AI-proposed operations
   const [selected, setSelected] = useState({}); // { index: true/false }
   const [committed, setCommitted] = useState(null); // after commit
@@ -13,12 +14,47 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
   const [history, setHistory] = useState([]);
   const recRef = useRef(null);
   const autoStarted = useRef(false);
-  const start = () => {
-    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){setTranscript("Speech recognition not available in this browser.");return;}
-    const r=new SR();r.continuous=true;r.interimResults=true;r.lang="en-US";
-    r.onresult=e=>{let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;setTranscript(t);};
-    r.start();recRef.current=r;setRecording(true);
+  const start = async () => {
+    setMicError("");
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      setMicError("Speech recognition isn't supported in this browser. Use Chrome or Edge on desktop â or just type your note below and hit Analyze.");
+      return;
+    }
+    // Explicitly request mic access so a blocked/denied mic surfaces clearly
+    // (otherwise recognition.start() fails silently with no transcript).
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop()); // only needed the permission grant
+      }
+    } catch {
+      setMicError("Microphone is blocked. Click the camera/lock icon in your browser's address bar, allow the microphone, then tap the mic again. (Or type your note below.)");
+      return;
+    }
+    try {
+      const r = new SR();
+      r.continuous = true; r.interimResults = true; r.lang = "en-US";
+      r.onresult = e => { let t=""; for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript; setTranscript(t); };
+      r.onerror = e => {
+        const code = e?.error || "unknown";
+        setMicError(
+          code === "not-allowed" || code === "service-not-allowed"
+            ? "Microphone access was denied. Allow the mic in your browser settings and try again."
+            : code === "no-speech"
+            ? "Didn't catch any speech â try again, closer to the mic."
+            : "Recording error: " + code
+        );
+        setRecording(false);
+      };
+      r.onend = () => setRecording(false);
+      r.start();
+      recRef.current = r;
+      setRecording(true);
+    } catch (err) {
+      setMicError("Couldn't start recording: " + (err?.message || err));
+      setRecording(false);
+    }
   };
   const stop = () => {recRef.current?.stop();setRecording(false);};
 
@@ -31,22 +67,22 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
   }, [autoRecord]);
 
   const buildContext = () => {
-    const contacts = (db.contacts||[]).filter(c=>{const comp=(db.companies||[]).find(co=>co.name===c.co);return !comp||comp.status!=="parked"}).map(c=>`[Contact id:${c.id}] ${c.name} — ${c.co||""} — ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
-    const companies = (db.companies||[]).filter(c=>c.status!=="parked").map(c=>`[Company id:${c.id}] ${c.name} — ${c.industry||""} (status:${c.status||"prospect"})`).join("\n");
-    const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} — $${d.value} — stage:${d.stage} (prob:${d.probability}%)`).join("\n");
-    const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} (${p.type||"client"}) — status:${p.status} priority:${p.priority||"medium"} (progress:${p.progress}%)`).join("\n");
-    const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} — due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
+    const contacts = (db.contacts||[]).filter(c=>{const comp=(db.companies||[]).find(co=>co.name===c.co);return !comp||comp.status!=="parked"}).map(c=>`[Contact id:${c.id}] ${c.name} â ${c.co||""} â ${c.role||""} (category:${c.category||"none"}, score:${c.score||0})`).join("\n");
+    const companies = (db.companies||[]).filter(c=>c.status!=="parked").map(c=>`[Company id:${c.id}] ${c.name} â ${c.industry||""} (status:${c.status||"prospect"})`).join("\n");
+    const deals = (db.deals||[]).map(d=>`[Deal id:${d.id}] ${d.name} â $${d.value} â stage:${d.stage} (prob:${d.probability}%)`).join("\n");
+    const projects = (db.projects||[]).map(p=>`[Project id:${p.id}] ${p.name} (${p.type||"client"}) â status:${p.status} priority:${p.priority||"medium"} (progress:${p.progress}%)`).join("\n");
+    const tasks = (db.tasks||[]).map(t=>`[Task id:${t.id}] ${t.title} â due:${t.due||"none"} priority:${t.priority||"medium"} status:${t.status||"todo"}`).join("\n");
     return `CONTACTS:\n${contacts}\n\nCOMPANIES:\n${companies}\n\nDEALS:\n${deals}\n\nPROJECTS:\n${projects}\n\nTASKS:\n${tasks}`;
   };
 
   /* Describe an operation in human-readable form */
   const describeOp = (op) => {
-    if(op.action==="create_task") return {icon:"Zap",color:"var(--amber)",text:`Create task: ${op.data?.title||"Untitled"}`,detail:`Due: ${op.data?.due||"none"} · Priority: ${op.data?.priority||"medium"} · Category: ${op.data?.category||"—"}`};
+    if(op.action==="create_task") return {icon:"Zap",color:"var(--amber)",text:`Create task: ${op.data?.title||"Untitled"}`,detail:`Due: ${op.data?.due||"none"} Â· Priority: ${op.data?.priority||"medium"} Â· Category: ${op.data?.category||"â"}`};
     if(op.action==="update_contact") { const c=(db.contacts||[]).find(c=>c.id===op.data?.id); return {icon:"Users",color:"var(--blue)",text:`Update contact: ${c?.name||"ID "+op.data?.id}`,detail:`Fields: ${Object.keys(op.data?.fields||{}).join(", ")}`}; }
-    if(op.action==="create_deal") return {icon:"Briefcase",color:"var(--green)",text:`Create deal: ${op.data?.name||"Untitled"}`,detail:`Value: $${op.data?.value||0} · Stage: ${op.data?.stage||"discovery"}`};
+    if(op.action==="create_deal") return {icon:"Briefcase",color:"var(--green)",text:`Create deal: ${op.data?.name||"Untitled"}`,detail:`Value: $${op.data?.value||0} Â· Stage: ${op.data?.stage||"discovery"}`};
     if(op.action==="update_deal") { const d=(db.deals||[]).find(d=>d.id===op.data?.id); return {icon:"Briefcase",color:"var(--purple)",text:`Update deal: ${d?.name||"ID "+op.data?.id}`,detail:`Fields: ${Object.keys(op.data?.fields||{}).join(", ")}`}; }
     if(op.action==="update_project") { const p=(db.projects||[]).find(p=>p.id===op.data?.id); return {icon:"Target",color:"var(--blue)",text:`Update project: ${p?.name||"ID "+op.data?.id}`,detail:`Fields: ${Object.keys(op.data?.fields||{}).join(", ")}`}; }
-    if(op.action==="create_contact") return {icon:"Users",color:"var(--green)",text:`Create contact: ${op.data?.name||"Unknown"}`,detail:`${op.data?.co||""} · ${op.data?.role||""} · Category: ${op.data?.category||"—"}`};
+    if(op.action==="create_contact") return {icon:"Users",color:"var(--green)",text:`Create contact: ${op.data?.name||"Unknown"}`,detail:`${op.data?.co||""} Â· ${op.data?.role||""} Â· Category: ${op.data?.category||"â"}`};
     if(op.action==="log_event") return {icon:"FileText",color:"var(--text-sec)",text:`Log event: ${op.data?.event_type||"voice_note"}`,detail:op.data?.description||""};
     return {icon:"AlertCircle",color:"var(--text-dim)",text:`Unknown: ${op.action}`,detail:""};
   };
@@ -60,7 +96,7 @@ export const VoiceView = ({ db, setDB, autoRecord }) => {
     return <AlertCircle size={13} style={{flexShrink:0}}/>;
   };
 
-  /* Step 1: Analyze — send to Claude, get proposed operations back */
+  /* Step 1: Analyze â send to Claude, get proposed operations back */
   const analyze = async () => {
     if(!transcript.trim())return;
     setLoading(true);setProposals(null);setCommitted(null);setSelected({});
@@ -89,7 +125,7 @@ Rules:
 - Create tasks for any follow-ups, action items, or reminders mentioned
 - Link tasks to the right contact/company/deal/project by id
 - If a new person is mentioned who is NOT in the database, create_contact
-- Be thorough — capture EVERYTHING actionable from the note
+- Be thorough â capture EVERYTHING actionable from the note
 - For dates, today is ${today()}`;
 
       const raw = await callClaude(sysPrompt, `DATABASE STATE:\n${ctx}\n\nVOICE NOTE:\n"${transcript}"`, 1500);
@@ -187,7 +223,7 @@ Rules:
     <div style={{ padding:24, maxWidth:720, display:"flex", flexDirection:"column", gap:20 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div className="display" style={{ fontSize:18, fontWeight:700 }}>Voice Agent</div>
-        <div style={{ fontSize:11, color:"var(--text-dim)", fontFamily:"var(--font-m)" }}>Record → Review → Commit</div>
+        <div style={{ fontSize:11, color:"var(--text-dim)", fontFamily:"var(--font-m)" }}>Record â Review â Commit</div>
       </div>
 
       {/* Recording + Transcript */}
@@ -195,14 +231,17 @@ Rules:
         <div onClick={recording?stop:start} style={{ width:80, height:80, borderRadius:"50%", background:recording?"var(--red-dim)":"var(--blue-dim)", border:`3px solid ${recording?"var(--red)":"var(--blue)"}`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px", cursor:"pointer", transition:"all .2s" }}>
           {recording?<MicOff size={28} color="var(--red)"/>:<Mic size={28} color="var(--blue)"/>}
         </div>
-        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{recording?<span className="blink" style={{color:"var(--red)"}}>Recording… tap to stop</span>:"Tap to record a note"}</p>
+        <p style={{ fontSize:13, color:"var(--text-sec)", marginBottom:14 }}>{recording?<span className="blink" style={{color:"var(--red)"}}>Recordingâ¦ tap to stop</span>:"Tap to record a note"}</p>
+        {micError && <div style={{ display:"flex", gap:8, alignItems:"flex-start", textAlign:"left", background:"var(--red-dim)", border:"1px solid rgba(220,38,38,0.3)", borderRadius:8, padding:"10px 12px", marginBottom:14, color:"var(--red)", fontSize:12, lineHeight:1.5 }}>
+          <AlertCircle size={14} style={{ flexShrink:0, marginTop:1 }}/><span>{micError}</span>
+        </div>}
         <textarea className="input" placeholder='Example: "Had a great call with Dave Scott. He wants to expand the project to 3 more communities. Set up a follow-up meeting next week. Also need to send the SOW to Michael Torres by Friday."' value={transcript} onChange={e=>setTranscript(e.target.value)} style={{ marginBottom:14, minHeight:100 }}/>
         <button className="btn btn-blue" onClick={analyze} disabled={!transcript.trim()||loading} style={{ width:"100%", justifyContent:"center", padding:"11px 20px", fontSize:14, opacity:(!transcript.trim()||loading)?0.5:1 }}>
-          {loading?<><Loader size={14} className="spin"/>Analyzing…</>:<><Sparkles size={14}/>Analyze</>}
+          {loading?<><Loader size={14} className="spin"/>Analyzingâ¦</>:<><Sparkles size={14}/>Analyze</>}
         </button>
       </div>
 
-      {/* Proposed Operations — select which to commit */}
+      {/* Proposed Operations â select which to commit */}
       {proposals&&!committed&&<div className="card slide-in" style={{ padding:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
@@ -237,7 +276,7 @@ Rules:
 
         <div style={{ display:"flex", gap:8 }}>
           <button className="btn btn-blue" onClick={commitSelected} disabled={selectedCount===0||committing} style={{ flex:1, justifyContent:"center", padding:"10px 18px", fontSize:13, opacity:selectedCount===0?0.4:1 }}>
-            {committing?<><Loader size={13} className="spin"/>Committing…</>:<><CheckCircle size={13}/>Commit {selectedCount} of {totalCount}</>}
+            {committing?<><Loader size={13} className="spin"/>Committingâ¦</>:<><CheckCircle size={13}/>Commit {selectedCount} of {totalCount}</>}
           </button>
           <button className="btn btn-ghost" onClick={()=>{setProposals(null);setSelected({});}} style={{ padding:"10px 18px", fontSize:13 }}>
             Discard
@@ -271,7 +310,7 @@ Rules:
           <div key={i} className="card-el" style={{ padding:"10px 13px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:12, fontWeight:500, marginBottom:2 }}>{h.summary}</div>
-              <div style={{ fontSize:11, color:"var(--text-dim)" }}>{h.transcript.substring(0,80)}{h.transcript.length>80?"…":""}</div>
+              <div style={{ fontSize:11, color:"var(--text-dim)" }}>{h.transcript.substring(0,80)}{h.transcript.length>80?"â¦":""}</div>
             </div>
             <div style={{ textAlign:"right", flexShrink:0, marginLeft:12 }}>
               <div className="tag" style={{ background:"var(--blue-dim)", color:"var(--blue)" }}>{h.count} ops</div>
