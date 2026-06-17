@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Brain, Zap } from "lucide-react";
+import { AlertCircle, Brain, Mic, Zap } from "lucide-react";
 import { MASTER_VIEW_FOR_TYPE } from "./lib/constants";
 import { ENV_READY, loadAllFromDB, supabase, syncToDB } from "./lib/supabase";
 import { callClaude, parseAppHash, recordPath, today } from "./lib/utils";
@@ -22,13 +22,14 @@ import { RCControlsView } from "./views/RCControlsView";
 import { RecordDetailView } from "./views/RecordDetailView";
 import { StrategiesView } from "./views/StrategiesView";
 import { TasksView } from "./views/TasksView";
+import { VoiceView } from "./views/VoiceView";
 import { VoitraGateView } from "./views/VoitraGateView";
 import SocialMediaView from "./views/SocialMediaView";
 import { CadencesView } from "./views/CadencesView";
 import { MorningBriefView } from "./views/MorningBriefView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
+  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","admin","record"];
   const VIEW_ALIASES = { mstack: "associates", orchestrator: "brief" };
   const routeFromHash = () => {
     const route = parseAppHash();
@@ -66,6 +67,8 @@ export default function App() {
   };
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(window.innerWidth < 768);
+  const [autoRecord, setAutoRecord] = useState(false);
+  const [showVoiceLab, setShowVoiceLab] = useState(false);
   const [sweepRunning, setSweepRunning] = useState(false);
 
   const runSweep = async () => {
@@ -97,6 +100,7 @@ export default function App() {
       const nextHash = view === "record" && recordTarget ? recordPath(recordTarget.type, recordTarget.id) : "#/" + view;
       if (window.location.hash !== nextHash) window.location.hash = nextHash;
     }
+    if (view !== "voice") setAutoRecord(false);
   }, [view, recordTarget]);
   useEffect(() => {
     const onHash = () => { const r = routeFromHash(); setView(r.view); setRecordTarget(r.record); setFocus(r.focus); };
@@ -179,7 +183,7 @@ export default function App() {
     return critTasks.length + overdueInv.length + atRisk.length;
   })();
   const VIEWS = {
-    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} />,
+    dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} setShowVoiceLab={setShowVoiceLab} />,
     brief:        <MorningBriefView />,
     associates:   <AssociatesView db={db} setDB={setDB} navigate={navigate}/>,
     crm:          <CRMView db={db} setDB={setDB} setView={setView} navigate={navigate} focus={focus} setFocus={setFocus}/>,
@@ -200,6 +204,7 @@ export default function App() {
     payments:      <PaymentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
     admin:        <AdminView session={session}/>,
   };
 
@@ -227,9 +232,17 @@ export default function App() {
           {!mobile && <Sidebar view={view} setView={(v)=>navigate(v)} collapsed={collapsed} setCollapsed={setCollapsed} alerts={alerts} db={db}/>}
           <main style={{ flex:1, overflowY:"auto" }}>{VIEWS[view] || VIEWS.dashboard}</main>
         </div>
-      {/* Floating Action Button */}
+        {/* Voice Lab Overlay */}
+      {showVoiceLab && <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9998,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShowVoiceLab(false)}}>
+        <div style={{background:"var(--card)",borderRadius:16,width:"90%",maxWidth:700,maxHeight:"85vh",overflow:"auto",position:"relative",padding:0}}>
+          <button onClick={()=>setShowVoiceLab(false)} style={{position:"absolute",top:12,right:12,zIndex:10,background:"var(--bg)",border:"1px solid var(--border)",borderRadius:8,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text)"}}>&times;</button>
+          <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>
+        </div>
+      </div>}
+      {/* Floating Action Buttons */}
       <div className="fab-stack" style={{position:"fixed",bottom:24,right:24,zIndex:9990,display:"flex",flexDirection:"column",gap:12,alignItems:"flex-end"}}>
         <button title="AI Sweep" onClick={()=>{if(!sweepRunning){runSweep()}}} style={{width:52,height:52,borderRadius:"50%",background:sweepRunning?"var(--amber)":"linear-gradient(135deg,#667eea,#764ba2)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",transition:"transform 0.2s",animation:sweepRunning?"pulse 1.5s infinite":"none"}}><Zap size={22} color="#fff"/></button>
+        <button title="Voice Lab" onClick={()=>{setShowVoiceLab(v=>!v);setAutoRecord(true)}} style={{width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#cc77ff,#aaafff)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",animation:"pulse 2s infinite"}}><Mic size={24} color="#fff"/></button>
       </div>
         {mobile && <BottomNav view={view} setView={(v)=>navigate(v)}/>}
       </div>
