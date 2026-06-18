@@ -13,7 +13,7 @@ const daysUntil = (d) => {
 };
 const openRecord = (type, id) => { if (id) window.location.hash = recordPath(type, id); };
 
-// ââ Origin identification: where a row came from in Second Brain ââ
+// --- Origin identification: where a row came from in Second Brain ---
 const isEmailTask = (t) => /^(gmail|thread:|email)/i.test(t?.source || "");
 const taskOrigin = (t) => {
   if (isEmailTask(t)) return { label: "Email", color: "var(--blue)" };
@@ -100,14 +100,15 @@ function Row({ open, onToggle, left, title, sub, children }) {
   );
 }
 
-function Section({ icon: Icon, title, count, children }) {
+function Section({ icon: Icon, title, count, hint, children }) {
   return (
     <div className="card" style={{ padding: 18, marginBottom: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: hint ? 4 : 12 }}>
         <Icon size={15} color="var(--blue)" />
         <div className="display" style={{ fontSize: 14, fontWeight: 700 }}>{title}</div>
         {count != null && <span className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginLeft: "auto" }}>{count}</span>}
       </div>
+      {hint && <div style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 12, lineHeight: 1.5 }}>{hint}</div>}
       {children}
     </div>
   );
@@ -122,12 +123,12 @@ export function MorningBriefView() {
   const [busy, setBusy] = useState({});
   const toggle = (id) => setOpenId((cur) => (cur === id ? null : id));
 
-  // ââ Mid-day orchestrator: live streaming run ââ
+  // --- Mid-day orchestrator: live streaming run ---
   const [running, setRunning] = useState(false);
   const [steps, setSteps] = useState([]);
   const [result, setResult] = useState(null);
   const [runErr, setRunErr] = useState("");
-  // ââ News engine scan (folded in from the retired Orchestrator view) ââ
+  // --- News engine scan (folded in from the retired Orchestrator view) ---
   const [newsBusy, setNewsBusy] = useState(false);
   const [newsResult, setNewsResult] = useState(null);
   const runOrchestrator = async () => {
@@ -213,7 +214,7 @@ export function MorningBriefView() {
     setNewsBusy(false);
   };
 
-  // ââ Cadence: advance one step / exit the sequence ââ
+  // --- Cadence: advance one step / exit the sequence ---
   const advanceCadence = async (c) => {
     const k = "cc" + c.enrollment_id; setBusy((b) => ({ ...b, [k]: true }));
     try {
@@ -260,7 +261,7 @@ export function MorningBriefView() {
         const cad = cadence.data || [], dls = deals.data || [], open = openTasks.data || [];
         const taskById = Object.fromEntries(open.map((x) => [x.id, x]));
 
-        // "Do today" â scored tasks enriched with source/notes; email-origin ones move to the Email section.
+        // "Do today" -- scored tasks enriched with source/notes; email-origin ones move to the Email section.
         const scored = (scores.data || []).map((s) => ({ ...s, ...taskById[s.id], id: s.id, score: s.score }));
         const todayTasks = scored.filter((x) => !isEmailTask(x)).slice(0, 12);
         const emailTasks = open.filter(isEmailTask).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
@@ -302,7 +303,7 @@ export function MorningBriefView() {
   if (err) return <div style={{ padding: 24 }} className="mono">Could not load brief: {err}</div>;
   if (!d) return (
     <div style={{ padding: 24, display: "flex", alignItems: "center", gap: 8, color: "var(--text-sec)" }}>
-      <Loader size={14} className="spin" color="var(--blue)" /><span className="mono">Building today's briefâ¦</span>
+      <Loader size={14} className="spin" color="var(--blue)" /><span className="mono">Building today's brief…</span>
     </div>
   );
 
@@ -319,7 +320,7 @@ export function MorningBriefView() {
       <Row key={id} open={openId === id} onToggle={() => toggle(id)}
         left={<CompleteBtn busy={!!busy[id]} onDone={() => completeContent(c.id)} title="Mark posted" />}
         title={c.videoTitle || c.contentType || "Untitled content"}
-        sub={<><OriginChip label="Content" color="var(--purple)" /> {c.platform || "â"} Â· {c.status}{c.account ? ` Â· ${c.account}` : ""}</>}>
+        sub={<><OriginChip label="Content" color="var(--purple)" /> {c.platform || "—"} · {c.status}{c.account ? ` · ${c.account}` : ""}</>}>
         {c.script && <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: 6 }}><b>Script:</b> {c.script}</div>}
         {c.caption && <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "var(--text-sec)" }}><b>Caption:</b> {c.caption}</div>}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
@@ -337,21 +338,25 @@ export function MorningBriefView() {
           <Sparkles size={17} color="var(--blue)" />
         </div>
         <div className="display" style={{ fontSize: 22, fontWeight: 800 }}>Morning Brief</div>
-        <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-sec)" }}>{dateLabel} Â· revenue-weighted</span>
+        <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-sec)" }}>{dateLabel} · revenue-weighted</span>
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-sec)", marginBottom: 18 }}>Each line shows where it came from. Check it off to mark it complete; click to expand the next move, ready text, and contact details.</div>
+      <div style={{ fontSize: 12.5, color: "var(--text-sec)", marginBottom: 18, lineHeight: 1.6, maxWidth: 720 }}>
+        Your live action list for today, pulled straight from Second Brain and ranked by revenue impact.
+        The checkbox on the left <b>completes the item and writes it back to the database</b> — a task is marked done, a cadence step advances to its next touch.
+        Click any row to open up what to do, ready-to-send text, and contact details. The colored tag on each line shows where it came from.
+      </div>
 
       <div className="card" style={{ padding: 16, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Zap size={15} color="var(--blue)" />
           <div className="display" style={{ fontSize: 14, fontWeight: 700 }}>Orchestrator</div>
-          <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>re-run mid-day Â· quick Â· writes today's plan to agentlogs</span>
+          <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>re-run mid-day · quick · writes today's plan to agentlogs</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             <button className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} disabled={newsBusy} onClick={runNewsScan}>
-              {newsBusy ? <><Loader size={12} className="spin" />Scanning newsâ¦</> : <><Newspaper size={12} />Scan company news</>}
+              {newsBusy ? <><Loader size={12} className="spin" />Scanning news…</> : <><Newspaper size={12} />Scan company news</>}
             </button>
             <button className="btn btn-blue" style={{ padding: "6px 12px", fontSize: 12 }} disabled={running} onClick={runOrchestrator}>
-              {running ? <><Loader size={12} className="spin" />Runningâ¦</> : <><Zap size={12} />Run now</>}
+              {running ? <><Loader size={12} className="spin" />Running…</> : <><Zap size={12} />Run now</>}
             </button>
           </div>
         </div>
@@ -368,7 +373,7 @@ export function MorningBriefView() {
               <div key={s.key} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12 }}>
                 <span style={{ marginTop: 1, flexShrink: 0, width: 14, display: "flex", justifyContent: "center" }}>
                   {s.state === "run" ? <Loader size={12} className="spin" color="var(--blue)" />
-                    : s.state === "skip" ? <span className="mono" style={{ color: "var(--text-dim)" }}>â</span>
+                    : s.state === "skip" ? <span className="mono" style={{ color: "var(--text-dim)" }}>—</span>
                       : <Check size={12} color="var(--green)" />}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -377,11 +382,11 @@ export function MorningBriefView() {
                 </div>
               </div>
             ))}
-            {running && <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", paddingLeft: 22 }}>workingâ¦</div>}
+            {running && <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", paddingLeft: 22 }}>working…</div>}
             {runErr && <div style={{ fontSize: 12, color: "var(--red)", display: "flex", gap: 6, alignItems: "center" }}><AlertCircle size={12} />{runErr}</div>}
             {result?.plan && (
               <div className="card-el" style={{ padding: 12, marginTop: 6 }}>
-                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>ACTION PLAN Â· {result.ts} Â· {result.logs} log{result.logs === 1 ? "" : "s"} written</div>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>ACTION PLAN · {result.ts} · {result.logs} log{result.logs === 1 ? "" : "s"} written</div>
                 <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{result.plan}</div>
               </div>
             )}
@@ -389,7 +394,7 @@ export function MorningBriefView() {
         )}
       </div>
 
-      <Section icon={Mail} title="Email â follow-ups & triage" count={d.emailTasks.length || "none"}>
+      <Section icon={Mail} title="Email — follow-ups & triage" count={d.emailTasks.length || "none"}>
         {d.emailTasks.length === 0 ? (
           <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>No open email-sourced tasks.</div>
         ) : d.emailTasks.map((t) => {
@@ -399,7 +404,7 @@ export function MorningBriefView() {
             <Row key={id} open={openId === id} onToggle={() => toggle(id)}
               left={<CompleteBtn busy={!!busy[id]} onDone={() => completeTask(t.id)} />}
               title={t.title}
-              sub={<><OriginChip label="Email" color="var(--blue)" /> {t.source}{t.due ? ` Â· due ${t.due}` : ""}</>}>
+              sub={<><OriginChip label="Email" color="var(--blue)" /> {t.source}{t.due ? ` · due ${t.due}` : ""}</>}>
               {t.notes ? <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}><b>What to do:</b> {t.notes}</div>
                 : <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>No detail on this task.</div>}
               <ContactActions c={contact} gmailUrl={gmailSearch(t, contact)} />
@@ -408,8 +413,9 @@ export function MorningBriefView() {
         })}
       </Section>
 
-      <Section icon={Activity} title="Cadence due today" count={d.cadence.length}>
-        {d.cadence.length === 0 ? <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>Nothing due.</div> :
+      <Section icon={Activity} title="Cadence — outreach due to send today" count={d.cadence.length}
+        hint="Active enrollments whose next touch is scheduled for today or earlier. Staged or paused sequences won't appear here until you start them on the Cadences tab.">
+        {d.cadence.length === 0 ? <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>Nothing scheduled to send today.</div> :
           d.cadence.map((c) => {
             const id = "c" + c.enrollment_id;
             const contact = d.contactById[c.contact_id];
@@ -417,11 +423,11 @@ export function MorningBriefView() {
             return (
               <Row key={id} open={openId === id} onToggle={() => toggle(id)}
                 left={<div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                  <CompleteBtn busy={!!busy["cc" + c.enrollment_id]} onDone={() => advanceCadence(c)} title="Mark this step done â advance the cadence" />
+                  <CompleteBtn busy={!!busy["cc" + c.enrollment_id]} onDone={() => advanceCadence(c)} title="Mark this step done — advance the cadence" />
                   <span className="tag" style={{ color: chColor[c.next_channel] || "var(--text-sec)", background: "var(--bg-el)", border: "1px solid var(--border)" }}>{c.next_channel}</span>
                 </div>}
-                title={<>{c.name} <span style={{ color: "var(--text-sec)", fontWeight: 400 }}>Â· {c.co}</span></>}
-                sub={<><OriginChip label="Cadence" color="var(--purple)" /> {c.entry_type} Â· {c.next_action}</>}>
+                title={<>{c.name} <span style={{ color: "var(--text-sec)", fontWeight: 400 }}>· {c.co}</span></>}
+                sub={<><OriginChip label="Cadence" color="var(--purple)" /> {c.entry_type} · {c.next_action}</>}>
                 <div style={{ fontSize: 12.5, color: "var(--text)", marginBottom: 2 }}><b>What to do:</b> {c.next_action}</div>
                 <DraftBlock subject={v.subject} draft={v.draft} email={contact?.email} />
                 <ContactActions c={contact} />
@@ -435,7 +441,8 @@ export function MorningBriefView() {
           })}
       </Section>
 
-      <Section icon={Target} title="Do today (by score)" count={d.tasks.length}>
+      <Section icon={Target} title="Tasks — do today, highest priority first" count={d.tasks.length}
+        hint="Ranked by a priority score that weights revenue, urgency, and how overdue each item is. The number on the left is that score.">
         {d.tasks.map((t) => {
           const id = "t" + t.id;
           const contact = t.contactId ? d.contactById[t.contactId] : null;
@@ -444,7 +451,7 @@ export function MorningBriefView() {
             <Row key={id} open={openId === id} onToggle={() => toggle(id)}
               left={<div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 <CompleteBtn busy={!!busy[id]} onDone={() => completeTask(t.id)} />
-                <span className="mono" style={{ fontSize: 10, color: "var(--blue)", minWidth: 50 }}>{Number(t.score).toLocaleString()}</span>
+                <span className="mono" style={{ fontSize: 10, color: "var(--blue)", minWidth: 50 }} title="Priority score">{Number(t.score).toLocaleString()}</span>
               </div>}
               title={t.title}
               sub={<><OriginChip label={origin.label} color={origin.color} /> {t.category || "task"}</>}>
@@ -455,18 +462,18 @@ export function MorningBriefView() {
             </Row>
           );
         })}
-        <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8 }}>Old overdue items score high too â triage stale ones so they stop topping the list.</div>
+        <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 8 }}>Old overdue items score high too. If one is dead, check it off to clear it so the list reflects real work.</div>
       </Section>
 
-      <Section icon={FileText} title="Content â post today / create tomorrow" count={d.content.length}>
+      <Section icon={FileText} title="Content — post today / create tomorrow" count={d.content.length}>
         {d.content.length === 0 ? <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>Nothing scheduled for today or tomorrow.</div> : (
           <>
             {postToday.length > 0 && <>
-              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: ".04em", margin: "2px 0 6px" }}>Post today Â· {postToday.length}</div>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: ".04em", margin: "2px 0 6px" }}>Post today · {postToday.length}</div>
               {postToday.map(renderContent)}
             </>}
             {createTomorrow.length > 0 && <>
-              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: ".04em", margin: "10px 0 6px" }}>Create for tomorrow Â· {createTomorrow.length}</div>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: ".04em", margin: "10px 0 6px" }}>Create for tomorrow · {createTomorrow.length}</div>
               {createTomorrow.map(renderContent)}
             </>}
           </>
@@ -478,7 +485,7 @@ export function MorningBriefView() {
           <div key={"d" + x.id} onClick={() => openRecord("deal", x.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 11px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg)", marginBottom: 5, cursor: "pointer" }}>
             <span className="mono" style={{ fontSize: 12, color: "var(--green)", minWidth: 70 }}>{fmt$(x.value)}</span>
             <div style={{ flex: 1, fontSize: 13 }}>{x.name}</div>
-            <span className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>{x.stage} Â· {x.probability}%</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>{x.stage} · {x.probability}%</span>
           </div>
         ))}
       </Section>
@@ -492,7 +499,7 @@ export function MorningBriefView() {
           ))}
           {italyDays > 0 && italyDays <= 30 && (
             <div className="mono" style={{ fontSize: 12, color: "var(--amber)", display: "flex", gap: 6, alignItems: "center" }}>
-              <AlertCircle size={12} /> Italy OOO 7/5â7/12 in {italyDays} days â close what you can before you fly.
+              <AlertCircle size={12} /> Italy OOO 7/5–7/12 in {italyDays} days — close what you can before you fly.
             </div>
           )}
           {closingSoon.length === 0 && !(italyDays > 0 && italyDays <= 30) && (
