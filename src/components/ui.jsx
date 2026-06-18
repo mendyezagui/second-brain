@@ -471,9 +471,10 @@ export const NAV = [
   {id:"multi_llm",icon:MessageSquare,label:"AI Playground"},
   {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
-  {id:"_ai_controls",icon:Settings,label:"AI Controls",group:true,children:["voitra_gate","rc_controls"]},
+  {id:"_ai_controls",icon:Settings,label:"AI Controls",group:true,children:["voitra_gate","rc_controls","vantaca_controls"]},
   {id:"voitra_gate",icon:Mic,label:"Voitra Agent Control",parent:"_ai_controls"},
   {id:"rc_controls",icon:Phone,label:"RC Controls",parent:"_ai_controls"},
+  {id:"vantaca_controls",icon:Building2,label:"Vantaca Controls",parent:"_ai_controls"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
@@ -512,7 +513,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
@@ -543,7 +544,7 @@ export const BottomNav = ({ view, setView }) => {
   );
 };
 
-// âââ Unified Filter + Sort ("funnel") used across every list view âââââââââââ
+// --- Unified Filter + Sort ("funnel") used across every list view ---
 const _flGet = (row, field) => (typeof field === "function" ? field(row) : row?.[field]);
 const _flOptVal = (o) => (o && typeof o === "object" ? o.value : o);
 const _flPretty = (s) => (s === "all" ? "All" : String(s).replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
@@ -557,14 +558,14 @@ export const FilterSort = ({ search, query, setQuery, facets, facetState, setFac
       const opt = (f.options || []).find((o) => _flOptVal(o) === v);
       return { key: "f:" + f.key, label: `${f.label}: ${opt ? _flOptLabel(opt) : _flPretty(v)}`, clear: () => setFacet(f.key, "all") };
     }),
-    ...(query ? [{ key: "q", label: `â${query}â`, clear: () => setQuery("") }] : []),
+    ...(query ? [{ key: "q", label: `"${query}"`, clear: () => setQuery("") }] : []),
   ];
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
       {search && (
         <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
           <Search size={13} color="var(--text-sec)" style={{ position: "absolute", left: 10, top: 10, pointerEvents: "none" }} />
-          <input className="input" placeholder={search.placeholder || "Searchâ¦"} value={query} onChange={(e) => setQuery(e.target.value)} style={{ paddingLeft: 30, fontSize: 13 }} />
+          <input className="input" placeholder={search.placeholder || "Search..."} value={query} onChange={(e) => setQuery(e.target.value)} style={{ paddingLeft: 30, fontSize: 13 }} />
         </div>
       )}
       <div style={{ position: "relative", flexShrink: 0 }}>
