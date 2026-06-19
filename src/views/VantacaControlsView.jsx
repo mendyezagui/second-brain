@@ -26,7 +26,7 @@ const Pill = ({ kind }) => {
 const EP = ({ kind, name, desc }) => (
   <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 5 }}>
     <Pill kind={kind} />
-    <span style={{ fontSize: 11.5 }}><span className="mono" style={{ color: "var(--text)" }}>{name}</span>{desc ? <span style={{ color: "var(--text-dim)" }}> — {desc}</span> : null}</span>
+    <span style={{ fontSize: 11.5 }}><span className="mono" style={{ color: "var(--text)" }}>{name}</span>{desc ? <span style={{ color: "var(--text-dim)" }}> &mdash; {desc}</span> : null}</span>
   </div>
 );
 
@@ -211,7 +211,7 @@ export function VantacaControlsView() {
         <div style={{ flex: "0 1 340px", minWidth: 280 }}>
           <Collapsible icon={Server} title="Where this lives &amp; how it's built">
             <p><b>Slack bot</b> (Socket Mode) runs as <span className="mono">vantaca-slack</span> on a DigitalOcean VPS (134.209.126.217), alongside the <span className="mono">vantaca-mcp</span> server (:8787) + a cloudflared tunnel at <span className="mono">vantaca.aventary.com</span>.</p>
-            <p style={{ marginTop: 8 }}><b>Brain:</b> <span className="mono">slack-bot/vantaca-claude.mjs</span> runs Claude (claude-sonnet-4-6) in an in-process tool loop — it calls the MCP server directly on localhost (no hosted connector), which talks to the <b>Vantaca Standard API v3.7.0</b>.</p>
+            <p style={{ marginTop: 8 }}><b>Brain:</b> <span className="mono">slack-bot/vantaca-claude.mjs</span> runs Claude (claude-sonnet-4-6) in an in-process tool loop &mdash; it calls the MCP server directly on localhost (no hosted connector), which talks to the <b>Vantaca Standard API v3.7.0</b>.</p>
             <p style={{ marginTop: 8 }}><b>This page</b> reads/writes two Supabase tables in the Second Brain project: <span className="mono">vantaca_controls</span> (pause + budgets) and <span className="mono">vantaca_audit</span> (every request). The bot reads controls before each request and writes an audit row after.</p>
             <p style={{ marginTop: 8 }}><b>Code:</b> GitHub <span className="mono">mendyezagui/vantaca-mcp</span>. Deploy = edit on VPS + restart service.</p>
           </Collapsible>
@@ -231,19 +231,19 @@ export function VantacaControlsView() {
             <EP kind="WRITE" name="createWorkOrder / violationCreate / createARC" />
             <EP kind="WRITE" name="createStandardActionItem / updateHomeowner" />
             <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", margin: "10px 0 6px" }}>NOT AVAILABLE</div>
-            <EP kind="NONE" name="AP / invoices" desc="403 — API user lacks scope" />
+            <EP kind="NONE" name="AP / invoices" desc="403 &mdash; API user lacks scope" />
             <EP kind="NONE" name="follow-up / due date edits" desc="no update endpoint in the API" />
           </Collapsible>
 
           <Collapsible icon={BookOpen} title="Knowledge base (answer rules)">
             <p>The bot answers under a strict system prompt:</p>
             <ul style={{ margin: "8px 0 0 16px", padding: 0 }}>
-              <li style={{ marginBottom: 6 }}><b>Real data only.</b> Never invent an XN, name, balance, vendor, or status — if no tool was called, it has no data.</li>
+              <li style={{ marginBottom: 6 }}><b>Real data only.</b> Never invent an XN, name, balance, vendor, or status &mdash; if no tool was called, it has no data.</li>
               <li style={{ marginBottom: 6 }}><b>Writes are grounded.</b> It must look an item up first, and after any write it re-reads to confirm before saying "done" (verified flag).</li>
               <li style={{ marginBottom: 6 }}><b>Lists don't fan out.</b> Portfolio work-order questions use <span className="mono">agedWorkOrders</span> (one call), not per-association loops.</li>
               <li style={{ marginBottom: 6 }}><b>Steps/notes</b> go through <span className="mono">stepItem</span> (verified), never the raw endpoint.</li>
               <li style={{ marginBottom: 6 }}><b>Managers</b> map to associations via <span className="mono">managerQueue</span> (the API has no manager field).</li>
-              <li style={{ marginBottom: 6 }}><b>Honest limits.</b> AP/invoices and follow-up-date edits aren't possible via the API — it says so instead of pretending.</li>
+              <li style={{ marginBottom: 6 }}><b>Honest limits.</b> AP/invoices and follow-up-date edits aren't possible via the API &mdash; it says so instead of pretending.</li>
               <li><b>Format</b> for Slack, lead with the answer, ask when ambiguous.</li>
             </ul>
           </Collapsible>
