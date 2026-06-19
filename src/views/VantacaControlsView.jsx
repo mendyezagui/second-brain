@@ -207,9 +207,9 @@ export function VantacaControlsView() {
           </div>
         </div>
 
-        {/* RIGHT: reference panels */}
+        {/* RIGHT: reference panels (all collapsed by default) */}
         <div style={{ flex: "0 1 340px", minWidth: 280 }}>
-          <Collapsible icon={Server} title="Where this lives &amp; how it's built" defaultOpen>
+          <Collapsible icon={Server} title="Where this lives &amp; how it's built">
             <p><b>Slack bot</b> (Socket Mode) runs as <span className="mono">vantaca-slack</span> on a DigitalOcean VPS (134.209.126.217), alongside the <span className="mono">vantaca-mcp</span> server (:8787) + a cloudflared tunnel at <span className="mono">vantaca.aventary.com</span>.</p>
             <p style={{ marginTop: 8 }}><b>Brain:</b> <span className="mono">slack-bot/vantaca-claude.mjs</span> runs Claude (claude-sonnet-4-6) in an in-process tool loop — it calls the MCP server directly on localhost (no hosted connector), which talks to the <b>Vantaca Standard API v3.7.0</b>.</p>
             <p style={{ marginTop: 8 }}><b>This page</b> reads/writes two Supabase tables in the Second Brain project: <span className="mono">vantaca_controls</span> (pause + budgets) and <span className="mono">vantaca_audit</span> (every request). The bot reads controls before each request and writes an audit row after.</p>
