@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
-import { RefreshCw, Loader, Pause, Play, CheckCircle, XCircle, ChevronRight, ChevronDown, Server, Database, BookOpen, BarChart2, Users, Zap } from "lucide-react";
+import { RefreshCw, Loader, Pause, Play, CheckCircle, XCircle, ChevronRight, ChevronDown, Server, Database, BookOpen, BarChart2, Users, Zap, Bell, ExternalLink } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 const STOP_STATUSES = ["TOKEN_BUDGET", "MAX_TURNS", "PAUSED", "NO_TOOLS", "TOOLS_FAIL"];
+const DD_COLORS = { OK: "var(--green)", Alert: "var(--red)", Warn: "var(--amber)", "No Data": "var(--text-dim)", Skipped: "var(--text-dim)", Unknown: "var(--text-dim)" };
 
 function Collapsible({ icon: Icon, title, children, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -48,10 +49,50 @@ const MiniBars = ({ series, max, color }) => (
   </div>
 );
 
+function MonitorsPanel({ data }) {
+  const alerting = data && data.ok && (data.monitors || []).filter((m) => m.status === "Alert" || m.status === "Warn");
+  return (
+    <div className="card" style={{ padding: "16px 20px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <Bell size={15} color={alerting && alerting.length ? "var(--red)" : "var(--blue)"} />
+        <span style={{ fontSize: 13, fontWeight: 700 }}>Monitors &amp; alerts</span>
+        <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>Datadog{data && data.site ? " · " + data.site : ""}</span>
+      </div>
+      {!data ? (
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>Loading…</div>
+      ) : data.configured === false ? (
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", lineHeight: 1.6 }}>Datadog isn't connected yet. Add <span style={{ color: "var(--text)" }}>DD_API_KEY</span> and <span style={{ color: "var(--text)" }}>DD_APP_KEY</span> to the Vercel project env, then redeploy.</div>
+      ) : data.ok === false ? (
+        <div className="mono" style={{ fontSize: 11, color: "var(--red)" }}>Datadog error: {data.error}</div>
+      ) : (data.monitors || []).length === 0 ? (
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>No Vantaca monitors found yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {data.monitors.map((m) => {
+            const c = DD_COLORS[m.status] || "var(--text-dim)";
+            return (
+              <a key={m.id} href={m.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8, textDecoration: "none", color: "inherit", background: "var(--bg)" }}>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: c, boxShadow: `0 0 6px ${c}66`, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
+                  {m.message && <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.message}</div>}
+                </div>
+                <span className="mono" style={{ fontSize: 10, fontWeight: 700, color: c, flexShrink: 0 }}>{String(m.status).toUpperCase()}</span>
+                <ExternalLink size={12} color="var(--text-dim)" style={{ flexShrink: 0 }} />
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function VantacaControlsView() {
   const [controls, setControls] = useState(null);
   const [audit, setAudit] = useState([]);
   const [stats, setStats] = useState([]);
+  const [monitors, setMonitors] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState({});
@@ -67,6 +108,13 @@ export function VantacaControlsView() {
     setAudit(a || []);
     setStats(big || []);
     setLoading(false);
+    // DataDog monitor status (via the server-side proxy) — never blocks the page.
+    try {
+      const dd = await fetch("/api/datadog").then((r) => r.json());
+      setMonitors(dd);
+    } catch {
+      setMonitors({ ok: false, configured: false, error: "unreachable" });
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -160,6 +208,8 @@ export function VantacaControlsView() {
               </button>
             )}
           </div>
+
+          <MonitorsPanel data={monitors} />
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
             <div className="card" style={{ padding: "14px 16px" }}>
@@ -338,7 +388,7 @@ export function VantacaControlsView() {
             <p><b>Slack bot</b> (Socket Mode) runs as <span className="mono">vantaca-slack</span> on a DigitalOcean VPS (134.209.126.217), alongside the <span className="mono">vantaca-mcp</span> server (:8787) + a cloudflared tunnel at <span className="mono">vantaca.aventary.com</span>.</p>
             <p style={{ marginTop: 8 }}><b>Brain:</b> <span className="mono">slack-bot/vantaca-claude.mjs</span> runs Claude (claude-sonnet-4-6) in an in-process tool loop &mdash; it calls the MCP server directly on localhost (no hosted connector), which talks to the <b>Vantaca Standard API v3.7.0</b>.</p>
             <p style={{ marginTop: 8 }}><b>This page</b> reads/writes two Supabase tables in the Second Brain project: <span className="mono">vantaca_controls</span> (pause + budgets) and <span className="mono">vantaca_audit</span> (every request). The bot reads controls before each request and writes an audit row after.</p>
-            <p style={{ marginTop: 8 }}><b>Monitoring:</b> the VPS ships the <span className="mono">vantaca-slack</span> / <span className="mono">vantaca-mcp</span> logs to <b>Datadog</b> (us5), which alerts on cost / step-count spikes (runaway-loop detection). This dashboard reads the same audit data from Supabase.</p>
+            <p style={{ marginTop: 8 }}><b>Monitoring:</b> the VPS ships the <span className="mono">vantaca-slack</span> / <span className="mono">vantaca-mcp</span> logs to <b>Datadog</b> (us5), which alerts on cost / step-count spikes (runaway-loop detection). The <b>Monitors &amp; alerts</b> panel above reads live monitor status via the <span className="mono">/api/datadog</span> proxy; the dashboard reads the same audit data from Supabase.</p>
             <p style={{ marginTop: 8 }}><b>Code:</b> GitHub <span className="mono">mendyezagui/vantaca-mcp</span>. Deploy = edit on VPS + restart service.</p>
           </Collapsible>
 
