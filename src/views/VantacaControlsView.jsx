@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { RefreshCw, Loader, Pause, Play, CheckCircle, XCircle, ChevronRight, ChevronDown, Server, Database, BookOpen } from "lucide-react";
+import { RefreshCw, Loader, Pause, Play, CheckCircle, XCircle, ChevronRight, ChevronDown, Server, Database, BookOpen, BarChart2, Users, Zap } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 const STOP_STATUSES = ["TOKEN_BUDGET", "MAX_TURNS", "PAUSED", "NO_TOOLS", "TOOLS_FAIL"];
@@ -30,9 +30,28 @@ const EP = ({ kind, name, desc }) => (
   </div>
 );
 
+const Stat = ({ label, value, sub, color }) => (
+  <div className="card-el" style={{ padding: "8px 10px" }}>
+    <div className="mono" style={{ fontSize: 9, color: "var(--text-sec)" }}>{label}</div>
+    <div style={{ fontSize: 16, fontWeight: 800, color: color || "var(--text)" }}>{value}</div>
+    {sub != null && <div className="mono" style={{ fontSize: 9, color: "var(--text-dim)" }}>{sub}</div>}
+  </div>
+);
+
+const MiniBars = ({ series, max, color }) => (
+  <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 56 }}>
+    {series.map((d, i) => (
+      <div key={i} title={d.title} style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+        <div style={{ height: `${Math.round((d.v / max) * 100)}%`, minHeight: d.v > 0 ? 3 : 0, background: color, borderRadius: "2px 2px 0 0", transition: "height .2s" }} />
+      </div>
+    ))}
+  </div>
+);
+
 export function VantacaControlsView() {
   const [controls, setControls] = useState(null);
   const [audit, setAudit] = useState([]);
+  const [stats, setStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState({});
@@ -42,9 +61,11 @@ export function VantacaControlsView() {
     setLoading(true);
     const { data: c } = await supabase.from("vantaca_controls").select("*").eq("id", 1).maybeSingle();
     const { data: a } = await supabase.from("vantaca_audit").select("*").order("ts", { ascending: false }).limit(80);
+    const { data: big } = await supabase.from("vantaca_audit").select("ts,slack_user,source,status,cost_usd,turns,in_tok,out_tok,tools,writes").order("ts", { ascending: false }).limit(1000);
     setControls(c || null);
     if (c) setDraft({ max_turns: c.max_turns, token_budget: c.token_budget, tool_result_cap: c.tool_result_cap });
     setAudit(a || []);
+    setStats(big || []);
     setLoading(false);
   }, []);
 
@@ -76,6 +97,37 @@ export function VantacaControlsView() {
   const recentCost = audit.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0);
   const stoppedCount = audit.filter((r) => STOP_STATUSES.includes(r.status)).length;
   const paused = !!controls?.paused;
+
+  // ---- analytics over the wider window (up to 1000 requests) ----
+  const big = stats;
+  const dayKeys = [...Array(14)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); return d.toISOString().slice(0, 10); });
+  const byDay = Object.fromEntries(dayKeys.map((d) => [d, { cost: 0, n: 0 }]));
+  big.forEach((r) => { const d = (r.ts || "").slice(0, 10); if (byDay[d]) { byDay[d].cost += Number(r.cost_usd) || 0; byDay[d].n += 1; } });
+  const maxDayCost = Math.max(...dayKeys.map((d) => byDay[d].cost), 0.0001);
+  const maxDayN = Math.max(...dayKeys.map((d) => byDay[d].n), 1);
+
+  const people = {};
+  big.forEach((r) => { const k = r.slack_user || "(unknown)"; const p = people[k] || (people[k] = { n: 0, cost: 0, writes: 0, wok: 0 }); p.n += 1; p.cost += Number(r.cost_usd) || 0; const wr = Array.isArray(r.writes) ? r.writes : []; p.writes += wr.length; p.wok += wr.filter((w) => w.verified === true).length; });
+  const peopleArr = Object.entries(people).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.cost - a.cost);
+
+  const sources = {};
+  big.forEach((r) => { const k = r.source || "?"; sources[k] = (sources[k] || 0) + 1; });
+  const sourceArr = Object.entries(sources).sort((a, b) => b[1] - a[1]);
+
+  const toolCount = {};
+  big.forEach((r) => { (Array.isArray(r.tools) ? r.tools : []).forEach((t) => { toolCount[t] = (toolCount[t] || 0) + 1; }); });
+  const topTools = Object.entries(toolCount).sort((a, b) => b[1] - a[1]).slice(0, 12);
+
+  const okN = big.filter((r) => r.status === "ok").length;
+  const stoppedN = big.filter((r) => STOP_STATUSES.includes(r.status)).length;
+  const errN = big.length - okN - stoppedN;
+  const totalWrites = big.reduce((s, r) => s + (Array.isArray(r.writes) ? r.writes.length : 0), 0);
+  const okWrites = big.reduce((s, r) => s + (Array.isArray(r.writes) ? r.writes.filter((w) => w.verified === true).length : 0), 0);
+  const writeRate = totalWrites ? Math.round((okWrites / totalWrites) * 100) : null;
+  const totalCost = big.reduce((s, r) => s + (Number(r.cost_usd) || 0), 0);
+  const avgCost = big.length ? totalCost / big.length : 0;
+  const avgTurns = big.length ? big.reduce((s, r) => s + (Number(r.turns) || 0), 0) / big.length : 0;
+  const maxTurns = big.reduce((m, r) => Math.max(m, Number(r.turns) || 0), 0);
 
   return (
     <div style={{ padding: 28 }}>
@@ -124,6 +176,79 @@ export function VantacaControlsView() {
               <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>STOPPED</div>
               <div className="display" style={{ fontSize: 24, fontWeight: 800, color: "var(--amber)" }}>{stoppedCount}</div>
               <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>over-budget / capped</div>
+            </div>
+          </div>
+
+          {/* USAGE DASHBOARD */}
+          <div className="card" style={{ padding: "16px 20px", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <BarChart2 size={15} color="var(--blue)" />
+              <span style={{ fontSize: 13, fontWeight: 700 }}>Usage dashboard</span>
+              <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>last {big.length} requests</span>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, margin: "12px 0" }}>
+              <Stat label="TOTAL COST" value={"$" + totalCost.toFixed(2)} />
+              <Stat label="AVG / REQ" value={"$" + avgCost.toFixed(3)} />
+              <Stat label="AVG STEPS" value={avgTurns.toFixed(1)} sub={"max " + maxTurns} color={maxTurns >= (controls?.max_turns || 10) ? "var(--amber)" : undefined} />
+              <Stat label="WRITE OK" value={writeRate == null ? "--" : writeRate + "%"} sub={okWrites + "/" + totalWrites} color={writeRate != null && writeRate < 100 ? "var(--red)" : "var(--green)"} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 6 }}>
+              <div>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>COST / DAY (14d)</div>
+                <MiniBars series={dayKeys.map((d) => ({ v: byDay[d].cost, title: d + ": $" + byDay[d].cost.toFixed(3) }))} max={maxDayCost} color="var(--blue)" />
+              </div>
+              <div>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>REQUESTS / DAY (14d)</div>
+                <MiniBars series={dayKeys.map((d) => ({ v: byDay[d].n, title: d + ": " + byDay[d].n + " req" }))} max={maxDayN} color="var(--purple)" />
+              </div>
+            </div>
+            <div className="mono" style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 4, display: "flex", justifyContent: "space-between" }}><span>{dayKeys[0]}</span><span>{dayKeys[dayKeys.length - 1]}</span></div>
+
+            <div style={{ marginTop: 16 }}>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}><Users size={11} /> WHO'S USING IT</div>
+              {peopleArr.length === 0 ? <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>No data yet.</div> :
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {peopleArr.slice(0, 8).map((p) => {
+                    const pct = Math.round((p.cost / (totalCost || 1)) * 100);
+                    return (
+                      <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                        <span style={{ flex: "0 0 130px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{p.name}</span>
+                        <div style={{ flex: 1, height: 8, background: "var(--bg-el)", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ width: pct + "%", height: "100%", background: "var(--blue)" }} />
+                        </div>
+                        <span className="mono" style={{ flex: "0 0 120px", textAlign: "right", color: "var(--text-sec)" }}>{p.n} req &middot; ${p.cost.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+              <div>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>BY SOURCE</div>
+                {sourceArr.length === 0 ? <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>none</div> :
+                  sourceArr.map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
+                      <span style={{ textTransform: "capitalize" }}>{k}</span><span className="mono" style={{ color: "var(--text-sec)" }}>{v}</span>
+                    </div>
+                  ))}
+              </div>
+              <div>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6 }}>OUTCOMES</div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}><span style={{ color: "var(--green)" }}>OK</span><span className="mono">{okN}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}><span style={{ color: "var(--amber)" }}>Stopped (guardrail)</span><span className="mono">{stoppedN}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}><span style={{ color: "var(--red)" }}>Errors</span><span className="mono">{errN}</span></div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}><Zap size={11} /> TOP TOOLS</div>
+              {topTools.length === 0 ? <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>none</div> :
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {topTools.map(([t, n]) => <span key={t} className="mono" style={{ fontSize: 10, background: "var(--bg-el)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}>{t} <span style={{ color: "var(--blue)" }}>{n}</span></span>)}
+                </div>}
             </div>
           </div>
 
@@ -213,6 +338,7 @@ export function VantacaControlsView() {
             <p><b>Slack bot</b> (Socket Mode) runs as <span className="mono">vantaca-slack</span> on a DigitalOcean VPS (134.209.126.217), alongside the <span className="mono">vantaca-mcp</span> server (:8787) + a cloudflared tunnel at <span className="mono">vantaca.aventary.com</span>.</p>
             <p style={{ marginTop: 8 }}><b>Brain:</b> <span className="mono">slack-bot/vantaca-claude.mjs</span> runs Claude (claude-sonnet-4-6) in an in-process tool loop &mdash; it calls the MCP server directly on localhost (no hosted connector), which talks to the <b>Vantaca Standard API v3.7.0</b>.</p>
             <p style={{ marginTop: 8 }}><b>This page</b> reads/writes two Supabase tables in the Second Brain project: <span className="mono">vantaca_controls</span> (pause + budgets) and <span className="mono">vantaca_audit</span> (every request). The bot reads controls before each request and writes an audit row after.</p>
+            <p style={{ marginTop: 8 }}><b>Monitoring:</b> the VPS ships the <span className="mono">vantaca-slack</span> / <span className="mono">vantaca-mcp</span> logs to <b>Datadog</b> (us5), which alerts on cost / step-count spikes (runaway-loop detection). This dashboard reads the same audit data from Supabase.</p>
             <p style={{ marginTop: 8 }}><b>Code:</b> GitHub <span className="mono">mendyezagui/vantaca-mcp</span>. Deploy = edit on VPS + restart service.</p>
           </Collapsible>
 
