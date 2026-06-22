@@ -387,9 +387,18 @@ export function VantacaControlsView() {
           <Collapsible icon={Server} title="Where this lives &amp; how it's built">
             <p><b>Slack bot</b> (Socket Mode) runs as <span className="mono">vantaca-slack</span> on a DigitalOcean VPS (134.209.126.217), alongside the <span className="mono">vantaca-mcp</span> server (:8787) + a cloudflared tunnel at <span className="mono">vantaca.aventary.com</span>.</p>
             <p style={{ marginTop: 8 }}><b>Brain:</b> <span className="mono">slack-bot/vantaca-claude.mjs</span> runs Claude (claude-sonnet-4-6) in an in-process tool loop &mdash; it calls the MCP server directly on localhost (no hosted connector), which talks to the <b>Vantaca Standard API v3.7.0</b>.</p>
-            <p style={{ marginTop: 8 }}><b>This page</b> reads/writes two Supabase tables in the Second Brain project: <span className="mono">vantaca_controls</span> (pause + budgets) and <span className="mono">vantaca_audit</span> (every request). The bot reads controls before each request and writes an audit row after.</p>
-            <p style={{ marginTop: 8 }}><b>Monitoring:</b> the VPS ships the <span className="mono">vantaca-slack</span> / <span className="mono">vantaca-mcp</span> logs to <b>Datadog</b> (us5), which alerts on cost / step-count spikes (runaway-loop detection). The <b>Monitors &amp; alerts</b> panel above reads live monitor status via the <span className="mono">/api/datadog</span> proxy; the dashboard reads the same audit data from Supabase.</p>
-            <p style={{ marginTop: 8 }}><b>Code:</b> GitHub <span className="mono">mendyezagui/vantaca-mcp</span>. Deploy = edit on VPS + restart service.</p>
+            <p style={{ marginTop: 8 }}><b>This page</b> reads/writes two Supabase tables in the Second Brain project: <span className="mono">vantaca_controls</span> (pause + budgets) and <span className="mono">vantaca_audit</span> (every request). The bot reads controls before each request and writes an audit row after &mdash; that's what powers the Usage dashboard &amp; Recent requests.</p>
+
+            <p style={{ marginTop: 12, color: "var(--text)", fontWeight: 600 }}>Datadog monitoring (site: us5)</p>
+            <p style={{ marginTop: 4 }}>Three layers, so a runaway/expensive request can't go unnoticed:</p>
+            <ol style={{ margin: "6px 0 0 16px", padding: 0 }}>
+              <li style={{ marginBottom: 6 }}><b>Collect</b> &mdash; the Datadog Agent on the VPS tails the <span className="mono">vantaca-slack</span> + <span className="mono">vantaca-mcp</span> journald logs. Every request prints an <span className="mono">AUDIT</span> line (cost, steps, tools, who); a log pipeline parses that JSON into fields like <span className="mono">@costUSD</span> and <span className="mono">@turns</span>.</li>
+              <li style={{ marginBottom: 6 }}><b>Alert</b> &mdash; Datadog monitors watch those logs and notify on a runaway loop / budget stop (<span className="mono">MAX_TURNS</span>, <span className="mono">TOKEN_BUDGET</span>, <span className="mono">TOOLS_FAIL</span>) and on a single-request cost spike (&gt; $0.50).</li>
+              <li><b>Show</b> &mdash; the <b>Monitors &amp; alerts</b> panel on the left reads live monitor status through the <span className="mono">/api/datadog</span> serverless proxy. The Datadog keys live only in Vercel env (server-side) &mdash; never in the browser.</li>
+            </ol>
+            <p style={{ marginTop: 8 }}><b>Why two data sources:</b> usage &amp; cost come from Supabase (instant, no keys client-side); live alert state + log history + VPS host metrics come from Datadog.</p>
+
+            <p style={{ marginTop: 12 }}><b>Code &amp; deploy:</b> <span className="mono">mendyezagui/vantaca-mcp</span> (bot + MCP) &mdash; deploy = edit on the VPS + restart the service. <span className="mono">mendyezagui/second-brain</span> (this page + <span className="mono">/api/datadog</span>) &mdash; deploy = push to main &rarr; Vercel.</p>
           </Collapsible>
 
           <Collapsible icon={Database} title="Endpoints (read / write)">
