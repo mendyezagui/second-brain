@@ -4,6 +4,7 @@
 //   DD_API_KEY   - DataDog API key
 //   DD_APP_KEY   - DataDog Application key (scope it to monitors_read if possible)
 //   DD_SITE      - optional, defaults to us5.datadoghq.com
+// redeploy trigger: 2026-06-22 (rebuild to pick up DD_* env vars)
 
 const SITE = process.env.DD_SITE || "us5.datadoghq.com";
 
