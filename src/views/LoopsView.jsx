@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Check, ChevronDown, ChevronRight, Clock, Loader, Play, Radio, RefreshCw, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Clock, Loader, Play, Radio, RefreshCw, X } from "lucide-react";
 import { supabase, SUPA_URL, SUPA_KEY } from "../lib/supabase";
 
 // Loop-of-Loops control panel.
@@ -112,10 +112,10 @@ export function LoopsView() {
         that wait for your approval. Each loop runs on a schedule (or on demand) without you driving it.
       </div>
 
-      {/* ── Approvals inbox ─────────────────────────────────────────── */}
+      {/* Approvals inbox */}
       <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 8 }}>APPROVALS INBOX</div>
       {pending.length === 0 ? (
-        <div className="card" style={{ padding: 16, marginBottom: 22, color: "var(--text-dim)", fontSize: 12 }} className2="">
+        <div className="card" style={{ padding: 16, marginBottom: 22 }}>
           <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>Nothing waiting on you. Drafts from loops will land here for approval.</span>
         </div>
       ) : (
@@ -161,7 +161,7 @@ export function LoopsView() {
         </div>
       )}
 
-      {/* ── Loops ───────────────────────────────────────────────────── */}
+      {/* Loops */}
       <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 8 }}>LOOPS</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 22 }}>
         {d.loops.map((loop) => {
@@ -208,7 +208,7 @@ export function LoopsView() {
         {d.loops.length === 0 && <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)" }}>No loops defined yet.</div>}
       </div>
 
-      {/* ── Signal bus ──────────────────────────────────────────────── */}
+      {/* Signal bus */}
       <div
         className="mono"
         style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
@@ -237,7 +237,7 @@ export function LoopsView() {
         </div>
       )}
 
-      {/* ── Decision history ────────────────────────────────────────── */}
+      {/* Decision history */}
       {decided.length > 0 && (
         <>
           <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 8 }}>RECENT DECISIONS</div>
