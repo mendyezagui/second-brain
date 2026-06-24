@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, Save, Search, Settings, Shield, SlidersHorizontal, Sparkles, Target, Trash2, Upload, Users, X, Calendar } from "lucide-react";
+import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, RefreshCw, Save, Search, Settings, Shield, SlidersHorizontal, Sparkles, Target, Trash2, Upload, Users, X, Calendar } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { blankDocument, buildDocOptions, docAssociationKey, docHasAssociation, formatDocSize, getDocEntityLabel, getDocKindLabel, nextId, normalizeDocId, recordPath, sc, uploadDocumentFile } from "../lib/utils";
 
@@ -451,6 +451,7 @@ export const LoginScreen = () => {
 export const NAV = [
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
   {id:"brief",icon:Sparkles,label:"Morning Brief"},
+  {id:"loops",icon:RefreshCw,label:"Loops"},
   {id:"associates",icon:BookOpen,label:"Associates"},
   {id:"tasks",icon:CheckCircle,label:"Tasks"},
   {divider:true},
@@ -513,7 +514,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
