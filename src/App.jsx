@@ -26,11 +26,12 @@ import { VoiceView } from "./views/VoiceView";
 import { VoitraGateView } from "./views/VoitraGateView";
 import SocialMediaView from "./views/SocialMediaView";
 import { CadencesView } from "./views/CadencesView";
+import { LoopsView } from "./views/LoopsView";
 import { MorningBriefView } from "./views/MorningBriefView";
 import { VantacaControlsView } from "./views/VantacaControlsView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","vantaca_controls","admin","record"];
+  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","vantaca_controls","admin","record"];
   const VIEW_ALIASES = { mstack: "associates", orchestrator: "brief" };
   const routeFromHash = () => {
     const route = parseAppHash();
@@ -193,6 +194,7 @@ export default function App() {
     marketing:    <MarketingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     social:       <SocialMediaView />,
     cadences:     <CadencesView />,
+    loops:        <LoopsView />,
     tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     goals:        <GoalsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
