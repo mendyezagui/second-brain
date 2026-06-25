@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { Phone, RefreshCw, Loader } from "lucide-react";
+import { Phone, RefreshCw, Loader, Calendar, Clock, Plus, Trash2, Power, Pencil, Check, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 const API_BASE = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/rc-queue-toggle";
@@ -18,6 +18,256 @@ const ROUTE_NAMES = {
   "1011": "AI Forward IDEXX", "1012": "AI Forward LA County", "1016": "AI Forward Methodist",
   "1004": "IDEXX", "1010": "LA County", "1007": "Nebraska Methodist",
 };
+
+// ── Scheduler ─────────────────────────────────────────────────────────────
+const LINES = [
+  { id: "2148739036", label: "IDEXX" },
+  { id: "3174440036", label: "LA County" },
+  { id: "3154326036", label: "Methodist" },
+];
+const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]; // index = 0..6 (Sun..Sat)
+
+const blankRule = () => ({ id: null, label: "", days: [], time_on: "08:00", time_off: "17:00", phone_ids: [] });
+
+const fmt12 = (t) => {
+  if (!t) return "";
+  const [h, m] = t.split(":");
+  const hh = parseInt(h, 10);
+  const h12 = ((hh + 11) % 12) + 1;
+  return `${h12}:${m} ${hh < 12 ? "AM" : "PM"}`;
+};
+
+const describeDays = (days) => {
+  const s = [...(days || [])].sort((a, b) => a - b);
+  if (s.length === 0) return "No days";
+  if (s.length === 7) return "Every day";
+  if (s.length === 5 && [1, 2, 3, 4, 5].every(d => s.includes(d))) return "Weekdays";
+  if (s.length === 2 && s.includes(0) && s.includes(6)) return "Weekends";
+  return s.map(d => DAY_LABELS[d]).join(" ");
+};
+
+const lineLabels = (ids) => {
+  if ((ids || []).length === LINES.length) return "All lines";
+  return LINES.filter(l => (ids || []).includes(l.id)).map(l => l.label).join(", ") || "No lines";
+};
+
+function RCScheduler() {
+  const [schedules, setSchedules] = useState([]);
+  const [masterOn, setMasterOn] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [savingMaster, setSavingMaster] = useState(false);
+  const [editing, setEditing] = useState(null); // blankRule()-shaped object or null
+  const [formErr, setFormErr] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    if (!supabase) { setLoading(false); return; }
+    setLoading(true);
+    const [sch, set] = await Promise.all([
+      supabase.from("rc_schedules").select("*").order("created_at"),
+      supabase.from("rc_scheduler_settings").select("enabled").eq("id", 1).maybeSingle(),
+    ]);
+    setSchedules(sch.data || []);
+    setMasterOn(!!set.data?.enabled);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleMaster = async () => {
+    if (!supabase || savingMaster) return;
+    setSavingMaster(true);
+    const next = !masterOn;
+    setMasterOn(next);
+    const { error } = await supabase.from("rc_scheduler_settings")
+      .update({ enabled: next, updated_at: new Date().toISOString() }).eq("id", 1);
+    if (error) setMasterOn(!next); // revert on failure
+    setSavingMaster(false);
+  };
+
+  const toggleRuleEnabled = async (rule) => {
+    if (!supabase) return;
+    const next = !rule.enabled;
+    setSchedules(rs => rs.map(r => r.id === rule.id ? { ...r, enabled: next } : r));
+    await supabase.from("rc_schedules").update({ enabled: next, updated_at: new Date().toISOString() }).eq("id", rule.id);
+  };
+
+  const removeRule = async (rule) => {
+    if (!supabase) return;
+    setSchedules(rs => rs.filter(r => r.id !== rule.id));
+    await supabase.from("rc_schedules").delete().eq("id", rule.id);
+  };
+
+  const toggleDay = (d) => setEditing(e => ({
+    ...e, days: e.days.includes(d) ? e.days.filter(x => x !== d) : [...e.days, d].sort((a, b) => a - b),
+  }));
+  const toggleLine = (id) => setEditing(e => ({
+    ...e, phone_ids: e.phone_ids.includes(id) ? e.phone_ids.filter(x => x !== id) : [...e.phone_ids, id],
+  }));
+  const allLinesSelected = editing && editing.phone_ids.length === LINES.length;
+  const toggleAllLines = () => setEditing(e => ({ ...e, phone_ids: e.phone_ids.length === LINES.length ? [] : LINES.map(l => l.id) }));
+
+  const saveRule = async () => {
+    if (!supabase || !editing) return;
+    if (editing.days.length === 0) return setFormErr("Pick at least one day.");
+    if (editing.phone_ids.length === 0) return setFormErr("Pick at least one line.");
+    if (!editing.time_on || !editing.time_off) return setFormErr("Set both times.");
+    if (editing.time_on === editing.time_off) return setFormErr("On and off times must differ.");
+    setFormErr("");
+    setSaving(true);
+    const payload = {
+      label: editing.label?.trim() || null,
+      days: editing.days,
+      time_on: editing.time_on,
+      time_off: editing.time_off,
+      phone_ids: editing.phone_ids,
+      updated_at: new Date().toISOString(),
+    };
+    if (editing.id) {
+      const { data } = await supabase.from("rc_schedules").update(payload).eq("id", editing.id).select().single();
+      if (data) setSchedules(rs => rs.map(r => r.id === data.id ? data : r));
+    } else {
+      const { data } = await supabase.from("rc_schedules").insert({ ...payload, enabled: true }).select().single();
+      if (data) setSchedules(rs => [...rs, data]);
+    }
+    setSaving(false);
+    setEditing(null);
+  };
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", alignItems: "center", gap: 6 }}>
+          <Calendar size={12} /> Schedule
+        </div>
+        {!editing && (
+          <button className="btn btn-ghost" style={{ fontSize: 11, padding: "5px 10px" }} onClick={() => { setFormErr(""); setEditing(blankRule()); }}>
+            <Plus size={12} /> Add
+          </button>
+        )}
+      </div>
+
+      {/* Master switch */}
+      <div className="card" style={{ padding: "12px 16px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Power size={15} color={masterOn ? "var(--green)" : "var(--text-dim)"} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Automatic scheduler</div>
+            <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 2 }}>
+              {masterOn ? "Lines follow the schedule below (PT)" : "Schedules saved but not enforced"}
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={toggleMaster}
+          disabled={savingMaster}
+          title={masterOn ? "Disable scheduler" : "Enable scheduler"}
+          style={{
+            width: 44, height: 24, borderRadius: 999, border: "none", cursor: savingMaster ? "default" : "pointer",
+            background: masterOn ? "var(--green)" : "var(--border-hi)", position: "relative", transition: "background .15s", flexShrink: 0, opacity: savingMaster ? 0.6 : 1,
+          }}
+        >
+          <span style={{ position: "absolute", top: 2, left: masterOn ? 22 : 2, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.3)", transition: "left .15s" }} />
+        </button>
+      </div>
+
+      {/* Edit / add form */}
+      {editing && (
+        <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+          <div className="form-group">
+            <label className="form-label">Name (optional)</label>
+            <input className="input" placeholder="e.g. Business hours" value={editing.label}
+              onChange={e => setEditing({ ...editing, label: e.target.value })} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Days</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {DAY_LABELS.map((lbl, d) => (
+                <button key={d} type="button" className={`filter-chip${editing.days.includes(d) ? " active" : ""}`}
+                  style={{ minWidth: 36, justifyContent: "center" }} onClick={() => toggleDay(d)}>{lbl}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 12 }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Time on (AI forward)</label>
+              <input className="input" type="time" value={editing.time_on}
+                onChange={e => setEditing({ ...editing, time_on: e.target.value })} />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Time off (normal)</label>
+              <input className="input" type="time" value={editing.time_off}
+                onChange={e => setEditing({ ...editing, time_off: e.target.value })} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Lines</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button type="button" className={`filter-chip${allLinesSelected ? " active" : ""}`} onClick={toggleAllLines}>All</button>
+              {LINES.map(l => (
+                <button key={l.id} type="button" className={`filter-chip${editing.phone_ids.includes(l.id) ? " active" : ""}`}
+                  onClick={() => toggleLine(l.id)}>{l.label}</button>
+              ))}
+            </div>
+          </div>
+
+          {formErr && <div className="mono" style={{ fontSize: 11, color: "var(--red)", marginBottom: 10 }}>{formErr}</div>}
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => { setEditing(null); setFormErr(""); }}>
+              <X size={13} /> Cancel
+            </button>
+            <button className="btn btn-blue" style={{ fontSize: 12 }} onClick={saveRule} disabled={saving}>
+              {saving ? <Loader size={13} className="spin" /> : <Check size={13} />} Save
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rule list */}
+      {loading ? (
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)", padding: "8px 2px" }}>Loading schedules…</div>
+      ) : schedules.length === 0 && !editing ? (
+        <div className="card-el" style={{ padding: "14px 16px" }}>
+          <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>No schedules yet. Add one to automate AI forwarding.</div>
+        </div>
+      ) : schedules.map(rule => (
+        <div key={rule.id} className="card" style={{ padding: "12px 16px", marginBottom: 8, opacity: rule.enabled ? 1 : 0.55 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>
+                {rule.label || lineLabels(rule.phone_ids)}
+              </div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span>{describeDays(rule.days)}</span>
+                <span style={{ color: "var(--text-dim)" }}>·</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Clock size={10} /> {fmt12(rule.time_on)} → {fmt12(rule.time_off)}</span>
+              </div>
+              <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {LINES.filter(l => (rule.phone_ids || []).includes(l.id)).map(l => (
+                  <span key={l.id} className="tag" style={{ color: "var(--blue)", background: "var(--blue-dim)", border: "1px solid rgba(0,119,204,0.2)" }}>{l.label}</span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+              <button className="btn-icon" title={rule.enabled ? "Pause this schedule" : "Enable this schedule"} onClick={() => toggleRuleEnabled(rule)}>
+                <Power size={14} color={rule.enabled ? "var(--green)" : "var(--text-dim)"} />
+              </button>
+              <button className="btn-icon" title="Edit" onClick={() => { setFormErr(""); setEditing({ id: rule.id, label: rule.label || "", days: rule.days || [], time_on: (rule.time_on || "08:00").slice(0, 5), time_off: (rule.time_off || "17:00").slice(0, 5), phone_ids: rule.phone_ids || [] }); }}>
+                <Pencil size={13} />
+              </button>
+              <button className="btn-icon delete" title="Delete" onClick={() => removeRule(rule)}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function RCControlsView() {
   const [state, setState] = useState(null);
@@ -179,6 +429,9 @@ export function RCControlsView() {
           </div>
         );
       })}
+
+      {/* Scheduler */}
+      <RCScheduler />
 
       {/* Activity log */}
       <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8, marginTop: 20, textTransform: "uppercase", letterSpacing: "0.5px" }}>Activity Log</div>
