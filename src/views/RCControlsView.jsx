@@ -51,6 +51,14 @@ const lineLabels = (ids) => {
   return LINES.filter(l => (ids || []).includes(l.id)).map(l => l.label).join(", ") || "No lines";
 };
 
+const todayPT = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" }); // YYYY-MM-DD
+const fmtDate = (ymd) => {
+  if (!ymd) return "";
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+};
+const blankShot = () => ({ id: null, label: "", on_date: todayPT(), at_time: "20:00", action: "off", phone_ids: [] });
+
 function RCScheduler() {
   const [schedules, setSchedules] = useState([]);
   const [masterOn, setMasterOn] = useState(false);
@@ -59,16 +67,22 @@ function RCScheduler() {
   const [editing, setEditing] = useState(null); // blankRule()-shaped object or null
   const [formErr, setFormErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const [shots, setShots] = useState([]);
+  const [editingShot, setEditingShot] = useState(null); // blankShot()-shaped or null
+  const [shotErr, setShotErr] = useState("");
+  const [savingShot, setSavingShot] = useState(false);
 
   const load = async () => {
     if (!supabase) { setLoading(false); return; }
     setLoading(true);
-    const [sch, set] = await Promise.all([
+    const [sch, set, os] = await Promise.all([
       supabase.from("rc_schedules").select("*").order("created_at"),
       supabase.from("rc_scheduler_settings").select("enabled").eq("id", 1).maybeSingle(),
+      supabase.from("rc_oneshots").select("*").order("on_date").order("at_time"),
     ]);
     setSchedules(sch.data || []);
     setMasterOn(!!set.data?.enabled);
+    setShots(os.data || []);
     setLoading(false);
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -131,6 +145,51 @@ function RCScheduler() {
     }
     setSaving(false);
     setEditing(null);
+  };
+
+  // ── One-time fail-safes ──────────────────────────────────────────────
+  const toggleShotLine = (id) => setEditingShot(e => ({
+    ...e, phone_ids: e.phone_ids.includes(id) ? e.phone_ids.filter(x => x !== id) : [...e.phone_ids, id],
+  }));
+  const allShotLines = editingShot && editingShot.phone_ids.length === LINES.length;
+  const toggleAllShotLines = () => setEditingShot(e => ({ ...e, phone_ids: e.phone_ids.length === LINES.length ? [] : LINES.map(l => l.id) }));
+
+  const toggleShotEnabled = async (shot) => {
+    if (!supabase) return;
+    const next = !shot.enabled;
+    setShots(ss => ss.map(s => s.id === shot.id ? { ...s, enabled: next } : s));
+    await supabase.from("rc_oneshots").update({ enabled: next, updated_at: new Date().toISOString() }).eq("id", shot.id);
+  };
+  const removeShot = async (shot) => {
+    if (!supabase) return;
+    setShots(ss => ss.filter(s => s.id !== shot.id));
+    await supabase.from("rc_oneshots").delete().eq("id", shot.id);
+  };
+  const saveShot = async () => {
+    if (!supabase || !editingShot) return;
+    if (!editingShot.on_date) return setShotErr("Pick a date.");
+    if (!editingShot.at_time) return setShotErr("Pick a time.");
+    if (editingShot.phone_ids.length === 0) return setShotErr("Pick at least one line.");
+    setShotErr("");
+    setSavingShot(true);
+    const payload = {
+      label: editingShot.label?.trim() || null,
+      on_date: editingShot.on_date,
+      at_time: editingShot.at_time,
+      action: editingShot.action,
+      phone_ids: editingShot.phone_ids,
+      updated_at: new Date().toISOString(),
+    };
+    if (editingShot.id) {
+      // editing re-arms a fired one-shot
+      const { data } = await supabase.from("rc_oneshots").update({ ...payload, fired_at: null }).eq("id", editingShot.id).select().single();
+      if (data) setShots(ss => ss.map(s => s.id === data.id ? data : s));
+    } else {
+      const { data } = await supabase.from("rc_oneshots").insert({ ...payload, enabled: true }).select().single();
+      if (data) setShots(ss => [...ss, data]);
+    }
+    setSavingShot(false);
+    setEditingShot(null);
   };
 
   return (
@@ -265,6 +324,122 @@ function RCScheduler() {
           </div>
         </div>
       ))}
+
+      {/* One-time fail-safes */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 22, marginBottom: 10 }}>
+        <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: "0.5px", display: "flex", alignItems: "center", gap: 6 }}>
+          <Clock size={12} /> One-time fail-safes
+        </div>
+        {!editingShot && (
+          <button className="btn btn-ghost" style={{ fontSize: 11, padding: "5px 10px" }} onClick={() => { setShotErr(""); setEditingShot(blankShot()); }}>
+            <Plus size={12} /> Add
+          </button>
+        )}
+      </div>
+      <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 10, lineHeight: 1.5 }}>
+        Fires once at a specific date &amp; time — even while the automatic scheduler is off. Use it to force a line On or Off as a safety net.
+      </div>
+
+      {editingShot && (
+        <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+          <div className="form-group">
+            <label className="form-label">Name (optional)</label>
+            <input className="input" placeholder="e.g. Make sure it's off tonight" value={editingShot.label}
+              onChange={e => setEditingShot({ ...editingShot, label: e.target.value })} />
+          </div>
+
+          <div style={{ display: "flex", gap: 12 }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Date</label>
+              <input className="input" type="date" min={todayPT()} value={editingShot.on_date}
+                onChange={e => setEditingShot({ ...editingShot, on_date: e.target.value })} />
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Time</label>
+              <input className="input" type="time" value={editingShot.at_time}
+                onChange={e => setEditingShot({ ...editingShot, at_time: e.target.value })} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Action</label>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" className={`filter-chip${editingShot.action === "off" ? " active" : ""}`}
+                onClick={() => setEditingShot({ ...editingShot, action: "off" })}>Turn Off (Normal)</button>
+              <button type="button" className={`filter-chip${editingShot.action === "on" ? " active" : ""}`}
+                onClick={() => setEditingShot({ ...editingShot, action: "on" })}>Turn On (AI Forward)</button>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Lines</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button type="button" className={`filter-chip${allShotLines ? " active" : ""}`} onClick={toggleAllShotLines}>All</button>
+              {LINES.map(l => (
+                <button key={l.id} type="button" className={`filter-chip${editingShot.phone_ids.includes(l.id) ? " active" : ""}`}
+                  onClick={() => toggleShotLine(l.id)}>{l.label}</button>
+              ))}
+            </div>
+          </div>
+
+          {shotErr && <div className="mono" style={{ fontSize: 11, color: "var(--red)", marginBottom: 10 }}>{shotErr}</div>}
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => { setEditingShot(null); setShotErr(""); }}>
+              <X size={13} /> Cancel
+            </button>
+            <button className="btn btn-blue" style={{ fontSize: 12 }} onClick={saveShot} disabled={savingShot}>
+              {savingShot ? <Loader size={13} className="spin" /> : <Check size={13} />} Save
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!loading && shots.length === 0 && !editingShot && (
+        <div className="card-el" style={{ padding: "14px 16px" }}>
+          <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>No one-time actions set.</div>
+        </div>
+      )}
+      {shots.map(shot => {
+        const done = !!shot.fired_at;
+        const actColor = shot.action === "on" ? "var(--green)" : "var(--text-sec)";
+        return (
+          <div key={shot.id} className="card" style={{ padding: "12px 16px", marginBottom: 8, opacity: shot.enabled && !done ? 1 : 0.55 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
+                  {fmtDate(shot.on_date)} · {fmt12((shot.at_time || "").slice(0, 5))}
+                  <span className="tag" style={{ color: actColor, background: `${actColor}18`, border: `1px solid ${actColor}30` }}>
+                    {shot.action === "on" ? "Turn On" : "Turn Off"}
+                  </span>
+                </div>
+                {shot.label && <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 4 }}>{shot.label}</div>}
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                  {LINES.filter(l => (shot.phone_ids || []).includes(l.id)).map(l => (
+                    <span key={l.id} className="tag" style={{ color: "var(--blue)", background: "var(--blue-dim)", border: "1px solid rgba(0,119,204,0.2)" }}>{l.label}</span>
+                  ))}
+                  <span className="mono" style={{ fontSize: 10, color: done ? "var(--green)" : "var(--text-dim)", marginLeft: 2 }}>
+                    {done ? "✓ Done" : shot.enabled ? "Scheduled" : "Paused"}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                {!done && (
+                  <button className="btn-icon" title={shot.enabled ? "Pause" : "Enable"} onClick={() => toggleShotEnabled(shot)}>
+                    <Power size={14} color={shot.enabled ? "var(--green)" : "var(--text-dim)"} />
+                  </button>
+                )}
+                <button className="btn-icon" title={done ? "Re-arm with new date/time" : "Edit"} onClick={() => { setShotErr(""); setEditingShot({ id: shot.id, label: shot.label || "", on_date: shot.on_date, at_time: (shot.at_time || "20:00").slice(0, 5), action: shot.action, phone_ids: shot.phone_ids || [] }); }}>
+                  <Pencil size={13} />
+                </button>
+                <button className="btn-icon delete" title="Delete" onClick={() => removeShot(shot)}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
