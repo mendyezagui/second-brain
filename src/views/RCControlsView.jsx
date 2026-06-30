@@ -444,7 +444,7 @@ export function RCControlsView() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState({});
   const [globalBusy, setGlobalBusy] = useState(false);
-  const [logs, setLogs] = useState([]);
+  const [history, setHistory] = useState([]);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -452,50 +452,55 @@ export function RCControlsView() {
     return () => { mounted.current = false; };
   }, []);
 
-  const log = (msg, type) => {
-    const time = new Date().toLocaleTimeString();
-    setLogs(prev => [{ msg, type, time, id: Date.now() + Math.random() }, ...prev].slice(0, 50));
+  // Client-only transient note (e.g. a network error) shown at the top of the feed.
+  const noteErr = (msg) => setHistory(prev => [
+    { id: "e" + Date.now() + Math.random(), at: new Date().toISOString(), source: "error", result: "error", message: msg, _transient: true },
+    ...prev,
+  ]);
+
+  // Persistent activity feed (manual + automatic switches), last 48h.
+  const loadHistory = async () => {
+    if (!supabase) return;
+    const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+    const { data } = await supabase.from("rc_activity").select("*").gte("at", since).order("at", { ascending: false }).limit(300);
+    if (mounted.current && data) setHistory(prev => [...prev.filter(r => r._transient), ...data]);
   };
 
   const fetchStatus = async () => {
     try {
-      log("Checking current state...", "info");
       const resp = await fetch(`${API_BASE}?action=status`, { headers: await authHeaders() });
       const data = await resp.json();
       if (!mounted.current) return;
-      if (data && data.state) {
-        setState(data);
-        log(`State: ${data.state.toUpperCase()}`, "success");
-      } else if (data && data.error) {
-        log(`API error: ${data.error}`, "error");
-      } else {
-        log("Unexpected response format", "error");
-      }
+      if (data && data.state) setState(data);
+      else if (data && data.error) noteErr(`Status error: ${data.error}`);
     } catch (e) {
-      if (mounted.current) log(`Error: ${e.message}`, "error");
+      if (mounted.current) noteErr(`Error: ${e.message}`);
     } finally {
       if (mounted.current) setLoading(false);
     }
   };
 
-  useEffect(() => { fetchStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Refresh status + feed on mount, then poll every 60s (keeps the indicator
+  // live as the scheduler flips lines, and surfaces automatic switches).
+  useEffect(() => {
+    fetchStatus();
+    loadHistory();
+    const id = setInterval(() => { fetchStatus(); loadHistory(); }, 60000);
+    return () => clearInterval(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doLine = async (phoneId, action) => {
     if (busy[phoneId] || globalBusy) return;
     setBusy(b => ({ ...b, [phoneId]: true }));
-    const info = LINE_NAMES[phoneId] || { label: phoneId };
-    log(`${info.label} â switching ${action.toUpperCase()}...`, "info");
     try {
       const resp = await fetch(`${API_BASE}?action=${action}&phoneId=${phoneId}`, { headers: await authHeaders() });
       const data = await resp.json();
       if (!mounted.current) return;
-      (data.results || []).forEach(r => log(`${r.phone} â ${r.target || "unknown"}: ${r.status}`, r.status === "success" ? "success" : "error"));
+      if (data.error) noteErr(`Error: ${data.error}`);
       if (data.currentState) setState(data.currentState);
+      await loadHistory();
     } catch (e) {
-      if (mounted.current) {
-        log(`Error: ${e.message}`, "error");
-        await fetchStatus();
-      }
+      if (mounted.current) { noteErr(`Error: ${e.message}`); await fetchStatus(); }
     } finally {
       if (mounted.current) setBusy(b => ({ ...b, [phoneId]: false }));
     }
@@ -504,27 +509,24 @@ export function RCControlsView() {
   const doAll = async (action) => {
     if (globalBusy) return;
     setGlobalBusy(true);
-    log(`Switching ALL to ${action.toUpperCase()}...`, "info");
     try {
       const resp = await fetch(`${API_BASE}?action=${action}`, { headers: await authHeaders() });
       const data = await resp.json();
       if (!mounted.current) return;
-      (data.results || []).forEach(r => log(`${r.phone} â ${r.target || "unknown"}: ${r.status}`, r.status === "success" ? "success" : "error"));
+      if (data.error) noteErr(`Error: ${data.error}`);
       if (data.currentState) setState(data.currentState);
-      const allOk = data.results?.every(r => r.status === "success");
-      log(allOk ? `All lines switched to ${action.toUpperCase()}` : "Some lines failed â check log", allOk ? "success" : "error");
+      await loadHistory();
     } catch (e) {
-      if (mounted.current) {
-        log(`Error: ${e.message}`, "error");
-        await fetchStatus();
-      }
+      if (mounted.current) { noteErr(`Error: ${e.message}`); await fetchStatus(); }
     } finally {
       if (mounted.current) setGlobalBusy(false);
     }
   };
 
-  const dotColor = !state ? "var(--blue)" : state.state === "on" ? "var(--green)" : state.state === "off" ? "var(--text-dim)" : "var(--amber)";
+  const dotColor = !state ? "var(--blue)" : state.state === "on" ? "var(--green)" : state.state === "off" ? "var(--text-sec)" : "var(--amber)";
   const dotShadow = !state ? "" : state.state === "on" ? "0 0 8px rgba(5,150,105,0.4)" : state.state === "mixed" ? "0 0 8px rgba(217,119,6,0.4)" : "";
+  const statusWord = loading ? "Checking…" : !state ? "—" : state.state === "on" ? "ON" : state.state === "off" ? "OFF" : "MIXED";
+  const statusBg = !state || loading ? "var(--bg-card)" : state.state === "on" ? "var(--green-dim)" : state.state === "mixed" ? "var(--amber-dim)" : "var(--bg-el)";
 
   return (
     <div style={{ padding: 28, maxWidth: 560, margin: "0 auto" }}>
@@ -539,26 +541,25 @@ export function RCControlsView() {
       </div>
 
       {/* Status bar */}
-      <div className="card" style={{ padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 14, height: 14, borderRadius: "50%", background: dotColor, boxShadow: dotShadow, flexShrink: 0, animation: loading ? "blink 1.2s ease-in-out infinite" : "none" }} />
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>
-            {loading ? "Checking..." : state?.state === "on" ? "AI Forwarding is ON" : state?.state === "off" ? "AI Forwarding is OFF" : "Mixed State"}
-          </div>
+      <div className="card" style={{ padding: "18px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, background: statusBg, borderLeft: `4px solid ${dotColor}` }}>
+        <div style={{ width: 16, height: 16, borderRadius: "50%", background: dotColor, boxShadow: dotShadow, flexShrink: 0, animation: loading ? "blink 1.2s ease-in-out infinite" : "none" }} />
+        <div style={{ flex: 1 }}>
+          <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: "0.5px" }}>AI Forwarding is</div>
+          <div className="display" style={{ fontSize: 26, fontWeight: 800, color: dotColor, lineHeight: 1.15 }}>{statusWord}</div>
           <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginTop: 2 }}>
-            {loading ? "Connecting to RingCentral" : state?.state === "on" ? "All calls routing to AI Forward queues" : state?.state === "off" ? "All calls routing to normal queues" : "Lines routed independently"}
+            {loading ? "Connecting to RingCentral" : state?.state === "on" ? "All calls routing to AI Forward queues" : state?.state === "off" ? "All calls routing to normal queues" : "Lines routed independently — see Per Line below"}
           </div>
         </div>
       </div>
 
       {/* All lines buttons */}
-      <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>All Lines</div>
+      <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>Switch All Lines</div>
       <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
         <button className="btn btn-blue" style={{ flex: 1, justifyContent: "center", background: "var(--green)", fontSize: 13 }} onClick={() => doAll("on")} disabled={globalBusy || loading}>
-          {globalBusy ? <Loader size={13} className="spin" /> : null} All ON
+          {globalBusy ? <Loader size={13} className="spin" /> : null} Turn All On
         </button>
         <button className="btn btn-ghost" style={{ flex: 1, justifyContent: "center", fontSize: 13 }} onClick={() => doAll("off")} disabled={globalBusy || loading}>
-          {globalBusy ? <Loader size={13} className="spin" /> : null} All OFF
+          {globalBusy ? <Loader size={13} className="spin" /> : null} Turn All Off
         </button>
       </div>
 
@@ -578,9 +579,16 @@ export function RCControlsView() {
                 <Phone size={14} color="var(--text-sec)" />
                 <span style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{d.phone}</span>
               </div>
-              <span className="tag" style={{ color: statusColor, background: `${statusColor}15`, border: `1px solid ${statusColor}30` }}>
-                {isBusy ? "Switching..." : routeName}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {!isBusy && (
+                  <span className="tag" style={{ fontWeight: 700, color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40` }}>
+                    {d.status === "on" ? "ON" : d.status === "off" ? "OFF" : "?"}
+                  </span>
+                )}
+                <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                  {isBusy ? "Switching…" : routeName}
+                </span>
+              </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button
@@ -603,15 +611,24 @@ export function RCControlsView() {
       {/* Scheduler */}
       <RCScheduler />
 
-      {/* Activity log */}
-      <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8, marginTop: 20, textTransform: "uppercase", letterSpacing: "0.5px" }}>Activity Log</div>
-      <div className="card-el" style={{ padding: "10px 14px", maxHeight: 140, overflowY: "auto" }}>
-        {logs.length === 0 && <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>No activity yet</div>}
-        {logs.map(l => (
-          <div key={l.id} className="mono" style={{ fontSize: 11, lineHeight: 1.8, color: l.type === "success" ? "var(--green)" : l.type === "error" ? "var(--red)" : "var(--blue)" }}>
-            [{l.time}] {l.msg}
-          </div>
-        ))}
+      {/* Activity log (persistent, last 24h+) */}
+      <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8, marginTop: 20, textTransform: "uppercase", letterSpacing: "0.5px" }}>Activity Log · last 48h</div>
+      <div className="card-el" style={{ padding: "10px 14px", maxHeight: 240, overflowY: "auto" }}>
+        {history.length === 0 && <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>No activity in the last 48 hours</div>}
+        {history.map(l => {
+          const time = new Date(l.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+          const bad = l.result === "error" || l.result === "failed";
+          const color = bad ? "var(--red)" : l.result === "success" ? "var(--green)" : "var(--text-sec)";
+          const srcTag = { manual: "Manual", recurring: "Schedule", trigger: "Fail-safe", auto: "Auto", error: "Error" }[l.source] || l.source || "";
+          const body = l._transient
+            ? l.message
+            : `${srcTag ? srcTag + " · " : ""}${l.line || ""}${l.action ? " → " + l.action.toUpperCase() : ""}${l.actor && l.actor !== "scheduler" ? " · " + l.actor : ""}`;
+          return (
+            <div key={l.id} className="mono" style={{ fontSize: 11, lineHeight: 1.75, color }}>
+              [{time}] {body}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
