@@ -104,6 +104,17 @@ function textOf(message) {
   return message?.data?.text || message?.data?.message || message?.text || "";
 }
 
+function sourceHint(message) {
+  const lowerTags = tags(message).map(tag => String(tag).toLowerCase());
+  const meta = metadata(message);
+  if (meta.source === "retell_via_n8n") return "metadata:source=retell_via_n8n";
+  if (meta.n8n_workflow) return "metadata:n8n_workflow";
+  if (lowerTags.includes("n8n")) return "tag:n8n";
+  if (lowerTags.includes("voiceai")) return "tag:voiceai";
+  if (message.sender === "app_system" && message.receiverType === "group") return "inferred:app_system_group_message";
+  return "";
+}
+
 function normalize(message) {
   const senderEntity = message?.data?.entities?.sender?.entity;
   const receiverEntity = message?.data?.entities?.receiver?.entity;
@@ -120,16 +131,14 @@ function normalize(message) {
     text: textOf(message),
     metadata: metadata(message),
     tags: tags(message),
+    sourceHint: sourceHint(message),
     sentAt: Number(message.sentAt || 0),
     updatedAt: Number(message.updatedAt || 0),
   };
 }
 
 function isN8nSystemGroupMessage(message) {
-  if (message.receiverType !== "group" || message.sender !== "app_system") return false;
-  const lowerTags = tags(message).map(tag => String(tag).toLowerCase());
-  const meta = metadata(message);
-  return meta.source === "retell_via_n8n" || Boolean(meta.n8n_workflow) || lowerTags.includes("n8n") || lowerTags.includes("voiceai");
+  return message.receiverType === "group" && message.sender === "app_system" && message.category === "message";
 }
 
 async function listMessages(params) {
@@ -227,6 +236,8 @@ async function runAudit(dateKey, triggeredBy) {
     sourceWindow: { fromTimestamp, toTimestamp },
     summary: {
       n8nGroupMessages: systemMessages.length,
+      explicitlyTaggedN8nMessages: systemMessages.filter(msg => !msg.sourceHint.startsWith("inferred:")).length,
+      inferredSystemGroupMessages: systemMessages.filter(msg => msg.sourceHint.startsWith("inferred:")).length,
       uniqueGroups: groups.length,
       likelyInfluencedGroups: groups.filter(g => g.confidence.score >= 65).length,
       possibleInfluencedGroups: groups.filter(g => g.confidence.score >= 45).length,

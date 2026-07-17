@@ -366,6 +366,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                   <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{new Date(item.generatedAt).toLocaleString()}</div>
                   <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:6 }}>
                     <Tag label={`${item.summary?.n8nGroupMessages || 0} sends`}/>
+                    {(item.summary?.inferredSystemGroupMessages || 0) > 0 && <Tag label={`${item.summary.inferredSystemGroupMessages} inferred`}/>}
                     <Tag label={`${item.summary?.uniqueGroups || 0} groups`}/>
                     <Tag label={`${item.summary?.dailyConfidenceScore || 0}/100`}/>
                   </div>
@@ -386,6 +387,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                   </div>
                   <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
                     <Tag label={`${auditSnapshot.summary?.n8nGroupMessages || 0} n8n sends`}/>
+                    {(auditSnapshot.summary?.inferredSystemGroupMessages || 0) > 0 && <Tag label={`${auditSnapshot.summary.inferredSystemGroupMessages} inferred app_system`}/>}
                     <Tag label={`${auditSnapshot.summary?.uniqueGroups || 0} groups`}/>
                     <Tag label={`${auditSnapshot.summary?.likelyInfluencedGroups || 0} likely`}/>
                     <Tag label={`${auditSnapshot.summary?.dailyConfidenceScore || 0}/100 confidence`}/>
@@ -423,6 +425,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                               </div>
                               <div style={{ fontSize:13, lineHeight:1.45, whiteSpace:"pre-wrap", overflowWrap:"anywhere", marginTop:5 }}>{message.text || "(no text)"}</div>
                               <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:6 }}>{message.sender} → {message.receiver}</div>
+                              {message.sourceHint && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:4 }}>source: {message.sourceHint}</div>}
                             </div>
                           );
                         })}
