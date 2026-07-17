@@ -91,6 +91,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   const [selectedAuditPath, setSelectedAuditPath] = useState("");
   const [auditSnapshot, setAuditSnapshot] = useState(null);
   const [auditDate, setAuditDate] = useState(todayPacific());
+  const [auditNotice, setAuditNotice] = useState("");
   const transcriptRef = useRef(null);
   const settings = environmentSettings[environment] || DEFAULT_SETTINGS.sandbox;
   const setSettings = (updater) => {
@@ -112,6 +113,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   };
 
   const auditCall = async (body) => {
+    if (!session?.access_token) throw new Error("You need to be signed in before running CometChat audit pulls.");
     const resp = await fetch("/api/cometchat-audit", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
@@ -241,6 +243,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
     if (!path) return;
     setAuditLoading(true);
     setError("");
+    setAuditNotice("");
     try {
       const data = await auditCall({ action:"getSnapshot", path });
       setAuditSnapshot(data);
@@ -255,12 +258,17 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   const runAuditNow = async () => {
     setAuditRunning(true);
     setError("");
+    setAuditNotice("");
     try {
       const data = await auditCall({ action:"runDailyAudit", date:auditDate, force:true });
       const snapshot = data.snapshot;
+      if (!snapshot) throw new Error("CometChat audit completed but did not return a snapshot.");
       setAuditSnapshot(snapshot);
       setSelectedAuditPath(snapshot.storagePath || "");
       await loadAuditSnapshots();
+      const sends = snapshot.summary?.n8nGroupMessages || 0;
+      const groups = snapshot.summary?.uniqueGroups || 0;
+      setAuditNotice(`Pull complete for ${snapshot.date}. Saved ${snapshot.storagePath}. Found ${sends} n8n group send${sends === 1 ? "" : "s"} across ${groups} group${groups === 1 ? "" : "s"}.`);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -335,8 +343,13 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
               <button className="btn btn-blue" onClick={runAuditNow} disabled={auditRunning} style={{ width:"100%", justifyContent:"center" }}>
                 {auditRunning ? <Loader size={13} className="spin"/> : <Calendar size={13}/>}Pull Day Now
               </button>
+              {auditNotice && (
+                <div style={{ marginTop:10, padding:"9px 10px", borderRadius:8, background:"var(--green-dim)", color:"var(--green)", fontSize:12, lineHeight:1.45, overflowWrap:"anywhere" }}>
+                  {auditNotice}
+                </div>
+              )}
               <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", lineHeight:1.6, marginTop:10 }}>
-                Scheduled pull: 4:45 PM America/Los_Angeles. Historical snapshot files are append-only.
+                Daily schedule target: 4:45 PM America/Los_Angeles. Historical snapshot files are append-only.
               </div>
             </div>
 
