@@ -472,15 +472,16 @@ export const NAV = [
   {id:"multi_llm",icon:MessageSquare,label:"AI Playground"},
   {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
-  {id:"_ai_controls",icon:Settings,label:"AI Controls",group:true,children:["voitra_gate","rc_controls","vantaca_controls"]},
+  {id:"_ai_controls",icon:Settings,label:"AI Controls",group:true,children:["voitra_gate","rc_controls","vantaca_controls","cometchat","cometchat_sandbox","cometchat_production"]},
   {id:"voitra_gate",icon:Mic,label:"Voitra Agent Control",parent:"_ai_controls"},
   {id:"rc_controls",icon:Phone,label:"RC Controls",parent:"_ai_controls"},
   {id:"vantaca_controls",icon:Building2,label:"Vantaca Controls",parent:"_ai_controls"},
+  {id:"cometchat",icon:MessageSquare,label:"Comet Chat",parent:"_ai_controls"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
 export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
-  const [collGroups, setCollGroups] = useState({ _fin: true, _ai_controls: true });
+  const [collGroups, setCollGroups] = useState({ _fin: true, _ai_controls: false });
   return (<div style={{ width:collapsed?60:210, background:"var(--bg-card)", borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 8px", gap:2, transition:"width .25s", flexShrink:0 }}>
     <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 6px 18px", cursor:"pointer" }} onClick={()=>setCollapsed(!collapsed)}>
       <div style={{ width:32, height:32, borderRadius:8, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -514,7 +515,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"cometchat",icon:MessageSquare,label:"Comet Chat"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>

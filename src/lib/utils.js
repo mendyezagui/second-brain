@@ -20,7 +20,7 @@ export const parseAppHash = () => {
     if (masterView) return { view: masterView, record: null, focus: { type, id: numId } };
     return { view:"record", record:{ type, id: numId }, focus:null };
   }
-  const valid = ["dashboard","brief","orchestrator","associates","mstack","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","vantaca_controls","admin"];
+  const valid = ["dashboard","brief","orchestrator","associates","mstack","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","inbox","gcal","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","vantaca_controls","cometchat","cometchat_sandbox","cometchat_production","admin"];
   return { view:valid.includes(head) ? head : "dashboard", record:null, focus:null };
 };
 
