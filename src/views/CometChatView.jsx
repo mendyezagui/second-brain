@@ -366,6 +366,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                   <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{new Date(item.generatedAt).toLocaleString()}</div>
                   <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:6 }}>
                     <Tag label={`${item.summary?.n8nGroupMessages || 0} sends`}/>
+                    {(item.summary?.explicitlyTaggedN8nMessages || 0) > 0 && <Tag label={`${item.summary.explicitlyTaggedN8nMessages} confirmed`}/>}
                     {(item.summary?.inferredSystemGroupMessages || 0) > 0 && <Tag label={`${item.summary.inferredSystemGroupMessages} inferred`}/>}
                     <Tag label={`${item.summary?.uniqueGroups || 0} groups`}/>
                     <Tag label={`${item.summary?.dailyConfidenceScore || 0}/100`}/>
@@ -387,10 +388,14 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                   </div>
                   <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
                     <Tag label={`${auditSnapshot.summary?.n8nGroupMessages || 0} n8n sends`}/>
+                    {(auditSnapshot.summary?.explicitlyTaggedN8nMessages || 0) > 0 && <Tag label={`${auditSnapshot.summary.explicitlyTaggedN8nMessages} confirmed n8n`}/>}
                     {(auditSnapshot.summary?.inferredSystemGroupMessages || 0) > 0 && <Tag label={`${auditSnapshot.summary.inferredSystemGroupMessages} inferred app_system`}/>}
                     <Tag label={`${auditSnapshot.summary?.uniqueGroups || 0} groups`}/>
                     <Tag label={`${auditSnapshot.summary?.likelyInfluencedGroups || 0} likely`}/>
                     <Tag label={`${auditSnapshot.summary?.dailyConfidenceScore || 0}/100 confidence`}/>
+                  </div>
+                  <div style={{ flexBasis:"100%", fontSize:11, color:"var(--text-sec)", lineHeight:1.45 }}>
+                    Confirmed n8n messages have source/tags from the workflow. Inferred messages are app_system group messages with no explicit n8n marker.
                   </div>
                 </div>
                 <div style={{ padding:16, display:"flex", flexDirection:"column", gap:12, maxHeight:"72vh", overflowY:"auto" }}>

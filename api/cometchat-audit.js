@@ -108,9 +108,11 @@ function sourceHint(message) {
   const lowerTags = tags(message).map(tag => String(tag).toLowerCase());
   const meta = metadata(message);
   if (meta.source === "retell_via_n8n") return "metadata:source=retell_via_n8n";
+  if (meta.source === "retell_n8n") return "metadata:source=retell_n8n";
+  if (String(meta.source || "").toLowerCase().includes("n8n")) return `metadata:source=${meta.source}`;
   if (meta.n8n_workflow) return "metadata:n8n_workflow";
-  if (lowerTags.includes("n8n")) return "tag:n8n";
-  if (lowerTags.includes("voiceai")) return "tag:voiceai";
+  if (lowerTags.some(tag => tag.includes("n8n"))) return "tag:n8n";
+  if (lowerTags.some(tag => tag.includes("voiceai") || tag.includes("voice-ai"))) return "tag:voiceai";
   if (message.sender === "app_system" && message.receiverType === "group") return "inferred:app_system_group_message";
   return "";
 }
