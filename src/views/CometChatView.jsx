@@ -139,6 +139,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   const [auditSnapshot, setAuditSnapshot] = useState(null);
   const [auditDate, setAuditDate] = useState(todayPacific());
   const [auditNotice, setAuditNotice] = useState("");
+  const [openAuditGroupId, setOpenAuditGroupId] = useState("");
   const transcriptRef = useRef(null);
   const settings = environmentSettings[environment] || DEFAULT_SETTINGS.sandbox;
   const setSettings = (updater) => {
@@ -295,6 +296,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
       const data = await auditCall({ action:"getSnapshot", path });
       setAuditSnapshot(data);
       setSelectedAuditPath(path);
+      setOpenAuditGroupId("");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -312,6 +314,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
       if (!snapshot) throw new Error("CometChat audit completed but did not return a snapshot.");
       setAuditSnapshot(snapshot);
       setSelectedAuditPath(snapshot.storagePath || "");
+      setOpenAuditGroupId("");
       await loadAuditSnapshots();
       const sends = snapshot.summary?.n8nGroupMessages || 0;
       const groups = snapshot.summary?.uniqueGroups || 0;
@@ -340,7 +343,61 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
     { id:"driver", label:copy.driverButton, uid:settings.driverUid, note:environment === "sandbox" ? "Driver/test user" : "Production user" },
   ];
   const currentRollup = auditSnapshot ? snapshotRollup(auditSnapshot) : null;
-  const reviewGroups = auditSnapshot ? (auditSnapshot.groups || []).filter(group => groupReviewFlags(group).some(flag => flag !== "Likely influenced")) : [];
+  const auditGroups = auditSnapshot?.groups || [];
+  const reviewGroups = auditGroups.filter(group => groupReviewFlags(group).some(flag => flag !== "Likely influenced"));
+  const confirmedGroups = auditGroups.filter(group => !groupReviewFlags(group).some(flag => flag !== "Likely influenced"));
+  const renderAuditGroupDetail = (group) => (
+    <div style={{ marginTop:12, display:"grid", gap:10 }}>
+      <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.6 }}>
+        {(group.confidence?.reasons || []).join(" ")}
+        {group.confidence?.counts && (
+          <span> Prior hour: {group.confidence.counts.priorHourNonSystemMessages || 0}. 30m replies: {group.confidence.counts.post30MinuteNonSystemMessages || 0}. 2h replies: {group.confidence.counts.post2HourNonSystemMessages || 0}. Human senders: {group.confidence.counts.uniquePostSendHumanSenders || 0}.</span>
+        )}
+      </div>
+      {(group.allMessages || []).map(message => {
+        const isSystem = (group.systemMessages || []).some(system => system.id === message.id);
+        return (
+          <div key={message.id} style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:isSystem ? "var(--blue-dim)" : "#fff" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+              <div style={{ fontSize:12, fontWeight:800 }}>{isSystem ? "Original n8n message" : (message.senderName || message.sender)}</div>
+              <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{getMessageDateTime(message.sentAt)} · #{message.id}</div>
+            </div>
+            <div style={{ fontSize:13, lineHeight:1.45, whiteSpace:"pre-wrap", overflowWrap:"anywhere", marginTop:5 }}>{message.text || "(no text)"}</div>
+            <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:6 }}>{message.sender} → {message.receiver}</div>
+            {isSystem && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:4 }}>type: {sourceTypeFromMessage(message)}</div>}
+            {message.sourceHint && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:4 }}>source: {message.sourceHint}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+  const renderAuditGroupRow = (group, tone = "normal") => {
+    const flags = groupReviewFlags(group);
+    const isOpen = openAuditGroupId === group.identifier;
+    return (
+      <div key={group.identifier} className="card-el" style={{ border:"1px solid var(--border)", padding:0, background:tone === "review" ? "#fff" : "var(--bg-el)", overflow:"hidden" }}>
+        <button onClick={()=>setOpenAuditGroupId(isOpen ? "" : group.identifier)} style={{ width:"100%", border:0, background:"transparent", padding:12, cursor:"pointer", textAlign:"left" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, flexWrap:"wrap" }}>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:14, fontWeight:850, overflowWrap:"anywhere" }}>{group.groupName || group.groupGuid}</div>
+              <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{group.identifier}</div>
+            </div>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
+              <Tag label={isOpen ? "Open" : "Closed"}/>
+              <Tag label={`${group.confidence?.score || 0}/100`}/>
+              <Tag label={`${group.systemMessages?.length || 0} sends`}/>
+              <Tag label={`${group.allMessages?.length || 0} messages`}/>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:9 }}>
+            {Object.entries(group.sourceTypes || sourceBreakdownFrom(group.systemMessages || [])).map(([label, count]) => <Tag key={label} label={`${label}: ${count}`}/>)}
+            {flags.map(flag => <Tag key={flag} label={flag}/>)}
+          </div>
+        </button>
+        {isOpen && <div style={{ padding:"0 12px 12px" }}>{renderAuditGroupDetail(group)}</div>}
+      </div>
+    );
+  };
 
   return (
     <div style={{ padding:24, maxWidth:1280, margin:"0 auto" }}>
@@ -493,72 +550,37 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
 
                     <div className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"#fff" }}>
                       <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 }}>
-                        <div style={{ fontSize:14, fontWeight:800 }}>Needs Review</div>
+                        <div>
+                          <div style={{ fontSize:14, fontWeight:800 }}>Needs Review</div>
+                          <div style={{ fontSize:11, color:"var(--text-sec)", marginTop:3 }}>Collapsed by default. Open one group at a time.</div>
+                        </div>
                         <Tag label={`${reviewGroups.length} groups`}/>
                       </div>
                       {reviewGroups.length === 0 ? (
                         <div style={{ fontSize:12, color:"var(--text-sec)" }}>No review flags beyond normal influence scoring.</div>
                       ) : (
                         <div style={{ display:"grid", gap:8 }}>
-                          {reviewGroups.slice(0, 8).map(group => (
-                            <div key={`review-${group.identifier}`} style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:"var(--bg-el)" }}>
-                              <div style={{ display:"flex", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
-                                <div style={{ fontSize:12, fontWeight:800 }}>{group.groupName || group.groupGuid}</div>
-                                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{group.confidence?.score || 0}/100</div>
-                              </div>
-                              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:6 }}>
-                                {groupReviewFlags(group).filter(flag => flag !== "Likely influenced").map(flag => <Tag key={flag} label={flag}/>)}
-                              </div>
-                            </div>
-                          ))}
+                          {reviewGroups.map(group => renderAuditGroupRow(group, "review"))}
                         </div>
                       )}
                     </div>
 
-                    {(auditSnapshot.groups || []).map(group => (
-                    <div key={group.identifier} className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"var(--bg-el)" }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, flexWrap:"wrap" }}>
+                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"#fff" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 }}>
                         <div>
-                          <div style={{ fontSize:15, fontWeight:800 }}>{group.groupName || group.groupGuid}</div>
-                          <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{group.identifier}</div>
+                          <div style={{ fontSize:14, fontWeight:800 }}>Confirmed</div>
+                          <div style={{ fontSize:11, color:"var(--text-sec)", marginTop:3 }}>Groups without extra review flags.</div>
                         </div>
-                        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                          <Tag label={`${group.confidence?.label || "Unscored"}`}/>
-                          <Tag label={`${group.confidence?.score || 0}/100`}/>
-                          <Tag label={`${group.systemMessages?.length || 0} system sends`}/>
-                          <Tag label={`${group.allMessages?.length || 0} day messages`}/>
+                        <Tag label={`${confirmedGroups.length} groups`}/>
+                      </div>
+                      {confirmedGroups.length === 0 ? (
+                        <div style={{ fontSize:12, color:"var(--text-sec)" }}>No confirmed groups in this snapshot.</div>
+                      ) : (
+                        <div style={{ display:"grid", gap:8 }}>
+                          {confirmedGroups.map(group => renderAuditGroupRow(group, "confirmed"))}
                         </div>
-                      </div>
-                      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:10 }}>
-                        {Object.entries(group.sourceTypes || sourceBreakdownFrom(group.systemMessages || [])).map(([label, count]) => <Tag key={label} label={`${label}: ${count}`}/>)}
-                        {groupReviewFlags(group).map(flag => <Tag key={flag} label={flag}/>)}
-                      </div>
-                      <div style={{ marginTop:10, fontSize:12, color:"var(--text-sec)", lineHeight:1.6 }}>
-                        {(group.confidence?.reasons || []).join(" ")}
-                        {group.confidence?.counts && (
-                          <span> Prior hour: {group.confidence.counts.priorHourNonSystemMessages || 0}. 30m replies: {group.confidence.counts.post30MinuteNonSystemMessages || 0}. 2h replies: {group.confidence.counts.post2HourNonSystemMessages || 0}. Human senders: {group.confidence.counts.uniquePostSendHumanSenders || 0}.</span>
-                        )}
-                      </div>
-
-                      <div style={{ marginTop:12, display:"grid", gridTemplateColumns:"minmax(0,1fr)", gap:8 }}>
-                        {(group.allMessages || []).map(message => {
-                          const isSystem = (group.systemMessages || []).some(system => system.id === message.id);
-                          return (
-                            <div key={message.id} style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:isSystem ? "var(--blue-dim)" : "#fff" }}>
-                              <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap" }}>
-                                <div style={{ fontSize:12, fontWeight:800 }}>{isSystem ? "Original n8n message" : (message.senderName || message.sender)}</div>
-                                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{getMessageDateTime(message.sentAt)} · #{message.id}</div>
-                              </div>
-                              <div style={{ fontSize:13, lineHeight:1.45, whiteSpace:"pre-wrap", overflowWrap:"anywhere", marginTop:5 }}>{message.text || "(no text)"}</div>
-                              <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:6 }}>{message.sender} → {message.receiver}</div>
-                              {isSystem && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:4 }}>type: {sourceTypeFromMessage(message)}</div>}
-                              {message.sourceHint && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:4 }}>source: {message.sourceHint}</div>}
-                            </div>
-                          );
-                        })}
-                      </div>
+                      )}
                     </div>
-                    ))}
                   </>
                   )}
                 </div>
