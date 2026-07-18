@@ -107,6 +107,7 @@ function textOf(message) {
 function sourceHint(message) {
   const lowerTags = tags(message).map(tag => String(tag).toLowerCase());
   const meta = metadata(message);
+  if (meta.source === "ringcentral_sms_to_cometchat" || lowerTags.includes("ringcentral-sms")) return "metadata:source=ringcentral_sms_to_cometchat";
   if (meta.source === "retell_via_n8n") return "metadata:source=retell_via_n8n";
   if (meta.source === "retell_n8n") return "metadata:source=retell_n8n";
   if (String(meta.source || "").toLowerCase().includes("n8n")) return `metadata:source=${meta.source}`;
@@ -117,10 +118,28 @@ function sourceHint(message) {
   return "";
 }
 
+function sourceTypeFrom(message) {
+  const meta = message.metadata || metadata(message);
+  const lowerTags = (message.tags || tags(message)).map(tag => String(tag).toLowerCase());
+  const source = String(meta.source || "").toLowerCase();
+  const eventType = String(meta.event_type || "").toLowerCase();
+  if (source === "ringcentral_sms_to_cometchat" || lowerTags.includes("ringcentral-sms") || eventType === "ringcentral_sms_bridge") {
+    return "RingCentral SMS redirect";
+  }
+  if (source === "retell_via_n8n" || source === "retell_n8n" || eventType === "call_end_followup" || lowerTags.includes("call-end-followup")) {
+    return "Retell call-end";
+  }
+  if (source === "second_brain" || source === "second-brain-cometchat-console" || lowerTags.some(tag => tag.includes("second-brain"))) {
+    return "Manual Second Brain test";
+  }
+  if (message.sender === "app_system" && message.receiverType === "group") return "Unknown app_system";
+  return "Other";
+}
+
 function normalize(message) {
   const senderEntity = message?.data?.entities?.sender?.entity;
   const receiverEntity = message?.data?.entities?.receiver?.entity;
-  return {
+  const normalized = {
     id: String(message.id),
     conversationId: message.conversationId || "",
     sender: message.sender || "",
@@ -137,6 +156,7 @@ function normalize(message) {
     sentAt: Number(message.sentAt || 0),
     updatedAt: Number(message.updatedAt || 0),
   };
+  return { ...normalized, sourceType: sourceTypeFrom(normalized) };
 }
 
 function isN8nSystemGroupMessage(message) {
@@ -197,8 +217,29 @@ function scoreGroup(systemMessages, allMessages) {
       post30MinuteNonSystemMessages: post30,
       post2HourNonSystemMessages: post120,
       postDayNonSystemMessages: postDay,
+      uniquePostSendHumanSenders: new Set(nonSystem.filter(m => systemMessages.some(trigger => m.sentAt > trigger.sentAt)).map(m => m.sender)).size,
     },
   };
+}
+
+function sourceBreakdown(systemMessages) {
+  return systemMessages.reduce((acc, message) => {
+    const key = message.sourceType || "Other";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function reviewFlags(sends, allMessages, confidence) {
+  const sourceTypes = new Set(sends.map(msg => msg.sourceType));
+  const flags = [];
+  if (sends.some(msg => msg.sourceType === "Unknown app_system")) flags.push("Unknown app_system source");
+  if (sourceTypes.has("RingCentral SMS redirect") && confidence.counts.postDayNonSystemMessages === 0) flags.push("SMS redirect, no app reply");
+  if (confidence.score >= 65) flags.push("Likely influenced");
+  if (confidence.counts.postDayNonSystemMessages > 0 && confidence.counts.post30MinuteNonSystemMessages === 0) flags.push("Late same-day reply");
+  if (confidence.counts.priorHourNonSystemMessages > 0) flags.push("Prior-hour activity");
+  if (allMessages.length === sends.length) flags.push("No human conversation");
+  return flags;
 }
 
 async function runAudit(dateKey, triggeredBy) {
@@ -217,16 +258,20 @@ async function runAudit(dateKey, triggeredBy) {
   const groups = [...byGroup.entries()].map(([groupGuid, sends]) => {
     const allMessages = messages.filter(msg => msg.receiver === groupGuid);
     const groupName = sends.find(msg => msg.receiverName)?.receiverName || groupGuid;
+    const confidence = scoreGroup(sends, allMessages);
     return {
       groupGuid,
       groupName,
       conversationId: allMessages.find(msg => msg.conversationId)?.conversationId || "",
       identifier: `${dateKey}:${groupGuid}:${sends.map(msg => msg.id).join("-")}`,
+      sourceTypes: sourceBreakdown(sends),
       systemMessages: sends,
       allMessages,
-      confidence: scoreGroup(sends, allMessages),
+      confidence,
+      reviewFlags: reviewFlags(sends, allMessages, confidence),
     };
   });
+  const needsReviewGroups = groups.filter(group => (group.reviewFlags || []).some(flag => flag !== "Likely influenced")).length;
 
   const snapshot = {
     version: 1,
@@ -240,9 +285,11 @@ async function runAudit(dateKey, triggeredBy) {
       n8nGroupMessages: systemMessages.length,
       explicitlyTaggedN8nMessages: systemMessages.filter(msg => !msg.sourceHint.startsWith("inferred:")).length,
       inferredSystemGroupMessages: systemMessages.filter(msg => msg.sourceHint.startsWith("inferred:")).length,
+      sourceBreakdown: sourceBreakdown(systemMessages),
       uniqueGroups: groups.length,
       likelyInfluencedGroups: groups.filter(g => g.confidence.score >= 65).length,
       possibleInfluencedGroups: groups.filter(g => g.confidence.score >= 45).length,
+      needsReviewGroups,
       dailyConfidenceScore: groups.length ? Math.round(groups.reduce((sum, g) => sum + g.confidence.score, 0) / groups.length) : 0,
     },
     groups,

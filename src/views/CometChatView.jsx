@@ -62,6 +62,53 @@ const getMessageTime = (message) => {
 };
 const getMessageDateTime = (stamp) => stamp ? new Date(Number(stamp) * 1000).toLocaleString([], { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" }) : "";
 const todayPacific = () => new Intl.DateTimeFormat("en-CA", { timeZone:"America/Los_Angeles", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date());
+const SOURCE_LABELS = ["Retell call-end", "RingCentral SMS redirect", "Manual Second Brain test", "Unknown app_system", "Other"];
+
+const sourceTypeFromMessage = (message = {}) => {
+  if (message.sourceType) return message.sourceType;
+  const meta = message.metadata || message.data?.metadata || {};
+  const tags = Array.isArray(message.tags) ? message.tags.map(tag => String(tag).toLowerCase()) : [];
+  const source = String(meta.source || "").toLowerCase();
+  const eventType = String(meta.event_type || "").toLowerCase();
+  if (source === "ringcentral_sms_to_cometchat" || tags.includes("ringcentral-sms") || eventType === "ringcentral_sms_bridge") return "RingCentral SMS redirect";
+  if (source === "retell_via_n8n" || source === "retell_n8n" || eventType === "call_end_followup" || tags.includes("call-end-followup")) return "Retell call-end";
+  if (source === "second_brain" || source === "second-brain-cometchat-console" || tags.some(tag => tag.includes("second-brain"))) return "Manual Second Brain test";
+  if (message.sender === "app_system" && message.receiverType === "group") return "Unknown app_system";
+  return "Other";
+};
+
+const sourceBreakdownFrom = (messages = []) => messages.reduce((acc, message) => {
+  const key = sourceTypeFromMessage(message);
+  acc[key] = (acc[key] || 0) + 1;
+  return acc;
+}, {});
+
+const groupReviewFlags = (group = {}) => {
+  if (Array.isArray(group.reviewFlags) && group.reviewFlags.length) return group.reviewFlags;
+  const sourceTypes = new Set((group.systemMessages || []).map(sourceTypeFromMessage));
+  const counts = group.confidence?.counts || {};
+  const flags = [];
+  if (sourceTypes.has("Unknown app_system")) flags.push("Unknown app_system source");
+  if (sourceTypes.has("RingCentral SMS redirect") && !counts.postDayNonSystemMessages) flags.push("SMS redirect, no app reply");
+  if ((group.confidence?.score || 0) >= 65) flags.push("Likely influenced");
+  if ((counts.postDayNonSystemMessages || 0) > 0 && !(counts.post30MinuteNonSystemMessages || 0)) flags.push("Late same-day reply");
+  if ((counts.priorHourNonSystemMessages || 0) > 0) flags.push("Prior-hour activity");
+  if ((group.allMessages || []).length === (group.systemMessages || []).length) flags.push("No human conversation");
+  return flags;
+};
+
+const snapshotRollup = (snapshot = {}) => {
+  const groups = snapshot.groups || [];
+  const systemMessages = groups.flatMap(group => group.systemMessages || []);
+  const sourceBreakdown = snapshot.summary?.sourceBreakdown || sourceBreakdownFrom(systemMessages);
+  const needsReview = snapshot.summary?.needsReviewGroups ?? groups.filter(group => groupReviewFlags(group).some(flag => flag !== "Likely influenced")).length;
+  return {
+    sourceBreakdown,
+    needsReview,
+    confirmed: snapshot.summary?.explicitlyTaggedN8nMessages || systemMessages.filter(msg => !(msg.sourceHint || "").startsWith("inferred:")).length,
+    inferred: snapshot.summary?.inferredSystemGroupMessages || systemMessages.filter(msg => (msg.sourceHint || "").startsWith("inferred:")).length,
+  };
+};
 
 export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   const [environment, setEnvironment] = useState(initialEnvironment);
@@ -292,6 +339,8 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
     { id:"dispatch", label:copy.dispatchButton || "Dispatch / RM Chat", uid:settings.dispatchUid, note:copy.dispatchNote || "Application-side dispatcher sender" },
     { id:"driver", label:copy.driverButton, uid:settings.driverUid, note:environment === "sandbox" ? "Driver/test user" : "Production user" },
   ];
+  const currentRollup = auditSnapshot ? snapshotRollup(auditSnapshot) : null;
+  const reviewGroups = auditSnapshot ? (auditSnapshot.groups || []).filter(group => groupReviewFlags(group).some(flag => flag !== "Likely influenced")) : [];
 
   return (
     <div style={{ padding:24, maxWidth:1280, margin:"0 auto" }}>
@@ -354,6 +403,29 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
             </div>
 
             <div className="card" style={{ padding:16 }}>
+              <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>Daily Rollup</div>
+              {auditSnapshots.length === 0 ? (
+                <div style={{ fontSize:12, color:"var(--text-sec)" }}>Pull a day to start the ongoing log.</div>
+              ) : (
+                <div style={{ display:"grid", gap:8 }}>
+                  {auditSnapshots.slice(0, 7).map(item => (
+                    <button key={`rollup-${item.path}`} className="card-el" onClick={()=>loadAuditSnapshot(item.path)} style={{ border:"1px solid var(--border)", padding:"9px 10px", background:selectedAuditPath === item.path ? "var(--blue-dim)" : "var(--bg-el)", cursor:"pointer", textAlign:"left" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"center" }}>
+                        <div style={{ fontSize:12, fontWeight:800 }}>{item.date}</div>
+                        <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{item.summary?.dailyConfidenceScore || 0}/100</div>
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:6, marginTop:7 }}>
+                        <Tag label={`${item.summary?.n8nGroupMessages || 0} sends`}/>
+                        <Tag label={`${item.summary?.uniqueGroups || 0} groups`}/>
+                        <Tag label={`${item.summary?.needsReviewGroups ?? 0} review`}/>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="card" style={{ padding:16 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, marginBottom:12 }}>
                 <div className="display" style={{ fontSize:15, fontWeight:700 }}>Snapshots</div>
                 <button className="btn btn-ghost" onClick={loadAuditSnapshots} disabled={auditLoading}><RefreshCw size={13} className={auditLoading ? "spin" : ""}/></button>
@@ -392,6 +464,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                     {(auditSnapshot.summary?.inferredSystemGroupMessages || 0) > 0 && <Tag label={`${auditSnapshot.summary.inferredSystemGroupMessages} inferred app_system`}/>}
                     <Tag label={`${auditSnapshot.summary?.uniqueGroups || 0} groups`}/>
                     <Tag label={`${auditSnapshot.summary?.likelyInfluencedGroups || 0} likely`}/>
+                    <Tag label={`${currentRollup?.needsReview || 0} review`}/>
                     <Tag label={`${auditSnapshot.summary?.dailyConfidenceScore || 0}/100 confidence`}/>
                   </div>
                   <div style={{ flexBasis:"100%", fontSize:11, color:"var(--text-sec)", lineHeight:1.45 }}>
@@ -401,7 +474,48 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                 <div style={{ padding:16, display:"flex", flexDirection:"column", gap:12, maxHeight:"72vh", overflowY:"auto" }}>
                   {(auditSnapshot.groups || []).length === 0 ? (
                     <div style={{ color:"var(--text-sec)", fontSize:13 }}>No app_system/n8n group sends found for this day.</div>
-                  ) : (auditSnapshot.groups || []).map(group => (
+                  ) : (
+                  <>
+                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"#fff" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 }}>
+                        <div style={{ fontSize:14, fontWeight:800 }}>Source Mix</div>
+                        <Tag label={`${currentRollup?.confirmed || 0} confirmed / ${currentRollup?.inferred || 0} inferred`}/>
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:8 }}>
+                        {SOURCE_LABELS.map(label => (
+                          <div key={label} style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:"var(--bg-el)" }}>
+                            <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{label}</div>
+                            <div style={{ fontSize:20, fontWeight:850, marginTop:3 }}>{currentRollup?.sourceBreakdown?.[label] || 0}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"#fff" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 }}>
+                        <div style={{ fontSize:14, fontWeight:800 }}>Needs Review</div>
+                        <Tag label={`${reviewGroups.length} groups`}/>
+                      </div>
+                      {reviewGroups.length === 0 ? (
+                        <div style={{ fontSize:12, color:"var(--text-sec)" }}>No review flags beyond normal influence scoring.</div>
+                      ) : (
+                        <div style={{ display:"grid", gap:8 }}>
+                          {reviewGroups.slice(0, 8).map(group => (
+                            <div key={`review-${group.identifier}`} style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:"var(--bg-el)" }}>
+                              <div style={{ display:"flex", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
+                                <div style={{ fontSize:12, fontWeight:800 }}>{group.groupName || group.groupGuid}</div>
+                                <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{group.confidence?.score || 0}/100</div>
+                              </div>
+                              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:6 }}>
+                                {groupReviewFlags(group).filter(flag => flag !== "Likely influenced").map(flag => <Tag key={flag} label={flag}/>)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {(auditSnapshot.groups || []).map(group => (
                     <div key={group.identifier} className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"var(--bg-el)" }}>
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, flexWrap:"wrap" }}>
                         <div>
@@ -415,8 +529,15 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                           <Tag label={`${group.allMessages?.length || 0} day messages`}/>
                         </div>
                       </div>
+                      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:10 }}>
+                        {Object.entries(group.sourceTypes || sourceBreakdownFrom(group.systemMessages || [])).map(([label, count]) => <Tag key={label} label={`${label}: ${count}`}/>)}
+                        {groupReviewFlags(group).map(flag => <Tag key={flag} label={flag}/>)}
+                      </div>
                       <div style={{ marginTop:10, fontSize:12, color:"var(--text-sec)", lineHeight:1.6 }}>
                         {(group.confidence?.reasons || []).join(" ")}
+                        {group.confidence?.counts && (
+                          <span> Prior hour: {group.confidence.counts.priorHourNonSystemMessages || 0}. 30m replies: {group.confidence.counts.post30MinuteNonSystemMessages || 0}. 2h replies: {group.confidence.counts.post2HourNonSystemMessages || 0}. Human senders: {group.confidence.counts.uniquePostSendHumanSenders || 0}.</span>
+                        )}
                       </div>
 
                       <div style={{ marginTop:12, display:"grid", gridTemplateColumns:"minmax(0,1fr)", gap:8 }}>
@@ -430,13 +551,16 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                               </div>
                               <div style={{ fontSize:13, lineHeight:1.45, whiteSpace:"pre-wrap", overflowWrap:"anywhere", marginTop:5 }}>{message.text || "(no text)"}</div>
                               <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:6 }}>{message.sender} → {message.receiver}</div>
+                              {isSystem && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:4 }}>type: {sourceTypeFromMessage(message)}</div>}
                               {message.sourceHint && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:4 }}>source: {message.sourceHint}</div>}
                             </div>
                           );
                         })}
                       </div>
                     </div>
-                  ))}
+                    ))}
+                  </>
+                  )}
                 </div>
               </>
             )}
