@@ -296,8 +296,12 @@ function sourceHint(message) {
 function sourceTypeFrom(message) {
   const meta = message.metadata || metadata(message);
   const lowerTags = (message.tags || tags(message)).map(tag => String(tag).toLowerCase());
+  const rawType = String(message.sourceType || meta.type || "").toLowerCase();
   const source = String(meta.source || "").toLowerCase();
   const eventType = String(meta.event_type || "").toLowerCase();
+  if (rawType === "retell call-end" || rawType === "retell-call-end" || rawType === "retell_call_end" || rawType === "retell call end") {
+    return "Retell call-end";
+  }
   if (source === "ringcentral_sms_to_cometchat" || lowerTags.includes("ringcentral-sms") || eventType === "ringcentral_sms_bridge") {
     return "RingCentral SMS redirect";
   }
