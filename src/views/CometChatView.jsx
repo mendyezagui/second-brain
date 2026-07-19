@@ -110,9 +110,11 @@ const snapshotRollup = (snapshot = {}) => {
   };
 };
 
-export function CometChatView({ session, initialEnvironment = "sandbox" }) {
+export function CometChatView({ session, initialEnvironment = "sandbox", initialSection = "console", lockSection = false }) {
   const [environment, setEnvironment] = useState(initialEnvironment);
-  const [section, setSection] = useState("console");
+  const [section, setSection] = useState(initialSection);
+  const logsOnly = lockSection && initialSection === "logs";
+  const consoleOnly = lockSection && initialSection === "console";
   const copy = PAGE_COPY[environment] || PAGE_COPY.sandbox;
   const [environmentSettings, setEnvironmentSettings] = useState({
     sandbox: DEFAULT_SETTINGS.sandbox,
@@ -328,6 +330,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   };
 
   useEffect(() => { setEnvironment(initialEnvironment); }, [initialEnvironment]);
+  useEffect(() => { setSection(initialSection); }, [initialSection]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const media = window.matchMedia("(max-width: 760px)");
@@ -340,8 +343,8 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
     setUserSearch(DEFAULT_SEARCHES[environment]?.users || "");
     setGroupSearch(DEFAULT_SEARCHES[environment]?.groups || "");
   }, [environment]);
-  useEffect(() => { loadStatus(); }, [environment]);
-  useEffect(() => { loadMessages(); }, [environment, mode, viewer, settings.dispatchUid, settings.driverUid, settings.groupGuid]);
+  useEffect(() => { if (!logsOnly) loadStatus(); }, [environment, logsOnly]);
+  useEffect(() => { if (!logsOnly) loadMessages(); }, [environment, mode, viewer, settings.dispatchUid, settings.driverUid, settings.groupGuid, logsOnly]);
   useEffect(() => { if (section === "logs") loadAuditSnapshots(); }, [section]);
   useEffect(() => {
     if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
@@ -360,6 +363,12 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   const consoleGrid = isMobile ? "minmax(0,1fr)" : "minmax(260px,320px) minmax(0,1fr)";
   const compactCardPadding = isMobile ? 12 : 16;
   const transcriptHeight = isMobile ? "min(58vh,520px)" : 560;
+  const pageTitle = logsOnly ? "CometChat n8n Group Logs" : consoleOnly ? "CometChat Dev Console" : copy.title;
+  const pageDescription = logsOnly
+    ? "Review n8n and app_system messages sent to driver groups, then inspect the same-day conversation around each send."
+    : consoleOnly
+      ? "Developer test console for sandbox and production CometChat users, groups, and message sends."
+      : copy.description;
   const renderAuditGroupDetail = (group) => (
     <div style={{ marginTop:12, display:"grid", gap:10 }}>
       <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.6 }}>
@@ -415,40 +424,28 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
 
   return (
     <div style={{ padding:pagePadding, maxWidth:1280, margin:"0 auto", overflowX:"hidden" }}>
-      <div style={{ display:"flex", gap:8, marginBottom:18, borderBottom:"1px solid var(--border)", paddingBottom:10, flexWrap:"wrap" }}>
-        {["sandbox", "production"].map(env => {
-          const active = environment === env;
-          const envCopy = PAGE_COPY[env];
-          return (
-            <button key={env} className={`btn ${active ? "btn-blue" : "btn-ghost"}`} onClick={()=>setEnvironment(env)}>
-              {envCopy.eyebrow}
-            </button>
-          );
-        })}
-      </div>
-
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:16, marginBottom:18, flexWrap:"wrap" }}>
         <div>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
             <MessageSquare size={20} color="var(--blue)"/>
             <Tag label="AI Controls"/>
-            <Tag label={copy.eyebrow}/>
+            <Tag label={logsOnly ? "Logs" : consoleOnly ? "Dev" : copy.eyebrow}/>
           </div>
-          <div className="display" style={{ fontSize:isMobile ? 22 : 28, fontWeight:800 }}>{copy.title}</div>
-          <div style={{ fontSize:13, color:"var(--text-sec)", marginTop:6 }}>{copy.description}</div>
+          <div className="display" style={{ fontSize:isMobile ? 22 : 28, fontWeight:800 }}>{pageTitle}</div>
+          <div style={{ fontSize:13, color:"var(--text-sec)", marginTop:6 }}>{pageDescription}</div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", justifyContent:"flex-end" }}>
-          {status?.ok && <Tag label={`App ${status.appId} / ${status.region.toUpperCase()}`}/>}
-          {status?.error && <Tag label="API key missing" color="var(--red)"/>}
-          {environment === "production" && <button className="btn btn-blue" onClick={ensureProductionSetup} disabled={settingUp}>{settingUp ? <Loader size={13} className="spin"/> : null}Ensure Test Setup</button>}
-          <button className="btn btn-ghost" onClick={loadMessages} disabled={loading}><RefreshCw size={13} className={loading ? "spin" : ""}/>Refresh</button>
+          {!logsOnly && status?.ok && <Tag label={`App ${status.appId} / ${status.region.toUpperCase()}`}/>}
+          {!logsOnly && status?.error && <Tag label="API key missing" color="var(--red)"/>}
+          {!logsOnly && environment === "production" && <button className="btn btn-blue" onClick={ensureProductionSetup} disabled={settingUp}>{settingUp ? <Loader size={13} className="spin"/> : null}Ensure Test Setup</button>}
+          {!logsOnly && <button className="btn btn-ghost" onClick={loadMessages} disabled={loading}><RefreshCw size={13} className={loading ? "spin" : ""}/>Refresh</button>}
         </div>
       </div>
 
-      <div style={{ display:"flex", gap:8, marginBottom:18, flexWrap:"wrap" }}>
+      {!lockSection && <div style={{ display:"flex", gap:8, marginBottom:18, flexWrap:"wrap" }}>
         <button className={`btn ${section === "console" ? "btn-blue" : "btn-ghost"}`} onClick={()=>setSection("console")}><MessageSquare size={13}/>Chat Console</button>
         <button className={`btn ${section === "logs" ? "btn-blue" : "btn-ghost"}`} onClick={()=>setSection("logs")}><BarChart3 size={13}/>n8n Group Logs</button>
-      </div>
+      </div>}
 
       {error && <div className="card-el" style={{ padding:"10px 14px", borderColor:"rgba(220,38,38,0.35)", background:"var(--red-dim)", color:"var(--red)", fontSize:13, marginBottom:14 }}>{error}</div>}
 
@@ -607,6 +604,19 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           <div className="card" style={{ padding:compactCardPadding }}>
             <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>Defaults</div>
+            <Field label="Environment">
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                {["sandbox", "production"].map(env => {
+                  const active = environment === env;
+                  const envCopy = PAGE_COPY[env];
+                  return (
+                    <button key={env} className={`btn ${active ? "btn-blue" : "btn-ghost"}`} onClick={()=>setEnvironment(env)}>
+                      {envCopy.eyebrow}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
             <Field label={environment === "production" ? "Alex sender UID" : "Dispatch UID"}><input className="input" value={settings.dispatchUid} onChange={e=>setSettings(s=>({...s, dispatchUid:e.target.value.trim()}))}/></Field>
             <Field label="Driver UID"><input className="input" value={settings.driverUid} onChange={e=>setSettings(s=>({...s, driverUid:e.target.value.trim()}))}/></Field>
             <Field label="Group GUID"><input className="input" value={settings.groupGuid} onChange={e=>setSettings(s=>({...s, groupGuid:e.target.value.trim()}))}/></Field>

@@ -472,11 +472,12 @@ export const NAV = [
   {id:"multi_llm",icon:MessageSquare,label:"AI Playground"},
   {id:"strategies",icon:Target,label:"Strategies"},
   {id:"goals",icon:Award,label:"Goals"},
-  {id:"_ai_controls",icon:Settings,label:"AI Controls",group:true,children:["voitra_gate","rc_controls","vantaca_controls","cometchat","cometchat_sandbox","cometchat_production"]},
+  {id:"_ai_controls",icon:Settings,label:"AI Controls",group:true,children:["voitra_gate","rc_controls","vantaca_controls","cometchat","cometchat_dev"]},
   {id:"voitra_gate",icon:Mic,label:"Voitra Agent Control",parent:"_ai_controls"},
   {id:"rc_controls",icon:Phone,label:"RC Controls",parent:"_ai_controls"},
   {id:"vantaca_controls",icon:Building2,label:"Vantaca Controls",parent:"_ai_controls"},
-  {id:"cometchat",icon:MessageSquare,label:"Comet Chat",parent:"_ai_controls"},
+  {id:"cometchat",icon:MessageSquare,label:"CometChat Logs",parent:"_ai_controls"},
+  {id:"cometchat_dev",icon:MessageSquare,label:"CometChat Dev",parent:"_ai_controls"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
@@ -517,7 +518,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
   const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"cometchat",icon:MessageSquare,label:"Comet Chat"},{id:"admin",icon:Shield,label:"Admin"}];
+  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"cometchat",icon:MessageSquare,label:"Comet Logs"},{id:"cometchat_dev",icon:MessageSquare,label:"Comet Dev"},{id:"admin",icon:Shield,label:"Admin"}];
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>

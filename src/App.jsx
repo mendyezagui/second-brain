@@ -32,7 +32,7 @@ import { VantacaControlsView } from "./views/VantacaControlsView";
 import { CometChatView } from "./views/CometChatView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","vantaca_controls","cometchat","cometchat_sandbox","cometchat_production","admin","record"];
+  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","vantaca_controls","cometchat","cometchat_dev","cometchat_sandbox","cometchat_production","admin","record"];
   const VIEW_ALIASES = { mstack: "associates", orchestrator: "brief" };
   const routeFromHash = () => {
     const route = parseAppHash();
@@ -206,9 +206,10 @@ export default function App() {
     voitra_gate:  <VoitraGateView/>,
     rc_controls:  <RCControlsView/>,
     vantaca_controls: <VantacaControlsView/>,
-    cometchat:    <CometChatView session={session} initialEnvironment="sandbox"/>,
-    cometchat_sandbox: <CometChatView session={session} initialEnvironment="sandbox"/>,
-    cometchat_production: <CometChatView session={session} initialEnvironment="production"/>,
+    cometchat:    <CometChatView session={session} initialEnvironment="production" initialSection="logs" lockSection={true}/>,
+    cometchat_dev: <CometChatView session={session} initialEnvironment="sandbox" initialSection="console" lockSection={true}/>,
+    cometchat_sandbox: <CometChatView session={session} initialEnvironment="sandbox" initialSection="console" lockSection={true}/>,
+    cometchat_production: <CometChatView session={session} initialEnvironment="production" initialSection="console" lockSection={true}/>,
     payments:      <PaymentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
