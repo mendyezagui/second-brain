@@ -482,13 +482,14 @@ export const NAV = [
 
 export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
   const [collGroups, setCollGroups] = useState({ _fin: true, _ai_controls: false });
-  return (<div style={{ width:collapsed?60:210, background:"var(--bg-card)", borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 8px", gap:2, transition:"width .25s", flexShrink:0 }}>
-    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 6px 18px", cursor:"pointer" }} onClick={()=>setCollapsed(!collapsed)}>
+  return (<div style={{ width:collapsed?60:210, height:"100%", minHeight:0, background:"var(--bg-card)", borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 8px", gap:2, transition:"width .25s", flexShrink:0, overflow:"hidden" }}>
+    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 6px 18px", cursor:"pointer", flexShrink:0 }} onClick={()=>setCollapsed(!collapsed)}>
       <div style={{ width:32, height:32, borderRadius:8, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
         <Brain size={16} color="var(--blue)"/>
       </div>
       {!collapsed && <div><div className="display" style={{ fontSize:13, fontWeight:700 }}>Second Brain</div><div className="mono" style={{ fontSize:9, color:"var(--text-sec)" }}>Life OS</div></div>}
     </div>
+    <div style={{ flex:1, minHeight:0, overflowY:"auto", overflowX:"hidden", paddingRight:2 }}>
     {NAV.map((n,i)=>{
               if(!n.id) return <div key={i} style={{marginTop:8,marginBottom:8,borderTop:"1px solid var(--border)"}} />;
               if(n.group) { const childActive=n.children&&n.children.includes(view); const open=childActive || !collGroups[n.id]; return <div key={i}>
@@ -503,7 +504,8 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
               const act=view===n.id;
               return <button key={i} onClick={()=>setView(n.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"6px 12px",border:"none",background:act?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:act?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.85rem"}}><n.icon size={16}/>{n.label}</button>;
             })}
-    <div style={{ marginTop:"auto" }}>
+    </div>
+    <div style={{ flexShrink:0 }}>
       <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 6px" }}>
         <div style={{ width:7, height:7, borderRadius:"50%", background:"var(--green)", flexShrink:0 }} className="blink"/>
         {!collapsed && <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>6 agents live</span>}
