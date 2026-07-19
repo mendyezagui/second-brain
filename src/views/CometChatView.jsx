@@ -140,6 +140,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   const [auditDate, setAuditDate] = useState(todayPacific());
   const [auditNotice, setAuditNotice] = useState("");
   const [openAuditGroupId, setOpenAuditGroupId] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
   const transcriptRef = useRef(null);
   const settings = environmentSettings[environment] || DEFAULT_SETTINGS.sandbox;
   const setSettings = (updater) => {
@@ -328,6 +329,14 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
 
   useEffect(() => { setEnvironment(initialEnvironment); }, [initialEnvironment]);
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(max-width: 760px)");
+    const syncMobile = () => setIsMobile(media.matches);
+    syncMobile();
+    media.addEventListener?.("change", syncMobile);
+    return () => media.removeEventListener?.("change", syncMobile);
+  }, []);
+  useEffect(() => {
     setUserSearch(DEFAULT_SEARCHES[environment]?.users || "");
     setGroupSearch(DEFAULT_SEARCHES[environment]?.groups || "");
   }, [environment]);
@@ -346,6 +355,11 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   const auditGroups = auditSnapshot?.groups || [];
   const reviewGroups = auditGroups.filter(group => groupReviewFlags(group).some(flag => flag !== "Likely influenced"));
   const confirmedGroups = auditGroups.filter(group => !groupReviewFlags(group).some(flag => flag !== "Likely influenced"));
+  const pagePadding = isMobile ? 12 : 24;
+  const splitGrid = isMobile ? "minmax(0,1fr)" : "minmax(280px,360px) minmax(0,1fr)";
+  const consoleGrid = isMobile ? "minmax(0,1fr)" : "minmax(260px,320px) minmax(0,1fr)";
+  const compactCardPadding = isMobile ? 12 : 16;
+  const transcriptHeight = isMobile ? "min(58vh,520px)" : 560;
   const renderAuditGroupDetail = (group) => (
     <div style={{ marginTop:12, display:"grid", gap:10 }}>
       <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.6 }}>
@@ -357,7 +371,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
       {(group.allMessages || []).map(message => {
         const isSystem = (group.systemMessages || []).some(system => system.id === message.id);
         return (
-          <div key={message.id} style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:isSystem ? "var(--blue-dim)" : "#fff" }}>
+          <div key={message.id} style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:isSystem ? "var(--blue-dim)" : "#fff", minWidth:0 }}>
             <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap" }}>
               <div style={{ fontSize:12, fontWeight:800 }}>{isSystem ? "Original n8n message" : (message.senderName || message.sender)}</div>
               <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{getMessageDateTime(message.sentAt)} · #{message.id}</div>
@@ -376,13 +390,13 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
     const isOpen = openAuditGroupId === group.identifier;
     return (
       <div key={group.identifier} className="card-el" style={{ border:"1px solid var(--border)", padding:0, background:tone === "review" ? "#fff" : "var(--bg-el)", overflow:"hidden" }}>
-        <button onClick={()=>setOpenAuditGroupId(isOpen ? "" : group.identifier)} style={{ width:"100%", border:0, background:"transparent", padding:12, cursor:"pointer", textAlign:"left" }}>
+        <button onClick={()=>setOpenAuditGroupId(isOpen ? "" : group.identifier)} style={{ width:"100%", border:0, background:"transparent", padding:isMobile ? 10 : 12, cursor:"pointer", textAlign:"left" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, flexWrap:"wrap" }}>
             <div style={{ minWidth:0 }}>
               <div style={{ fontSize:14, fontWeight:850, overflowWrap:"anywhere" }}>{group.groupName || group.groupGuid}</div>
               <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:3 }}>{group.identifier}</div>
             </div>
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:isMobile ? "flex-start" : "flex-end" }}>
               <Tag label={isOpen ? "Open" : "Closed"}/>
               <Tag label={`${group.confidence?.score || 0}/100`}/>
               <Tag label={`${group.systemMessages?.length || 0} sends`}/>
@@ -400,7 +414,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
   };
 
   return (
-    <div style={{ padding:24, maxWidth:1280, margin:"0 auto" }}>
+    <div style={{ padding:pagePadding, maxWidth:1280, margin:"0 auto", overflowX:"hidden" }}>
       <div style={{ display:"flex", gap:8, marginBottom:18, borderBottom:"1px solid var(--border)", paddingBottom:10, flexWrap:"wrap" }}>
         {["sandbox", "production"].map(env => {
           const active = environment === env;
@@ -420,7 +434,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
             <Tag label="AI Controls"/>
             <Tag label={copy.eyebrow}/>
           </div>
-          <div className="display" style={{ fontSize:28, fontWeight:800 }}>{copy.title}</div>
+          <div className="display" style={{ fontSize:isMobile ? 22 : 28, fontWeight:800 }}>{copy.title}</div>
           <div style={{ fontSize:13, color:"var(--text-sec)", marginTop:6 }}>{copy.description}</div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", justifyContent:"flex-end" }}>
@@ -439,9 +453,9 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
       {error && <div className="card-el" style={{ padding:"10px 14px", borderColor:"rgba(220,38,38,0.35)", background:"var(--red-dim)", color:"var(--red)", fontSize:13, marginBottom:14 }}>{error}</div>}
 
       {section === "logs" ? (
-        <div style={{ display:"grid", gridTemplateColumns:"minmax(280px,360px) minmax(0,1fr)", gap:16 }}>
+        <div style={{ display:"grid", gridTemplateColumns:splitGrid, gap:16 }}>
           <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-            <div className="card" style={{ padding:16 }}>
+            <div className="card" style={{ padding:compactCardPadding }}>
               <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>Daily Pull</div>
               <Field label="Pacific date">
                 <input className="input" type="date" value={auditDate} onChange={e=>setAuditDate(e.target.value)} />
@@ -459,7 +473,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
               </div>
             </div>
 
-            <div className="card" style={{ padding:16 }}>
+            <div className="card" style={{ padding:compactCardPadding }}>
               <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>Daily Rollup</div>
               {auditSnapshots.length === 0 ? (
                 <div style={{ fontSize:12, color:"var(--text-sec)" }}>Pull a day to start the ongoing log.</div>
@@ -482,7 +496,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
               )}
             </div>
 
-            <div className="card" style={{ padding:16 }}>
+            <div className="card" style={{ padding:compactCardPadding }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, marginBottom:12 }}>
                 <div className="display" style={{ fontSize:15, fontWeight:700 }}>Snapshots</div>
                 <button className="btn btn-ghost" onClick={loadAuditSnapshots} disabled={auditLoading}><RefreshCw size={13} className={auditLoading ? "spin" : ""}/></button>
@@ -528,12 +542,12 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                     Confirmed n8n messages have source/tags from the workflow. Inferred messages are app_system group messages with no explicit n8n marker.
                   </div>
                 </div>
-                <div style={{ padding:16, display:"flex", flexDirection:"column", gap:12, maxHeight:"72vh", overflowY:"auto" }}>
+                <div style={{ padding:compactCardPadding, display:"flex", flexDirection:"column", gap:12, maxHeight:isMobile ? "none" : "72vh", overflowY:isMobile ? "visible" : "auto" }}>
                   {(auditSnapshot.groups || []).length === 0 ? (
                     <div style={{ color:"var(--text-sec)", fontSize:13 }}>No app_system/n8n group sends found for this day.</div>
                   ) : (
                   <>
-                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"#fff" }}>
+                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:isMobile ? 12 : 14, background:"#fff", minWidth:0 }}>
                       <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 }}>
                         <div style={{ fontSize:14, fontWeight:800 }}>Source Mix</div>
                         <Tag label={`${currentRollup?.confirmed || 0} confirmed / ${currentRollup?.inferred || 0} inferred`}/>
@@ -548,7 +562,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                       </div>
                     </div>
 
-                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"#fff" }}>
+                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:isMobile ? 12 : 14, background:"#fff", minWidth:0 }}>
                       <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 }}>
                         <div>
                           <div style={{ fontSize:14, fontWeight:800 }}>Needs Review</div>
@@ -565,7 +579,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
                       )}
                     </div>
 
-                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:14, background:"#fff" }}>
+                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:isMobile ? 12 : 14, background:"#fff", minWidth:0 }}>
                       <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 }}>
                         <div>
                           <div style={{ fontSize:14, fontWeight:800 }}>Confirmed</div>
@@ -589,9 +603,9 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
           </div>
         </div>
       ) : (
-      <div style={{ display:"grid", gridTemplateColumns:"minmax(260px,320px) minmax(0,1fr)", gap:16 }}>
+      <div style={{ display:"grid", gridTemplateColumns:consoleGrid, gap:16 }}>
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          <div className="card" style={{ padding:16 }}>
+          <div className="card" style={{ padding:compactCardPadding }}>
             <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>Defaults</div>
             <Field label={environment === "production" ? "Alex sender UID" : "Dispatch UID"}><input className="input" value={settings.dispatchUid} onChange={e=>setSettings(s=>({...s, dispatchUid:e.target.value.trim()}))}/></Field>
             <Field label="Driver UID"><input className="input" value={settings.driverUid} onChange={e=>setSettings(s=>({...s, driverUid:e.target.value.trim()}))}/></Field>
@@ -599,7 +613,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
             <button className="btn btn-ghost" style={{ width:"100%", justifyContent:"center" }} onClick={()=>setSettings(DEFAULT_SETTINGS[environment])}>Restore test defaults</button>
           </div>
 
-          <div className="card" style={{ padding:16 }}>
+          <div className="card" style={{ padding:compactCardPadding }}>
             <div className="display" style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>Search</div>
             <Field label="Users">
               <div style={{ display:"flex", gap:6 }}>
@@ -640,7 +654,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
             </div>
           </div>
 
-          <div style={{ padding:16, borderBottom:"1px solid var(--border)", display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:12 }}>
+          <div style={{ padding:compactCardPadding, borderBottom:"1px solid var(--border)", display:"grid", gridTemplateColumns:isMobile ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap:12 }}>
             {actors.map(a => (
               <div key={a.id} className="card-el" style={{ padding:"10px 12px", borderColor:sender === a.id ? "rgba(0,119,204,0.45)" : "var(--border)", background:sender === a.id ? "var(--blue-dim)" : "var(--bg-el)" }}>
                 <label style={{ display:"flex", gap:8, alignItems:"flex-start", cursor:"pointer" }}>
@@ -662,7 +676,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
             </span>
           </div>
 
-          <div ref={transcriptRef} style={{ height:560, maxHeight:"60vh", overflowY:"auto", padding:16, background:"linear-gradient(180deg,#f8fafc,#eef2f7)" }}>
+          <div ref={transcriptRef} style={{ height:transcriptHeight, maxHeight:isMobile ? "none" : "60vh", overflowY:"auto", padding:isMobile ? 12 : 16, background:"linear-gradient(180deg,#f8fafc,#eef2f7)" }}>
             {loading ? (
               <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100%", color:"var(--text-sec)", gap:8 }}><Loader size={16} className="spin"/>Loading conversation...</div>
             ) : messages.length === 0 ? (
@@ -671,7 +685,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
               const mine = m.sender === viewerUid;
               return (
                 <div key={m.id || `${m.sender}-${m.sentAt}`} style={{ display:"flex", justifyContent:mine ? "flex-end" : "flex-start", marginBottom:10 }}>
-                  <div style={{ maxWidth:"72%", minWidth:180, background:mine ? "var(--blue)" : "#fff", color:mine ? "#fff" : "var(--text)", border:"1px solid var(--border)", borderRadius:8, padding:"9px 11px", boxShadow:"0 1px 4px rgba(15,23,42,0.08)" }}>
+                  <div style={{ maxWidth:isMobile ? "94%" : "72%", minWidth:isMobile ? 0 : 180, background:mine ? "var(--blue)" : "#fff", color:mine ? "#fff" : "var(--text)", border:"1px solid var(--border)", borderRadius:8, padding:"9px 11px", boxShadow:"0 1px 4px rgba(15,23,42,0.08)", overflowWrap:"anywhere" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", gap:12, marginBottom:4 }}>
                       <span style={{ fontSize:11, fontWeight:800 }}>{actorLabel(m.sender, settings, copy)}</span>
                       <span className="mono" style={{ fontSize:10, opacity:0.75 }}>{getMessageTime(m)}</span>
@@ -684,9 +698,9 @@ export function CometChatView({ session, initialEnvironment = "sandbox" }) {
             })}
           </div>
 
-          <div style={{ padding:14, borderTop:"1px solid var(--border)", display:"flex", gap:10, alignItems:"flex-end" }}>
+          <div style={{ padding:isMobile ? 12 : 14, borderTop:"1px solid var(--border)", display:"flex", flexDirection:isMobile ? "column" : "row", gap:10, alignItems:isMobile ? "stretch" : "flex-end" }}>
             <textarea className="input" rows={2} value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{ if(e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendMessage(); }} placeholder={`Message ${mode === "group" ? settings.groupName : actorLabel(receiver, settings, copy)}`}/>
-            <button className="btn btn-blue" onClick={sendMessage} disabled={sending || !draft.trim()} style={{ height:42, opacity:sending || !draft.trim() ? 0.6 : 1 }}>
+            <button className="btn btn-blue" onClick={sendMessage} disabled={sending || !draft.trim()} style={{ height:42, width:isMobile ? "100%" : "auto", justifyContent:"center", opacity:sending || !draft.trim() ? 0.6 : 1 }}>
               {sending ? <Loader size={14} className="spin"/> : <Send size={14}/>}Send
             </button>
           </div>
