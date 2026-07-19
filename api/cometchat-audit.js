@@ -4,6 +4,7 @@ const TIME_ZONE = "America/Los_Angeles";
 const BUCKET = "memory-files";
 const PREFIX = "cometchat-n8n-group-audits";
 const INDEX_PATH = `${PREFIX}/index.json`;
+const RETELL_REPEAT_WINDOW_SECONDS = 300;
 
 function supa() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -18,6 +19,12 @@ function cometConfig() {
   const apiKey = process.env.COMETCHAT_PRODUCTION_API_KEY;
   if (!appId || !apiKey) throw new Error("Missing production CometChat env");
   return { baseUrl: `https://${appId}.api-${region}.cometchat.io/v3`, apiKey };
+}
+
+function retellConfig() {
+  const apiKey = process.env.RETELL_API_KEY;
+  if (!apiKey) return null;
+  return { baseUrl: "https://api.retellai.com", apiKey };
 }
 
 async function verifySession(req, admin) {
@@ -50,6 +57,28 @@ async function comet(path, params = {}) {
   const data = text ? JSON.parse(text) : {};
   if (!response.ok) {
     const err = new Error(data?.error?.message || data?.message || data?.error || `CometChat returned ${response.status}`);
+    err.status = response.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+async function retell(path, { method = "GET", body } = {}) {
+  const config = retellConfig();
+  if (!config) throw new Error("Missing RETELL_API_KEY");
+  const response = await fetch(`${config.baseUrl}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    const err = new Error(data?.error?.message || data?.message || data?.error || `Retell returned ${response.status}`);
     err.status = response.status;
     err.data = data;
     throw err;
@@ -102,6 +131,152 @@ function tags(message) {
 
 function textOf(message) {
   return message?.data?.text || message?.data?.message || message?.text || "";
+}
+
+function normalizePhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `+1${digits}`;
+  return `+${digits}`;
+}
+
+function toEpochSeconds(value) {
+  if (!value) return null;
+  if (typeof value === "number") return value > 9999999999 ? Math.floor(value / 1000) : Math.floor(value);
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? Math.floor(date.getTime() / 1000) : null;
+}
+
+function retellCustom(call = {}) {
+  return call.call_analysis?.custom_analysis_data || {};
+}
+
+function normalizeRetellCall(call = {}) {
+  const custom = retellCustom(call);
+  return {
+    callId: call.call_id || "",
+    startedAt: toEpochSeconds(call.start_timestamp || call.start_time),
+    fromNumber: normalizePhone(call.from_number || custom.from_number || custom.caller_phone),
+    toNumber: normalizePhone(call.to_number),
+    direction: call.direction || "",
+    disconnectionReason: call.disconnection_reason || "",
+    callSuccessful: custom.call_successful ?? null,
+    primaryIntent: custom.primary_intent || "",
+    summary: call.call_analysis?.call_summary || custom.call_summary || "",
+  };
+}
+
+async function listRetellCallsForWindow(fromTimestamp, toTimestamp) {
+  if (!retellConfig()) {
+    return { available: false, reason: "Missing RETELL_API_KEY", calls: [] };
+  }
+  try {
+    const limit = Number(process.env.RETELL_CALL_LIST_LIMIT || 1000);
+    const data = await retell("/v3/list-calls", { method: "POST", body: { limit } });
+    const rows = Array.isArray(data) ? data : (data.items || data.calls || data.data || []);
+    const calls = rows
+      .map(normalizeRetellCall)
+      .filter(call => call.callId && call.startedAt)
+      .filter(call => call.startedAt >= fromTimestamp - RETELL_REPEAT_WINDOW_SECONDS && call.startedAt <= toTimestamp + RETELL_REPEAT_WINDOW_SECONDS)
+      .sort((a, b) => a.startedAt - b.startedAt);
+    return { available: true, reason: "", calls, limit };
+  } catch (error) {
+    return { available: false, reason: error.message || "Retell lookup failed", calls: [] };
+  }
+}
+
+function callIdFromMessage(message) {
+  const meta = message.metadata || metadata(message);
+  return meta.call_id || meta.retell_call_id || meta.callId || "";
+}
+
+function phoneFromMessage(message) {
+  const meta = message.metadata || metadata(message);
+  return normalizePhone(meta.from_number || meta.caller_phone || meta.phone || meta.driver_phone);
+}
+
+function voiceRepeatForMessage(message, retellLookup) {
+  const originalCallId = callIdFromMessage(message);
+  if (!originalCallId) {
+    return {
+      status: "no_call_link",
+      available: retellLookup.available,
+      originalCallId: "",
+      repeatWithin5m: null,
+      repeatCountWithin5m: 0,
+      repeatCallsWithin5m: [],
+      reason: "Message has no Retell call_id metadata.",
+    };
+  }
+  if (!retellLookup.available) {
+    return {
+      status: "retell_unavailable",
+      available: false,
+      originalCallId,
+      repeatWithin5m: null,
+      repeatCountWithin5m: 0,
+      repeatCallsWithin5m: [],
+      reason: retellLookup.reason,
+    };
+  }
+
+  const originalCall = retellLookup.calls.find(call => call.callId === originalCallId);
+  const originalPhone = originalCall?.fromNumber || phoneFromMessage(message);
+  if (!originalCall?.startedAt || !originalPhone) {
+    return {
+      status: "original_call_not_found",
+      available: true,
+      originalCallId,
+      originalCallerPhone: originalPhone || "",
+      repeatWithin5m: null,
+      repeatCountWithin5m: 0,
+      repeatCallsWithin5m: [],
+      reason: originalPhone ? "Original Retell call was not found in the Retell list-calls window." : "Original Retell call or caller phone was not found.",
+    };
+  }
+
+  const repeatCalls = retellLookup.calls
+    .filter(call => call.callId !== originalCallId)
+    .filter(call => call.fromNumber && call.fromNumber === originalPhone)
+    .filter(call => call.startedAt > originalCall.startedAt && call.startedAt <= originalCall.startedAt + RETELL_REPEAT_WINDOW_SECONDS)
+    .map(call => ({
+      callId: call.callId,
+      startedAt: call.startedAt,
+      startedAtIso: new Date(call.startedAt * 1000).toISOString(),
+      minutesAfterOriginal: Math.round(((call.startedAt - originalCall.startedAt) / 60) * 10) / 10,
+      primaryIntent: call.primaryIntent,
+      disconnectionReason: call.disconnectionReason,
+      callSuccessful: call.callSuccessful,
+      summary: call.summary,
+    }));
+
+  return {
+    status: "linked",
+    available: true,
+    originalCallId,
+    originalCallStartedAt: originalCall.startedAt,
+    originalCallStartedAtIso: new Date(originalCall.startedAt * 1000).toISOString(),
+    originalCallerPhone: originalPhone,
+    repeatWindowSeconds: RETELL_REPEAT_WINDOW_SECONDS,
+    repeatWithin5m: repeatCalls.length > 0,
+    repeatCountWithin5m: repeatCalls.length,
+    repeatCallsWithin5m: repeatCalls,
+    reason: repeatCalls.length ? `${repeatCalls.length} later Retell call(s) from the same caller within 5 minutes.` : "No later Retell call from the same caller within 5 minutes.",
+  };
+}
+
+function summarizeGroupVoice(systemMessages) {
+  const linked = systemMessages.filter(message => message.voiceRepeat?.originalCallId);
+  const repeated = linked.filter(message => message.voiceRepeat?.repeatWithin5m === true);
+  const unavailable = systemMessages.filter(message => message.voiceRepeat?.status === "retell_unavailable").length;
+  const noCallLink = systemMessages.filter(message => message.voiceRepeat?.status === "no_call_link").length;
+  return {
+    linkedCallMessages: linked.length,
+    repeatWithin5mMessages: repeated.length,
+    repeatWithin5m: repeated.length > 0,
+    retellUnavailableMessages: unavailable,
+    noCallLinkMessages: noCallLink,
+  };
 }
 
 function sourceHint(message) {
@@ -239,16 +414,22 @@ function reviewFlags(sends, allMessages, confidence) {
   if (confidence.counts.postDayNonSystemMessages > 0 && confidence.counts.post30MinuteNonSystemMessages === 0) flags.push("Late same-day reply");
   if (confidence.counts.priorHourNonSystemMessages > 0) flags.push("Prior-hour activity");
   if (allMessages.length === sends.length) flags.push("No human conversation");
+  if (sends.some(msg => msg.voiceRepeat?.repeatWithin5m)) flags.push("5m repeat call");
   return flags;
 }
 
 async function runAudit(dateKey, triggeredBy) {
   const { fromTimestamp, toTimestamp } = dayWindow(dateKey);
   const generatedAt = new Date().toISOString();
+  const retellLookup = await listRetellCallsForWindow(fromTimestamp, toTimestamp);
   const messages = (await listMessages({ receiverType: "group", category: "message", fromTimestamp, toTimestamp }))
     .map(normalize)
     .sort((a, b) => a.sentAt - b.sentAt || Number(a.id) - Number(b.id));
-  const systemMessages = messages.filter(isN8nSystemGroupMessage);
+  const systemMessages = messages
+    .filter(isN8nSystemGroupMessage)
+    .map(message => ({ ...message, voiceRepeat: voiceRepeatForMessage(message, retellLookup) }));
+  const systemById = new Map(systemMessages.map(message => [message.id, message]));
+  const enrichedMessages = messages.map(message => systemById.get(message.id) || message);
   const byGroup = new Map();
   for (const msg of systemMessages) {
     if (!byGroup.has(msg.receiver)) byGroup.set(msg.receiver, []);
@@ -256,7 +437,7 @@ async function runAudit(dateKey, triggeredBy) {
   }
 
   const groups = [...byGroup.entries()].map(([groupGuid, sends]) => {
-    const allMessages = messages.filter(msg => msg.receiver === groupGuid);
+    const allMessages = enrichedMessages.filter(msg => msg.receiver === groupGuid);
     const groupName = sends.find(msg => msg.receiverName)?.receiverName || groupGuid;
     const confidence = scoreGroup(sends, allMessages);
     return {
@@ -268,6 +449,7 @@ async function runAudit(dateKey, triggeredBy) {
       systemMessages: sends,
       allMessages,
       confidence,
+      voice: summarizeGroupVoice(sends),
       reviewFlags: reviewFlags(sends, allMessages, confidence),
     };
   });
@@ -286,6 +468,14 @@ async function runAudit(dateKey, triggeredBy) {
       explicitlyTaggedN8nMessages: systemMessages.filter(msg => !msg.sourceHint.startsWith("inferred:")).length,
       inferredSystemGroupMessages: systemMessages.filter(msg => msg.sourceHint.startsWith("inferred:")).length,
       sourceBreakdown: sourceBreakdown(systemMessages),
+      voiceCallCorrelation: {
+        available: retellLookup.available,
+        reason: retellLookup.reason,
+        retellCallsExamined: retellLookup.calls.length,
+        linkedCallMessages: systemMessages.filter(msg => msg.voiceRepeat?.originalCallId).length,
+        repeatWithin5mMessages: systemMessages.filter(msg => msg.voiceRepeat?.repeatWithin5m === true).length,
+        repeatWithin5mGroups: groups.filter(group => group.voice?.repeatWithin5m).length,
+      },
       uniqueGroups: groups.length,
       likelyInfluencedGroups: groups.filter(g => g.confidence.score >= 65).length,
       possibleInfluencedGroups: groups.filter(g => g.confidence.score >= 45).length,

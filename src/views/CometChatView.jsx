@@ -63,6 +63,21 @@ const getMessageTime = (message) => {
 const getMessageDateTime = (stamp) => stamp ? new Date(Number(stamp) * 1000).toLocaleString([], { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" }) : "";
 const todayPacific = () => new Intl.DateTimeFormat("en-CA", { timeZone:"America/Los_Angeles", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date());
 const SOURCE_LABELS = ["Retell call-end", "RingCentral SMS redirect", "Manual Second Brain test", "Unknown app_system", "Other"];
+const voiceRepeatLabel = (voice) => {
+  if (!voice) return "Voice: not checked";
+  if (voice.status === "no_call_link") return "Voice: no call link";
+  if (voice.status === "retell_unavailable") return "Voice: Retell unavailable";
+  if (voice.status === "original_call_not_found") return "Voice: call not found";
+  if (voice.repeatWithin5m === true) return "Called again within 5m";
+  if (voice.repeatWithin5m === false) return "No 5m repeat call";
+  return "Voice: unknown";
+};
+const voiceRepeatColor = (voice) => {
+  if (voice?.repeatWithin5m === true) return "var(--red)";
+  if (voice?.repeatWithin5m === false) return "var(--green)";
+  if (voice?.status === "retell_unavailable") return "var(--amber)";
+  return "var(--text-sec)";
+};
 
 const sourceTypeFromMessage = (message = {}) => {
   if (message.sourceType) return message.sourceType;
@@ -94,6 +109,7 @@ const groupReviewFlags = (group = {}) => {
   if ((counts.postDayNonSystemMessages || 0) > 0 && !(counts.post30MinuteNonSystemMessages || 0)) flags.push("Late same-day reply");
   if ((counts.priorHourNonSystemMessages || 0) > 0) flags.push("Prior-hour activity");
   if ((group.allMessages || []).length === (group.systemMessages || []).length) flags.push("No human conversation");
+  if (group.voice?.repeatWithin5m) flags.push("5m repeat call");
   return flags;
 };
 
@@ -385,6 +401,23 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
               <div style={{ fontSize:12, fontWeight:800 }}>{isSystem ? "Original n8n message" : (message.senderName || message.sender)}</div>
               <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{getMessageDateTime(message.sentAt)} · #{message.id}</div>
             </div>
+            {isSystem && (
+              <div style={{ display:"grid", gap:6, marginTop:7, padding:"7px 8px", border:"1px solid var(--border)", borderRadius:7, background:"#fff" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                  <Tag label={voiceRepeatLabel(message.voiceRepeat)} color={voiceRepeatColor(message.voiceRepeat)}/>
+                  {message.voiceRepeat?.originalCallId && <Tag label={`Call ${message.voiceRepeat.originalCallId}`}/>}
+                  {message.voiceRepeat?.originalCallStartedAt && <Tag label={`Started ${getMessageDateTime(message.voiceRepeat.originalCallStartedAt)}`}/>}
+                </div>
+                <div style={{ fontSize:11, color:"var(--text-sec)", lineHeight:1.45 }}>
+                  {message.voiceRepeat?.reason || "Voice repeat correlation is available on new audit pulls."}
+                </div>
+                {(message.voiceRepeat?.repeatCallsWithin5m || []).map(call => (
+                  <div key={call.callId} className="mono" style={{ fontSize:10, color:"var(--text-sec)", lineHeight:1.45, overflowWrap:"anywhere" }}>
+                    Repeat: {call.startedAtIso ? new Date(call.startedAtIso).toLocaleString([], { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" }) : "unknown time"} · {call.minutesAfterOriginal}m after · {call.callId}
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ fontSize:13, lineHeight:1.45, whiteSpace:"pre-wrap", overflowWrap:"anywhere", marginTop:5 }}>{message.text || "(no text)"}</div>
             <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:6 }}>{message.sender} → {message.receiver}</div>
             {isSystem && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:4 }}>type: {sourceTypeFromMessage(message)}</div>}
@@ -410,6 +443,7 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
               <Tag label={`${group.confidence?.score || 0}/100`}/>
               <Tag label={`${group.systemMessages?.length || 0} sends`}/>
               <Tag label={`${group.allMessages?.length || 0} messages`}/>
+              {group.voice && <Tag label={group.voice.repeatWithin5m ? "5m repeat call" : `${group.voice.linkedCallMessages || 0} linked calls`} color={group.voice.repeatWithin5m ? "var(--red)" : undefined}/>}
             </div>
           </div>
           <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:9 }}>
@@ -534,9 +568,13 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
                     <Tag label={`${auditSnapshot.summary?.likelyInfluencedGroups || 0} likely`}/>
                     <Tag label={`${currentRollup?.needsReview || 0} review`}/>
                     <Tag label={`${auditSnapshot.summary?.dailyConfidenceScore || 0}/100 confidence`}/>
+                    {auditSnapshot.summary?.voiceCallCorrelation && <Tag label={`${auditSnapshot.summary.voiceCallCorrelation.repeatWithin5mGroups || 0} 5m repeat groups`} color={(auditSnapshot.summary.voiceCallCorrelation.repeatWithin5mGroups || 0) > 0 ? "var(--red)" : "var(--green)"}/>}
                   </div>
                   <div style={{ flexBasis:"100%", fontSize:11, color:"var(--text-sec)", lineHeight:1.45 }}>
                     Confirmed n8n messages have source/tags from the workflow. Inferred messages are app_system group messages with no explicit n8n marker.
+                    {auditSnapshot.summary?.voiceCallCorrelation && (
+                      <span> Voice correlation: {auditSnapshot.summary.voiceCallCorrelation.available ? `${auditSnapshot.summary.voiceCallCorrelation.linkedCallMessages || 0} linked Retell message(s), ${auditSnapshot.summary.voiceCallCorrelation.repeatWithin5mMessages || 0} with a repeat call within 5 minutes.` : `not available (${auditSnapshot.summary.voiceCallCorrelation.reason || "missing Retell lookup"}).`}</span>
+                    )}
                   </div>
                 </div>
                 <div style={{ padding:compactCardPadding, display:"flex", flexDirection:"column", gap:12, maxHeight:isMobile ? "none" : "72vh", overflowY:isMobile ? "visible" : "auto" }}>
@@ -557,6 +595,38 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
                           </div>
                         ))}
                       </div>
+                    </div>
+
+                    <div className="card-el" style={{ border:"1px solid var(--border)", padding:isMobile ? 12 : 14, background:"#fff", minWidth:0 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:10 }}>
+                        <div>
+                          <div style={{ fontSize:14, fontWeight:800 }}>Voice Repeat Check</div>
+                          <div style={{ fontSize:11, color:"var(--text-sec)", marginTop:3 }}>Did the caller behind the CometChat message call again within 5 minutes?</div>
+                        </div>
+                        <Tag
+                          label={auditSnapshot.summary?.voiceCallCorrelation?.available ? `${auditSnapshot.summary.voiceCallCorrelation.repeatWithin5mGroups || 0} repeat groups` : "Retell not connected"}
+                          color={auditSnapshot.summary?.voiceCallCorrelation?.available ? ((auditSnapshot.summary.voiceCallCorrelation.repeatWithin5mGroups || 0) > 0 ? "var(--red)" : "var(--green)") : "var(--amber)"}
+                        />
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:8 }}>
+                        <div style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:"var(--bg-el)" }}>
+                          <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Linked Retell messages</div>
+                          <div style={{ fontSize:20, fontWeight:850, marginTop:3 }}>{auditSnapshot.summary?.voiceCallCorrelation?.linkedCallMessages || 0}</div>
+                        </div>
+                        <div style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:"var(--bg-el)" }}>
+                          <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Messages with 5m repeat</div>
+                          <div style={{ fontSize:20, fontWeight:850, marginTop:3, color:(auditSnapshot.summary?.voiceCallCorrelation?.repeatWithin5mMessages || 0) > 0 ? "var(--red)" : "var(--green)" }}>{auditSnapshot.summary?.voiceCallCorrelation?.repeatWithin5mMessages || 0}</div>
+                        </div>
+                        <div style={{ border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", background:"var(--bg-el)" }}>
+                          <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Retell calls examined</div>
+                          <div style={{ fontSize:20, fontWeight:850, marginTop:3 }}>{auditSnapshot.summary?.voiceCallCorrelation?.retellCallsExamined || 0}</div>
+                        </div>
+                      </div>
+                      {!auditSnapshot.summary?.voiceCallCorrelation?.available && (
+                        <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.5, marginTop:10 }}>
+                          Add `RETELL_API_KEY` to the Second Brain Vercel environment, then run Pull Day Now to populate this signal.
+                        </div>
+                      )}
                     </div>
 
                     <div className="card-el" style={{ border:"1px solid var(--border)", padding:isMobile ? 12 : 14, background:"#fff", minWidth:0 }}>
