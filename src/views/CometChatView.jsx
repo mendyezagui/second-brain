@@ -102,6 +102,23 @@ const sourceBreakdownFrom = (messages = []) => messages.reduce((acc, message) =>
   return acc;
 }, {});
 
+const parseEventMetadata = (value) => {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try { return JSON.parse(value); } catch { return {}; }
+};
+
+const eventLabel = (eventType = "") => String(eventType || "")
+  .replace(/^cometchat_/, "")
+  .replace(/_/g, " ")
+  .replace(/\b\w/g, letter => letter.toUpperCase());
+
+const eventTime = (stamp) => {
+  if (!stamp) return "";
+  const date = new Date(stamp);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString([], { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" }) : "";
+};
+
 const groupReviewFlags = (group = {}) => {
   if (Array.isArray(group.reviewFlags) && group.reviewFlags.length) return group.reviewFlags;
   const sourceTypes = new Set((group.systemMessages || []).map(sourceTypeFromMessage));
@@ -162,6 +179,9 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
   const [auditDate, setAuditDate] = useState(todayPacific());
   const [auditNotice, setAuditNotice] = useState("");
   const [openAuditGroupId, setOpenAuditGroupId] = useState("");
+  const [eventLoading, setEventLoading] = useState(false);
+  const [eventRows, setEventRows] = useState([]);
+  const [eventStats, setEventStats] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const transcriptRef = useRef(null);
   const settings = environmentSettings[environment] || DEFAULT_SETTINGS.sandbox;
@@ -192,6 +212,18 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "CometChat audit request failed");
+    return data;
+  };
+
+  const eventCall = async (body) => {
+    if (!session?.access_token) throw new Error("You need to be signed in before loading CometChat events.");
+    const resp = await fetch("/api/cometchat-events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "CometChat events request failed");
     return data;
   };
 
@@ -349,6 +381,23 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
     }
   };
 
+  const loadEventStream = async () => {
+    setEventLoading(true);
+    setError("");
+    try {
+      const [eventsData, statsData] = await Promise.all([
+        eventCall({ action:"list", limit:50 }),
+        eventCall({ action:"stats" }),
+      ]);
+      setEventRows(Array.isArray(eventsData.events) ? eventsData.events : []);
+      setEventStats(statsData);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setEventLoading(false);
+    }
+  };
+
   useEffect(() => { setEnvironment(initialEnvironment); }, [initialEnvironment]);
   useEffect(() => { setSection(initialSection); }, [initialSection]);
   useEffect(() => {
@@ -365,7 +414,12 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
   }, [environment]);
   useEffect(() => { if (!logsOnly) loadStatus(); }, [environment, logsOnly]);
   useEffect(() => { if (!logsOnly) loadMessages(); }, [environment, mode, viewer, settings.dispatchUid, settings.driverUid, settings.groupGuid, logsOnly]);
-  useEffect(() => { if (section === "logs") loadAuditSnapshots(); }, [section]);
+  useEffect(() => {
+    if (section === "logs") {
+      loadAuditSnapshots();
+      loadEventStream();
+    }
+  }, [section]);
   useEffect(() => {
     if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
   }, [messages]);
@@ -529,6 +583,52 @@ export function CometChatView({ session, initialEnvironment = "sandbox", initial
               <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", lineHeight:1.6, marginTop:10 }}>
                 Daily schedule target: 4:45 PM America/Los_Angeles. Historical snapshot files are append-only.
               </div>
+            </div>
+
+            <div className="card" style={{ padding:compactCardPadding }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, marginBottom:12 }}>
+                <div>
+                  <div className="display" style={{ fontSize:15, fontWeight:700 }}>Live Event Stream</div>
+                  <div style={{ fontSize:11, color:"var(--text-sec)", marginTop:3 }}>Webhook events captured from CometChat after Phase 1 is connected.</div>
+                </div>
+                <button className="btn btn-ghost" onClick={loadEventStream} disabled={eventLoading}><RefreshCw size={13} className={eventLoading ? "spin" : ""}/></button>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:8, marginBottom:10 }}>
+                <div style={{ border:"1px solid var(--border)", borderRadius:8, padding:"8px 9px", background:"var(--bg-el)" }}>
+                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Recent events</div>
+                  <div style={{ fontSize:20, fontWeight:850, marginTop:2 }}>{eventStats?.totalRecent ?? eventRows.length}</div>
+                </div>
+                <div style={{ border:"1px solid var(--border)", borderRadius:8, padding:"8px 9px", background:"var(--bg-el)" }}>
+                  <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>Message sent</div>
+                  <div style={{ fontSize:20, fontWeight:850, marginTop:2 }}>{eventStats?.byType?.cometchat_message_sent || 0}</div>
+                </div>
+              </div>
+              {eventRows.length === 0 ? (
+                <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.5 }}>
+                  No webhook events have landed yet. Once CometChat points at the n8n capture webhook, new messages should appear here without waiting for the evening pull.
+                </div>
+              ) : (
+                <div style={{ display:"grid", gap:8, maxHeight:360, overflowY:"auto", paddingRight:2 }}>
+                  {eventRows.map(row => {
+                    const meta = parseEventMetadata(row.metadata);
+                    return (
+                      <div key={row.id} className="card-el" style={{ border:"1px solid var(--border)", padding:"9px 10px", background:"var(--bg-el)", minWidth:0 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                          <div style={{ fontSize:12, fontWeight:850 }}>{eventLabel(row.event_type)}</div>
+                          <div className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{eventTime(row.ts)}</div>
+                        </div>
+                        <div style={{ fontSize:12, lineHeight:1.45, marginTop:5, overflowWrap:"anywhere" }}>{row.description || meta.text || "(no message text)"}</div>
+                        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:7 }}>
+                          {meta.receiver_type && <Tag label={meta.receiver_type}/>}
+                          {meta.sender && <Tag label={`from ${meta.sender}`}/>}
+                          {meta.receiver && <Tag label={`to ${meta.receiver}`}/>}
+                        </div>
+                        {meta.dedupe_key && <div className="mono" style={{ fontSize:9, color:"var(--text-sec)", marginTop:6, overflowWrap:"anywhere" }}>{meta.dedupe_key}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="card" style={{ padding:compactCardPadding }}>
