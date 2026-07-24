@@ -153,7 +153,7 @@ async function insertEvent(admin, normalized) {
 
   const { data, error } = await admin.from("events").insert(normalized.row).select("*").single();
   if (!error) return { inserted: true, event: data };
-  if (!/id/i.test(error.message || "")) throw new Error(`Event insert failed: ${error.message}`);
+  if (!/(id|pkey|duplicate|null value)/i.test(error.message || "")) throw new Error(`Event insert failed: ${error.message}`);
 
   const rowWithId = { id: await nextEventId(admin), ...normalized.row };
   const retry = await admin.from("events").insert(rowWithId).select("*").single();
