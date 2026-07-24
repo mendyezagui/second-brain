@@ -87,17 +87,13 @@ function normalizeEvent(payload = {}) {
     sender,
     receiver,
   ].filter(Boolean).join(":");
-  const entityType = receiverType === "group" || String(conversationId).startsWith("group_") ? "cometchat_group"
-    : receiverType === "user" ? "cometchat_user"
-    : "cometchat_conversation";
-  const entityId = receiver || conversationId || payload.webhook || "unknown";
   const senderLabel = actorName(message.data?.entities?.sender?.entity) || actorName(message.sender) || sender || "unknown";
   const receiverLabel = actorName(message.data?.entities?.receiver?.entity) || actorName(message.receiver) || receiver || "unknown";
 
   return {
     row: {
-      entity_type: entityType,
-      entity_id: entityId,
+      entity_type: "cometchat_event",
+      entity_id: 0,
       event_type: `cometchat_${String(trigger).replace(/[^a-zA-Z0-9_]+/g, "_").toLowerCase()}`,
       description: compactText(`${senderLabel} -> ${receiverLabel}${text ? `: ${text}` : ""}`),
       ts: sentAt ? new Date(sentAt * 1000).toISOString() : new Date().toISOString(),
@@ -116,6 +112,10 @@ function normalizeEvent(payload = {}) {
         receiver,
         receiver_name: receiverLabel,
         receiver_type: receiverType,
+        cometchat_entity_type: receiverType === "group" || String(conversationId).startsWith("group_") ? "group"
+          : receiverType === "user" ? "user"
+          : "conversation",
+        cometchat_entity_id: receiver || conversationId || payload.webhook || "unknown",
         category: message.category || "",
         type: message.type || "",
         text,
