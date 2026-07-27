@@ -43,21 +43,35 @@ export function SpectariInventoryView() {
   const [bookings, setBookings] = useState([]);
   const [leads, setLeads] = useState([]);
   const [toast, setToast] = useState(null);
+  const [leadDays, setLeadDays] = useState(7);
+  const [savingLead, setSavingLead] = useState(false);
 
   const flash = (msg, bad = false) => { setToast({ msg, bad }); setTimeout(() => setToast(null), 3200); };
 
   const reload = async () => {
     setLoading(true);
-    const [m, i, b, bk, r] = await Promise.all([
+    const [m, i, b, bk, r, s] = await Promise.all([
       supabase.from("spectari_models").select("*").order("sort"),
       supabase.from("spectari_items").select("*").order("created_at"),
       supabase.from("spectari_blocks").select("*").order("start_date"),
       supabase.from("spectari_bookings").select("*").order("start_date", { ascending: false }),
       supabase.from("spectari_reservations").select("*").order("created_at", { ascending: false }),
+      supabase.from("spectari_settings").select("lead_days").eq("id", 1).maybeSingle(),
     ]);
     setModels(m.data || []); setItems(i.data || []); setBlocks(b.data || []);
     setBookings(bk.data || []); setLeads(r.data || []);
+    if (s.data && s.data.lead_days != null) setLeadDays(s.data.lead_days);
     setLoading(false);
+  };
+
+  const saveLead = async () => {
+    setSavingLead(true);
+    const n = Math.max(0, parseInt(leadDays, 10) || 0);
+    const q = await supabase.from("spectari_settings").upsert({ id: 1, lead_days: n, updated_at: new Date().toISOString() });
+    setSavingLead(false);
+    if (q.error) { flash(q.error.message, true); return; }
+    setLeadDays(n);
+    flash(n === 0 ? "Lead-time window turned off" : `Lead time set to ${n} days`);
   };
   useEffect(() => { reload(); }, []);
 
@@ -83,6 +97,18 @@ export function SpectariInventoryView() {
         </div>
         <button className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={reload}><RefreshCw size={14} /> Refresh</button>
       </div>
+
+      {!loading && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: leadDays > 0 ? "var(--amber-dim)" : "var(--bg-el)", border: "1px solid " + (leadDays > 0 ? "rgba(217,119,6,0.25)" : "var(--border)"), borderRadius: 10, padding: "10px 14px", margin: "14px 0 4px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700 }}>Booking lead time</span>
+          <input className="input" type="number" min="0" style={{ width: 66 }} value={leadDays} onChange={e => setLeadDays(e.target.value)} />
+          <span style={{ fontSize: 12.5, color: "var(--text-sec)", flex: 1, minWidth: 220 }}>
+            rolling days from today that <b>no pair can be booked</b> (sourcing + checkout time). <b>0 = off.</b>
+            {leadDays > 0 && <> Earliest bookable date is always {Number(leadDays)} days out.</>}
+          </span>
+          <button className="btn btn-blue" onClick={saveLead} disabled={savingLead}>{savingLead ? "Saving…" : "Save"}</button>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 6, borderBottom: "1px solid var(--border)", margin: "14px 0 20px", flexWrap: "wrap" }}>
         {TABS.map(t => (
