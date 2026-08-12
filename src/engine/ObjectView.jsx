@@ -101,14 +101,19 @@ export const ObjectView = ({ object: objectProp, db, setDB, navigate, focus }) =
               </div>
             )}
 
-            {object.layout.sections.map((sec) => (
-              <div key={sec.title} className="card" style={{ padding: 20, marginBottom: 16 }}>
-                <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 12, textTransform: "uppercase", letterSpacing: ".04em" }}>{sec.title}</div>
-                <FieldSection object={object} fields={sec.fields} cols={sec.cols || 2} record={edit} mode="edit" onChange={onField} db={db} navigate={navigate} />
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+              <div style={{ flex: "2 1 380px", minWidth: 0 }}>
+                {object.layout.sections.map((sec) => (
+                  <div key={sec.title} className="card" style={{ padding: 20, marginBottom: 16 }}>
+                    <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 12, textTransform: "uppercase", letterSpacing: ".04em" }}>{sec.title}</div>
+                    <FieldSection object={object} fields={sec.fields} cols={sec.cols || 2} record={edit} mode="edit" onChange={onField} db={db} navigate={navigate} />
+                  </div>
+                ))}
               </div>
-            ))}
-
-            <RelatedLists object={object} record={rec} db={db} setDB={setDB} navigate={navigate} />
+              <div style={{ flex: "1 1 300px", minWidth: 0 }}>
+                <RelatedLists object={object} record={rec} db={db} setDB={setDB} navigate={navigate} />
+              </div>
+            </div>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-sec)" }}>
