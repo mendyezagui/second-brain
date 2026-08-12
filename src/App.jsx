@@ -4,6 +4,7 @@ import { MASTER_VIEW_FOR_TYPE } from "./lib/constants";
 import { ENV_READY, loadAllFromDB, supabase, syncToDB } from "./lib/supabase";
 import { callClaude, parseAppHash, recordPath, today } from "./lib/utils";
 import { BottomNav, GlobalStyle, LoadingScreen, LoginScreen, Sidebar } from "./components/ui";
+import { ObjectView } from "./engine/ObjectView";
 import { AdminView } from "./views/AdminView";
 import { AIMemoriesView } from "./views/AIMemoriesView";
 import { AssociatesView } from "./views/AssociatesView";
@@ -186,24 +187,25 @@ export default function App() {
     const atRisk = db.contacts.filter(c=>c.score && c.score < 40 && c.category && c.category.includes("customer"));
     return critTasks.length + overdueInv.length + atRisk.length;
   })();
+  const obj = (name) => <ObjectView object={name} db={db} setDB={setDB} navigate={navigate} focus={focus}/>;
   const VIEWS = {
     dashboard:    <Dashboard db={db} setDB={setDB} setView={setView} navigate={navigate} session={session} runSweep={runSweep} sweepRunning={sweepRunning} setShowVoiceLab={setShowVoiceLab} />,
     brief:        <MorningBriefView />,
     associates:   <AssociatesView db={db} setDB={setDB} navigate={navigate}/>,
-    crm:          <CRMView db={db} setDB={setDB} setView={setView} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    companies:    <CompaniesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    deals:        <DealsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    marketing:    <MarketingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    crm:          obj("contact"),
+    companies:    obj("company"),
+    deals:        obj("deal"),
+    marketing:    obj("campaign"),
     social:       <SocialMediaView />,
     cadences:     <CadencesView />,
     loops:        <LoopsView />,
-    tasks:        <TasksView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    goals:        <GoalsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    tasks:        obj("task"),
+    goals:        obj("goal"),
     documents:   <DocumentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
     record:      <RecordDetailView db={db} setDB={setDB} record={recordTarget} navigate={navigate} setFocus={setFocus}/>,
-    ai_memories: <AIMemoriesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    ai_memories: obj("ai_memory"),
     multi_llm:   <MultiLLMView session={session}/>,
-    strategies:   <StrategiesView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    strategies:   obj("strategy"),
     voitra_gate:  <VoitraGateView/>,
     rc_controls:  <RCControlsView/>,
     vantaca_controls: <VantacaControlsView/>,
@@ -211,9 +213,9 @@ export default function App() {
     cometchat_dev: <CometChatView session={session} initialEnvironment="sandbox" initialSection="console" lockSection={true}/>,
     cometchat_sandbox: <CometChatView session={session} initialEnvironment="sandbox" initialSection="console" lockSection={true}/>,
     cometchat_production: <CometChatView session={session} initialEnvironment="production" initialSection="console" lockSection={true}/>,
-    payments:      <PaymentsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    projects:     <ProjectsView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
-    invoices:      <BillingView db={db} setDB={setDB} navigate={navigate} focus={focus} setFocus={setFocus}/>,
+    payments:      obj("payment"),
+    projects:     obj("project"),
+    invoices:      obj("invoice"),
     voice:        <VoiceView db={db} setDB={setDB} autoRecord={autoRecord}/>,
     admin:        <AdminView session={session}/>,
     spectari:     <SpectariInventoryView/>,

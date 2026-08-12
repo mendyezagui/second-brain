@@ -1,17 +1,9 @@
 import { DOCUMENT_ENTITY_TYPES } from "../lib/constants";
 import { docAssociationKey, docHasAssociation, fmt, getDocEntityLabel, recordPath } from "../lib/utils";
 import { ActivityTimeline, AssociatedDocumentsPanel, EntityLink, Tag } from "../components/ui";
-import { AIMemoriesView } from "./AIMemoriesView";
-import { BillingView } from "./BillingView";
-import { CompaniesView } from "./CompaniesView";
-import { CRMView } from "./CRMView";
-import { DealsView } from "./DealsView";
 import { DocumentsView } from "./DocumentsView";
-import { GoalsView } from "./GoalsView";
-import { MarketingView } from "./MarketingView";
-import { PaymentsView } from "./PaymentsView";
-import { ProjectsView } from "./ProjectsView";
-import { StrategiesView } from "./StrategiesView";
+import { OBJECTS } from "../objects";
+import { ObjectView } from "../engine/ObjectView";
 
 export const recordListViewFor = (type) => ({
   contact:"crm", company:"companies", deal:"deals", document:"documents", project:"projects",
@@ -31,17 +23,8 @@ export const RecordDetailView = ({ db, setDB, record, navigate, setFocus }) => {
   // For types that have a master+detail view, render that view with focus pre-set.
   // This keeps the left selector list visible while showing the record's detail,
   // and uses the master view's inline-editable form instead of the read-only generic view.
-  if (type === "contact")  return <CRMView        db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "company")  return <CompaniesView  db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "campaign") return <MarketingView  db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "project")  return <ProjectsView   db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "deal")     return <DealsView      db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "goal")     return <GoalsView      db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "strategy") return <StrategiesView db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "invoice")  return <BillingView    db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "payment")  return <PaymentsView   db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "document") return <DocumentsView  db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
-  if (type === "ai_memory")return <AIMemoriesView db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (type === "document") return <DocumentsView db={db} setDB={setDB} navigate={navigate} focus={record} setFocus={setFocus}/>;
+  if (OBJECTS[type]) return <ObjectView object={type} db={db} setDB={setDB} navigate={navigate} focus={record}/>;
 
   const id = record?.id;
   const cfg = DOCUMENT_ENTITY_TYPES.find(c => c.type === type);
