@@ -1,7 +1,7 @@
 // RelatedList — a modular related-list card, driven by a relation config on the
 // object metadata: { object, label, filter, columns?, limit? }.
 // Rendered inside a responsive grid so lists pack side-by-side on wide screens.
-import { EntityLink, Tag } from "../components/ui";
+import { EntityLink, Tag, AssociatedDocumentsPanel, ActivityTimeline } from "../components/ui";
 import { objectFor } from "../objects";
 import { FieldModule } from "./FieldModule";
 
@@ -35,13 +35,16 @@ export const RelatedList = ({ relation, record, db, navigate, limit = 12 }) => {
   );
 };
 
-// Responsive grid of related lists — packs multiple across when wide, single column when narrow.
-export const RelatedLists = ({ object, record, db, navigate }) => {
+// Responsive grid of ALL related lists (metadata relations + Documents + Activity
+// Timeline). auto-fit makes cards expand to fill into real columns when wide,
+// and collapse to a single column when narrow.
+export const RelatedLists = ({ object, record, db, setDB, navigate }) => {
   const rels = (object.related || []).filter((rl) => rl.filter(record, db).length);
-  if (!rels.length) return null;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12, marginBottom: 16, alignItems: "start" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12, marginBottom: 16, alignItems: "start" }}>
       {rels.map((rl) => <RelatedList key={rl.label} relation={rl} record={record} db={db} navigate={navigate} />)}
+      <div style={{ minWidth: 0 }}><AssociatedDocumentsPanel db={db} setDB={setDB} entityType={object.name} entityId={record.id} /></div>
+      <div style={{ minWidth: 0 }}><ActivityTimeline events={db.events || []} entityType={object.name} entityId={record.id} /></div>
     </div>
   );
 };

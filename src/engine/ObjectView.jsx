@@ -108,10 +108,7 @@ export const ObjectView = ({ object: objectProp, db, setDB, navigate, focus }) =
               </div>
             ))}
 
-            <RelatedLists object={object} record={rec} db={db} navigate={navigate} />
-
-            <AssociatedDocumentsPanel db={db} setDB={setDB} entityType={object.name} entityId={rec.id} />
-            <ActivityTimeline events={db.events || []} entityType={object.name} entityId={rec.id} />
+            <RelatedLists object={object} record={rec} db={db} setDB={setDB} navigate={navigate} />
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-sec)" }}>
