@@ -28,8 +28,13 @@ export const daysBetween = (a,b) => Math.round((new Date(b)-new Date(a))/(1000*6
 
 export const today = () => new Date().toISOString().split("T")[0];
 
+// Product instances (Cloudflare, no /api routes) call a shared, origin-gated proxy
+// on the origin project; the personal app uses its own Vercel /api/claude function.
+const IS_PRODUCT_HOST = typeof window !== "undefined" && /(^|\.)secondbrain-app\.pages\.dev$|(^|\.)os\.aventary\.com$/.test(window.location.host);
+const CLAUDE_ENDPOINT = IS_PRODUCT_HOST ? "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/product-claude" : "/api/claude";
+
 export async function callClaude(system, user, max=800, extra={}) {
-  const r = await fetch("/api/claude", {
+  const r = await fetch(CLAUDE_ENDPOINT, {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:max, system, messages:[{role:"user",content:user}], ...extra }),
   });
