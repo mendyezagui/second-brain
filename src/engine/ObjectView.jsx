@@ -9,6 +9,7 @@ import {
 import { objectFor } from "../objects";
 import { useObject } from "./useObject";
 import { FieldModule, FieldSection } from "./FieldModule";
+import { RelatedLists } from "./RelatedList";
 
 export const ObjectView = ({ object: objectProp, db, setDB, navigate, focus }) => {
   const object = typeof objectProp === "string" ? objectFor(objectProp) : objectProp;
@@ -107,22 +108,7 @@ export const ObjectView = ({ object: objectProp, db, setDB, navigate, focus }) =
               </div>
             ))}
 
-            {(object.related || []).map((rl) => {
-              const items = rl.filter(rec, db);
-              if (!items.length) return null;
-              const ro = objectFor(rl.object);
-              return (
-                <div key={rl.label} style={{ marginBottom: 16 }}>
-                  <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 8 }}>{rl.label.toUpperCase()} ({items.length})</div>
-                  {items.slice(0, 12).map((it) => (
-                    <div key={it.id} className="card-el" style={{ padding: "10px 14px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <EntityLink type={rl.object} id={it.id} navigate={navigate}>{ro ? ro.title(it) : it.name || it.title}</EntityLink>
-                      {ro?.badge && it[ro.badge] ? <Tag label={String(it[ro.badge])} /> : null}
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
+            <RelatedLists object={object} record={rec} db={db} navigate={navigate} />
 
             <AssociatedDocumentsPanel db={db} setDB={setDB} entityType={object.name} entityId={rec.id} />
             <ActivityTimeline events={db.events || []} entityType={object.name} entityId={rec.id} />
