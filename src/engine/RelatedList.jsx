@@ -18,8 +18,8 @@ export const RelatedList = ({ relation, record, db, navigate, limit = 12 }) => {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {items.slice(0, relation.limit || limit).map((it) => (
-          <div key={it.id} className="card-el" style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <div style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div key={it.id} className="card-el" style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 0, fontSize: 13 }}>
+            <div style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13, fontWeight: 500 }}>
               <EntityLink type={relation.object} id={it.id} navigate={navigate}>{ro ? ro.title(it) : (it.name || it.title)}</EntityLink>
               {cols && ro && (
                 <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginLeft: 8 }}>
