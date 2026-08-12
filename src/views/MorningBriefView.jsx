@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Sparkles, Loader, AlertCircle, Mail, Phone, Linkedin, Activity, Target, Calendar, ChevronRight, Copy, Check, User, Building2, FileText, ExternalLink, Zap, X, Newspaper } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { callClaude, recordPath } from "../lib/utils";
+import { PRODUCT_MODE } from "../components/ui";
 
 const fmt$ = (n) => (n == null ? "" : "$" + Number(n).toLocaleString());
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -346,7 +347,7 @@ export function MorningBriefView() {
         Click any row to open up what to do, ready-to-send text, and contact details. The colored tag on each line shows where it came from.
       </div>
 
-      <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+      {!PRODUCT_MODE && (<div className="card" style={{ padding: 16, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Zap size={15} color="var(--blue)" />
           <div className="display" style={{ fontSize: 14, fontWeight: 700 }}>Orchestrator</div>
@@ -392,7 +393,7 @@ export function MorningBriefView() {
             )}
           </div>
         )}
-      </div>
+      </div>)}
 
       <Section icon={Mail} title="Email — follow-ups & triage" count={d.emailTasks.length || "none"}>
         {d.emailTasks.length === 0 ? (

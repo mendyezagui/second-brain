@@ -1,7 +1,7 @@
 import { AlertCircle, Award, Calendar, CheckCircle, ChevronRight, Clock, Loader, Mic, RefreshCw, Target, TrendingUp, Users, Zap } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { daysBetween, fmt, sc, today } from "../lib/utils";
-import { AgentBadge, MetricCard, Tag } from "../components/ui";
+import { AgentBadge, MetricCard, PRODUCT_MODE, Tag } from "../components/ui";
 
 export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sweepRunning, setShowVoiceLab }) => {
   const hour = new Date().getHours();
@@ -49,7 +49,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
               {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})} Â· {agentCount} agents active
             </div>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={13} className="spin"/>:<Zap size={13}/>} {sweepRunning?"Running...":"AI Sweep"}</button><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{setShowVoiceLab&&setShowVoiceLab(true)}}><Mic size={13}/> Voice</button></div>
+          {!PRODUCT_MODE && <div style={{display:"flex",gap:8,alignItems:"center"}}><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={13} className="spin"/>:<Zap size={13}/>} {sweepRunning?"Running...":"AI Sweep"}</button><button className="btn btn-sm" style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"4px 10px"}} onClick={()=>{setShowVoiceLab&&setShowVoiceLab(true)}}><Mic size={13}/> Voice</button></div>}
         </div>
         {(dueTodayOrOverdue.length > 0 || criticalItems.length > 0 || decayedContacts.length > 0 || todayEvents.length > 0) && (
           <div style={{ marginTop:14, display:"flex", flexDirection:"column", gap:6 }}>
@@ -108,7 +108,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                 <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{latestSweep.ts}</span>
-                <button className="btn btn-sm" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={11} className="spin"/>:<RefreshCw size={11}/>}</button>
+                {!PRODUCT_MODE && <button className="btn btn-sm" style={{ fontSize:10, padding:"3px 8px" }} onClick={()=>{if(!sweepRunning)runSweep()}}>{sweepRunning?<Loader size={11} className="spin"/>:<RefreshCw size={11}/>}</button>}
               </div>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
