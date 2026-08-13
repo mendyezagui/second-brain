@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Brain, Mic, Zap } from "lucide-react";
 import { MASTER_VIEW_FOR_TYPE } from "./lib/constants";
-import { ENV_READY, loadAllFromDB, supabase, syncToDB } from "./lib/supabase";
+import { ENV_READY, loadAllFromDB, loadTenant, supabase, syncToDB } from "./lib/supabase";
+import { setModules } from "./lib/modules";
 import { callClaude, parseAppHash, recordPath, today } from "./lib/utils";
-import { BottomNav, GlobalStyle, LoadingScreen, LoginScreen, Sidebar } from "./components/ui";
+import { BottomNav, GlobalStyle, LoadingScreen, LoginScreen, PRODUCT_MODE, Sidebar } from "./components/ui";
 import { ObjectView } from "./engine/ObjectView";
 import { AdminView } from "./views/AdminView";
 import { AIMemoriesView } from "./views/AIMemoriesView";
@@ -128,7 +129,10 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase || !session) return;
-    loadAllFromDB().then(data => { setDB(data); dbRef.current = data; });
+    loadTenant()
+      .then(t => setModules(t ? (t.modules || {}) : null))
+      .then(loadAllFromDB)
+      .then(data => { setDB(data); dbRef.current = data; });
   }, [session?.user?.id]);
 
   useEffect(() => {
@@ -254,7 +258,7 @@ export default function App() {
       </div>}
       {/* Floating Action Buttons */}
       <div className="fab-stack" style={{position:"fixed",bottom:24,right:24,zIndex:9990,display:"flex",flexDirection:"column",gap:12,alignItems:"flex-end"}}>
-        <button title="AI Sweep" onClick={()=>{if(!sweepRunning){runSweep()}}} style={{width:52,height:52,borderRadius:"50%",background:sweepRunning?"var(--amber)":"linear-gradient(135deg,#667eea,#764ba2)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",transition:"transform 0.2s",animation:sweepRunning?"pulse 1.5s infinite":"none"}}><Zap size={22} color="#fff"/></button>
+        {!PRODUCT_MODE && <button title="AI Sweep" onClick={()=>{if(!sweepRunning){runSweep()}}} style={{width:52,height:52,borderRadius:"50%",background:sweepRunning?"var(--amber)":"linear-gradient(135deg,#667eea,#764ba2)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",transition:"transform 0.2s",animation:sweepRunning?"pulse 1.5s infinite":"none"}}><Zap size={22} color="#fff"/></button>}
         <button title="Voice Lab" onClick={()=>{setShowVoiceLab(v=>!v);setAutoRecord(true)}} style={{width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#cc77ff,#aaafff)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 15px rgba(0,0,0,0.3)",animation:"pulse 2s infinite"}}><Mic size={24} color="#fff"/></button>
       </div>
         {mobile && <BottomNav view={view} setView={(v)=>navigate(v)}/>}

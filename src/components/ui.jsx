@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, RefreshCw, Save, Search, Settings, Shield, SlidersHorizontal, Sparkles, Target, Trash2, Upload, Users, X, Calendar, Glasses } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { navEnabled } from "../lib/modules";
 import { blankDocument, buildDocOptions, docAssociationKey, docHasAssociation, formatDocSize, getDocEntityLabel, getDocKindLabel, nextId, normalizeDocId, recordPath, sc, uploadDocumentFile } from "../lib/utils";
 
 export const GlobalStyle = () => (
@@ -485,23 +486,26 @@ const RAW_NAV = [
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
-const PRODUCT_HIDE = new Set([...CONTROL_IDS, "spectari", "multi_llm", "_fin", "deals", "invoices", "payments"]);
-export const NAV = PRODUCT_MODE ? (() => {
-  const items = RAW_NAV
-    .filter(n => !PRODUCT_HIDE.has(n.id))
-    .map(n => {
+// Build the nav for the CURRENT tenant: keep only items whose module is enabled
+// (core items always show), then apply client-mode cosmetics in product mode.
+export const buildNav = () => {
+  let items = RAW_NAV.filter(n => n.divider || navEnabled(n.id));
+  if (PRODUCT_MODE) {
+    items = items.map(n => {
       if (n.id === "_ai_controls") return { ...n, label:"Controls", children:[], note:"We can build custom controls for the software you already run — so you manage everything from one place. Tell us what you use." };
       if (n.id === "brief") return { ...n, label:"Brief" };
       return n;
     });
-  const bi = items.findIndex(n => n.id === "brief");
-  const di = items.findIndex(n => n.id === "dashboard");
-  if (bi > -1 && di > -1 && bi > di) { const [b] = items.splice(bi, 1); items.splice(di, 0, b); }
+    const bi = items.findIndex(n => n.id === "brief");
+    const di = items.findIndex(n => n.id === "dashboard");
+    if (bi > -1 && di > -1 && bi > di) { const [b] = items.splice(bi, 1); items.splice(di, 0, b); }
+  }
   return items;
-})() : RAW_NAV;
+};
 
 export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
   const [collGroups, setCollGroups] = useState({ _fin: true, _ai_controls: false });
+  const NAV = buildNav();
   return (<div style={{ width:collapsed?60:210, height:"100%", minHeight:0, background:"var(--bg-card)", borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 8px", gap:2, transition:"width .25s", flexShrink:0, overflow:"hidden" }}>
     <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 6px 18px", cursor:"pointer", flexShrink:0 }} onClick={()=>setCollapsed(!collapsed)}>
       <div style={{ width:32, height:32, borderRadius:8, background:"var(--blue-dim)", border:"1px solid rgba(0,119,204,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -537,8 +541,8 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
-  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}].filter(n => !PRODUCT_MODE || n.id!=="multi_llm");
-  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"cometchat",icon:MessageSquare,label:"Comet Logs"},{id:"cometchat_dev",icon:MessageSquare,label:"Comet Dev"},{id:"spectari",icon:Glasses,label:"Spectari"},{id:"admin",icon:Shield,label:"Admin"}].filter(n => !PRODUCT_MODE || !PRODUCT_HIDE.has(n.id));
+  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}].filter(n => navEnabled(n.id));
+  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"cometchat",icon:MessageSquare,label:"Comet Logs"},{id:"cometchat_dev",icon:MessageSquare,label:"Comet Dev"},{id:"spectari",icon:Glasses,label:"Spectari"},{id:"admin",icon:Shield,label:"Admin"}].filter(n => navEnabled(n.id));
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>

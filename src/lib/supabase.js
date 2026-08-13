@@ -9,6 +9,18 @@ export const ENV_READY = SUPA_URL.startsWith("https://") && SUPA_KEY.length > 10
 
 export const supabase = ENV_READY ? createClient(SUPA_URL, SUPA_KEY) : null;
 
+// Load the current tenant (RLS scopes to the caller's tenant). Returns null on
+// single-tenant backends that have no `tenants` table (e.g. the owner's personal
+// project) — callers treat null as "owner / all modules on".
+export const loadTenant = async () => {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from("tenants").select("name,slug,modules").limit(1).maybeSingle();
+    if (error) return null;
+    return data || null;
+  } catch { return null; }
+};
+
 export const DB_TABLES = [
   ["contacts",              "contacts"],
   ["payments",              "payments"],
@@ -39,13 +51,13 @@ export const loadAllFromDB = async () => {
   DB_TABLES.forEach(([key], i) => {
     const { data, error } = fetches[i];
     if (!error && data && data.length > 0) { result[key] = data; }
-    else if (!hasAnyData) { result[key] = seed[key]; toSeed.push({ key, i }); }
+    else if (!hasAnyData) { result[key] = seed[key] || []; if ((seed[key] || []).length > 0) toSeed.push({ key, i }); }
     else { result[key] = []; } // Table is empty but DB is not fresh â don't re-seed
   });
   if (toSeed.length > 0) {
     await Promise.all(toSeed.map(({ key, i }) => {
       const [, tbl] = DB_TABLES[i];
-      return seed[key].length > 0 ? supabase.from(tbl).upsert(seed[key]) : Promise.resolve();
+      return (seed[key] || []).length > 0 ? supabase.from(tbl).upsert(seed[key]) : Promise.resolve();
     }));
   }
   return result;
