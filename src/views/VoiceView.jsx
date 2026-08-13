@@ -3,7 +3,10 @@ import { AlertCircle, Briefcase, Check, CheckCircle, FileText, Loader, Mic, MicO
 import { callClaude, nextId, today } from "../lib/utils";
 import { supabase } from "../lib/supabase";
 
-const LLM_PROXY_URL = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/llm-proxy";
+const IS_PRODUCT_HOST = typeof window !== "undefined" && /(^|\.)secondbrain-app\.pages\.dev$|(^|\.)os\.aventary\.com$/.test(window.location.host);
+const LLM_PROXY_URL = IS_PRODUCT_HOST
+  ? "https://fukehjqikxqsntwhmgsk.supabase.co/functions/v1/llm-proxy"
+  : "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/llm-proxy";
 
 export const VoiceView = ({ db, setDB }) => {
   const [recording, setRecording] = useState(false);
