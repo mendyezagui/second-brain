@@ -123,14 +123,14 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
 
       {/* Metrics */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:12 }}>
-        <MetricCard icon={TrendingUp} label="YTD Revenue" value={fmt(paid)} sub={`${fmt(goal.target_value)} target Â· ${goalPct}%`} color="--blue" trend={12}/>
-        <MetricCard icon={Target} label="Wtd Pipeline" value={fmt(Math.round(pipeline))} sub={`${db.deals.length} deals`} color="--amber" trend={8}/>
-        <MetricCard icon={AlertCircle} label="Overdue A/R" value={fmt(overdue)} color="--red"/>
+        {!PRODUCT_MODE && <MetricCard icon={TrendingUp} label="YTD Revenue" value={fmt(paid)} sub={`${fmt(goal.target_value)} target Â· ${goalPct}%`} color="--blue" trend={12}/>}
+        {!PRODUCT_MODE && <MetricCard icon={Target} label="Wtd Pipeline" value={fmt(Math.round(pipeline))} sub={`${db.deals.length} deals`} color="--amber" trend={8}/>}
+        {!PRODUCT_MODE && <MetricCard icon={AlertCircle} label="Overdue A/R" value={fmt(overdue)} color="--red"/>}
         <MetricCard icon={CheckCircle} label="Tasks Due" value={dueTodayOrOverdue.length} sub={`${openTasks.length} total open`} color="--green"/>
       </div>
 
       {/* Goal Progress Bar */}
-      <div className="card" style={{ padding:16 }}>
+      {!PRODUCT_MODE && <div className="card" style={{ padding:16 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             <Award size={14} color="var(--purple)"/>
@@ -144,10 +144,10 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
         <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:6 }}>
           {goalPct}% of target Â· {fmt(goal.target_value - paid)} remaining Â· Pipeline coverage: {Math.round((pipeline/(goal.target_value-paid))*100)}%
         </div>
-      </div>
+      </div>}
 
       {/* Revenue Trend */}
-      <div className="card" style={{ padding:20 }}>
+      {!PRODUCT_MODE && <div className="card" style={{ padding:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ fontFamily:"var(--font-d)", fontSize:16, fontWeight:700 }}>Revenue Trend</div>
           <span className="mono" style={{ fontSize:10, color:"var(--text-sec)" }}>{revSeries[0].m} - {revSeries[revSeries.length-1].m}</span>
@@ -161,7 +161,7 @@ export const Dashboard = ({ db, setDB, setView, navigate, session , runSweep, sw
             <Area type="monotone" dataKey="rev" stroke="#0077cc" strokeWidth={2} fill="url(#bg)"/>
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </div>}
 
       {/* Agent Feed */}
       <div>

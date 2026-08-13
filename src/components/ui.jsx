@@ -448,7 +448,10 @@ export const LoginScreen = () => {
   );
 };
 
-export const NAV = [
+const CONTROL_IDS = ["voitra_gate","rc_controls","vantaca_controls","cometchat","cometchat_dev"];
+export const PRODUCT_MODE = import.meta.env.VITE_PRODUCT_MODE === "1"
+  || (typeof window !== "undefined" && /(^|\.)secondbrain-app\.pages\.dev$|(^|\.)os\.aventary\.com$/.test(window.location.host));
+const RAW_NAV = [
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
   {id:"brief",icon:Sparkles,label:"Morning Brief"},
   {id:"loops",icon:RefreshCw,label:"Loops"},
@@ -482,6 +485,21 @@ export const NAV = [
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 
+const PRODUCT_HIDE = new Set([...CONTROL_IDS, "spectari", "multi_llm", "_fin", "deals", "invoices", "payments"]);
+export const NAV = PRODUCT_MODE ? (() => {
+  const items = RAW_NAV
+    .filter(n => !PRODUCT_HIDE.has(n.id))
+    .map(n => {
+      if (n.id === "_ai_controls") return { ...n, label:"Controls", children:[], note:"We can build custom controls for the software you already run — so you manage everything from one place. Tell us what you use." };
+      if (n.id === "brief") return { ...n, label:"Brief" };
+      return n;
+    });
+  const bi = items.findIndex(n => n.id === "brief");
+  const di = items.findIndex(n => n.id === "dashboard");
+  if (bi > -1 && di > -1 && bi > di) { const [b] = items.splice(bi, 1); items.splice(di, 0, b); }
+  return items;
+})() : RAW_NAV;
+
 export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) => {
   const [collGroups, setCollGroups] = useState({ _fin: true, _ai_controls: false });
   return (<div style={{ width:collapsed?60:210, height:"100%", minHeight:0, background:"var(--bg-card)", borderRight:"1px solid var(--border)", display:"flex", flexDirection:"column", padding:"14px 8px", gap:2, transition:"width .25s", flexShrink:0, overflow:"hidden" }}>
@@ -500,6 +518,7 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
                 </button>
                 {open&&<div style={{marginLeft:12}}>
                   {NAV.filter(c=>c.parent===n.id).map(c=>{const act=view===c.id;return <button key={c.id} onClick={()=>setView(c.id)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"5px 12px",border:"none",background:act?"var(--active-bg,rgba(59,130,246,0.08))":"transparent",color:act?"var(--accent)":"var(--text-sec)",cursor:"pointer",borderRadius:8,fontSize:"0.82rem"}}><c.icon size={14}/>{c.label}</button>})}
+                  {n.note&&!collapsed&&<div style={{padding:"6px 12px 8px",fontSize:"0.72rem",lineHeight:1.55,color:"var(--text-sec)"}}>{n.note}</div>}
                 </div>}
               </div>; }
               if(n.parent) return null;
@@ -518,8 +537,8 @@ export const Sidebar = ({ view, setView, collapsed, setCollapsed, alerts, db }) 
 
 export const BottomNav = ({ view, setView }) => {
   const [showMore, setShowMore] = useState(false);
-  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}];
-  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"cometchat",icon:MessageSquare,label:"Comet Logs"},{id:"cometchat_dev",icon:MessageSquare,label:"Comet Dev"},{id:"spectari",icon:Glasses,label:"Spectari"},{id:"admin",icon:Shield,label:"Admin"}];
+  const primary = [{id:"dashboard",icon:BarChart2,label:"Home"},{id:"brief",icon:Sparkles,label:"Brief"},{id:"multi_llm",icon:MessageSquare,label:"AI"},{id:"crm",icon:Users,label:"Contacts"},{id:"tasks",icon:CheckCircle,label:"Tasks"}].filter(n => !PRODUCT_MODE || n.id!=="multi_llm");
+  const secondary = [{id:"loops",icon:RefreshCw,label:"Loops"},{id:"cadences",icon:Activity,label:"Cadences"},{id:"deals",icon:Target,label:"Deals"},{id:"projects",icon:Briefcase,label:"Projects"},{id:"documents",icon:FileText,label:"Docs"},{id:"companies",icon:Building2,label:"Companies"},{id:"invoices",icon:DollarSign,label:"Billing"},{id:"payments",icon:CreditCard,label:"Payments"},{id:"ai_memories",icon:Sparkles,label:"Memories"},{id:"strategies",icon:Target,label:"Strategies"},{id:"goals",icon:Award,label:"Goals"},{id:"voitra_gate",icon:Mic,label:"Voitra"},{id:"rc_controls",icon:Phone,label:"RC Controls"},{id:"vantaca_controls",icon:Building2,label:"Vantaca"},{id:"cometchat",icon:MessageSquare,label:"Comet Logs"},{id:"cometchat_dev",icon:MessageSquare,label:"Comet Dev"},{id:"spectari",icon:Glasses,label:"Spectari"},{id:"admin",icon:Shield,label:"Admin"}].filter(n => !PRODUCT_MODE || !PRODUCT_HIDE.has(n.id));
   const isSecondaryActive = secondary.some(n=>n.id===view);
   return (
     <>
