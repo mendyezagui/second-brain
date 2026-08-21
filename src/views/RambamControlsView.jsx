@@ -122,7 +122,7 @@ export function RambamControlsView() {
 
       <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:18, flexWrap:"wrap" }}>
         <div style={{ display:"flex", padding:3, borderRadius:9, background:"var(--bg-el)", border:"1px solid var(--border)" }}>
-          {[{id:"members",label:"Members",icon:Users},{id:"days",label:"Daily ledger",icon:CalendarDays}].map((item) => <button key={item.id} onClick={()=>setTab(item.id)} style={{ border:0, borderRadius:7, padding:"7px 11px", display:"flex", alignItems:"center", gap:6, background:tab===item.id?"var(--bg-card)":"transparent", color:tab===item.id?"var(--text)":"var(--text-sec)", cursor:"pointer", boxShadow:tab===item.id?"0 1px 4px rgba(0,0,0,.12)":"none" }}><item.icon size={13}/>{item.label}</button>)}
+          {[{id:"members",label:"Members",icon:Users},{id:"days",label:"Daily ledger",icon:CalendarDays},{id:"posts",label:"Source posts",icon:BookOpenCheck}].map((item) => <button key={item.id} onClick={()=>setTab(item.id)} style={{ border:0, borderRadius:7, padding:"7px 11px", display:"flex", alignItems:"center", gap:6, background:tab===item.id?"var(--bg-card)":"transparent", color:tab===item.id?"var(--text)":"var(--text-sec)", cursor:"pointer", boxShadow:tab===item.id?"0 1px 4px rgba(0,0,0,.12)":"none" }}><item.icon size={13}/>{item.label}</button>)}
         </div>
         <label style={{ flex:"1 1 260px", maxWidth:390, position:"relative" }}><Search size={13} style={{ position:"absolute", left:10, top:10, color:"var(--text-sec)" }}/><input className="input" value={query} onChange={(event)=>setQuery(event.target.value)} placeholder={tab==="members"?"Search members, phone, group or track…":"Search this day…"} style={{ paddingLeft:31 }}/></label>
       </div>
@@ -168,6 +168,20 @@ export function RambamControlsView() {
           </tr>)}</tbody>
         </table></div></div>
       </div>}
+
+      {tab === "posts" && <div className="card" style={{ marginTop:12, overflow:"hidden" }}><div style={{ overflowX:"auto" }}><table style={{ width:"100%", borderCollapse:"collapse", minWidth:1080 }}>
+        <thead><tr>{["Posted at","Member","Raw post","Raw marks","Credited days","Unplaced","Review","Source key"].map((heading) => <th key={heading} style={{ position:"sticky", top:0, zIndex:2, background:"var(--bg-card)", padding:"11px 12px", borderBottom:"1px solid var(--border)", textAlign:"left", fontSize:9, color:"var(--text-sec)", letterSpacing:.8, textTransform:"uppercase", whiteSpace:"nowrap" }}>{heading}</th>)}</tr></thead>
+        <tbody>{(payload?.sourcePosts || []).filter((post) => !query.trim() || [post.member, post.rawText, post.sourceKey].join(" ").toLowerCase().includes(query.trim().toLowerCase())).map((post) => <tr key={post.id} style={{ borderBottom:"1px solid var(--border)" }}>
+          <td style={{ padding:12, fontSize:10, whiteSpace:"nowrap" }}>{new Date(post.postedAt).toLocaleString()}</td>
+          <td style={{ padding:12, fontWeight:700 }}>{post.member}</td>
+          <td style={{ padding:12, fontSize:11, maxWidth:360, whiteSpace:"pre-wrap" }}>{post.rawText || "—"}</td>
+          <td style={{ padding:12 }}><strong>{post.rawMarkCount}</strong></td>
+          <td style={{ padding:12 }}><strong>{post.creditedDayCount}</strong></td>
+          <td style={{ padding:12, color:Number(post.unplacedDayCount)>0?"var(--amber)":"var(--text-sec)" }}>{post.unplacedDayCount}</td>
+          <td style={{ padding:12 }}><Pill tone={String(post.reviewStatus).startsWith("accepted")?"green":"amber"}>{post.reviewStatus}</Pill></td>
+          <td className="mono" style={{ padding:12, fontSize:9, color:"var(--text-sec)", maxWidth:260, overflowWrap:"anywhere" }}>{post.sourceKey}</td>
+        </tr>)}</tbody>
+      </table></div></div>}
 
       <div style={{ marginTop:12, padding:"10px 12px", borderRadius:9, background:"var(--amber-dim)", color:"var(--text-sec)", fontSize:10, lineHeight:1.55 }}><strong style={{ color:"var(--amber)" }}>Verification rule:</strong> “No recorded check” means no accepted check evidence is assigned to that civil date. It is not proof that the person did not learn. Published leaderboard totals remain visible when they differ from the dated evidence ledger.</div>
 
