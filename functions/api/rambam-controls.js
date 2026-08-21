@@ -1,6 +1,9 @@
 export async function onRequestGet({ request, env }) {
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!bearer) return Response.json({ error:"Unauthorized" }, { status:401 });
+  if (!bearer) {
+    console.warn("[rambam-controls] missing user bearer token");
+    return Response.json({ error:"Unauthorized" }, { status:401 });
+  }
 
   try {
     const authResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
@@ -9,12 +12,16 @@ export async function onRequestGet({ request, env }) {
         Authorization:`Bearer ${bearer}`,
       },
     });
-    if (!authResponse.ok) return Response.json({ error:"Invalid session" }, { status:401 });
+    if (!authResponse.ok) {
+      console.warn("[rambam-controls] Supabase session rejected", { status:authResponse.status });
+      return Response.json({ error:"Invalid session" }, { status:401 });
+    }
     if (!env.CRON_SECRET) throw new Error("Rambam controls secret is not configured");
 
     const upstream = await fetch("https://rambam-leaderboard.mendy-ez.chatgpt.site/api/controls", {
       headers: { Authorization:`Bearer ${env.CRON_SECRET}` },
     });
+    console.log("[rambam-controls] upstream response", { status:upstream.status });
     return new Response(upstream.body, {
       status:upstream.status,
       headers: {
