@@ -21,6 +21,7 @@ import { MultiLLMView } from "./views/MultiLLMView";
 import { PaymentsView } from "./views/PaymentsView";
 import { ProjectsView } from "./views/ProjectsView";
 import { RCControlsView } from "./views/RCControlsView";
+import { RambamControlsView } from "./views/RambamControlsView";
 import { RecordDetailView } from "./views/RecordDetailView";
 import { StrategiesView } from "./views/StrategiesView";
 import { TasksView } from "./views/TasksView";
@@ -35,7 +36,7 @@ import { CometChatView } from "./views/CometChatView";
 import { SpectariInventoryView } from "./views/SpectariInventoryView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","vantaca_controls","cometchat","cometchat_dev","cometchat_sandbox","cometchat_production","spectari","admin","record"];
+  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","rambam_controls","vantaca_controls","cometchat","cometchat_dev","cometchat_sandbox","cometchat_production","spectari","admin","record"];
   const VIEW_ALIASES = { mstack: "associates", orchestrator: "brief" };
   const routeFromHash = () => {
     const route = parseAppHash();
@@ -212,6 +213,7 @@ export default function App() {
     strategies:   obj("strategy"),
     voitra_gate:  <VoitraGateView/>,
     rc_controls:  <RCControlsView/>,
+    rambam_controls: <RambamControlsView/>,
     vantaca_controls: <VantacaControlsView/>,
     cometchat:    <CometChatView session={session} initialEnvironment="production" initialSection="logs" lockSection={true}/>,
     cometchat_dev: <CometChatView session={session} initialEnvironment="sandbox" initialSection="console" lockSection={true}/>,

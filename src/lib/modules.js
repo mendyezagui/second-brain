@@ -10,7 +10,7 @@ export const NAV_MODULE = {
   marketing: "marketing", social: "marketing",
   cadences: "cadences",
   loops: "loops",
-  _ai_controls: "controls", voitra_gate: "controls", rc_controls: "controls",
+  _ai_controls: "controls", voitra_gate: "controls", rc_controls: "controls", rambam_controls: "controls",
   vantaca_controls: "controls", cometchat: "controls", cometchat_dev: "controls",
   spectari: "spectari",
   multi_llm: "ai_playground",
