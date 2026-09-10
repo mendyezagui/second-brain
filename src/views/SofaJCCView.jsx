@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, Download, Loader,
-  Code2, RefreshCw, Search, Send, Sparkles, User,
+  AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, Code2, Download, Loader,
+  Printer, RefreshCw, Search, Send, Sparkles, User, Wand2,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { Field, Inp, Sel, Tex } from "../components/ui";
@@ -31,6 +31,7 @@ export const SofaJCCView = () => {
   const [speakerName, setSpeakerName] = useState("");
   const [speakerHint, setSpeakerHint] = useState("");
   const [toast, setToast] = useState("");
+  const [ask, setAsk] = useState("");
 
   const say = (m) => { setToast(m); setTimeout(() => setToast(""), 5000); };
 
@@ -131,6 +132,23 @@ export const SofaJCCView = () => {
     await supabase.from("sofa_flyers").update({ answers }).eq("id", selFlyer.id);
   };
 
+  /** "Just tell it what you need" — free text in, event + drafted flyer out. */
+  const quickCreate = async () => {
+    if (!ask.trim()) return;
+    setBusy("ask");
+    try {
+      const r = await post({ action: "quick_create", text: ask.trim() });
+      if (!r.ok) { say(r.reason); setBusy(""); return; }
+      await load();
+      setSelectedId(r.event.id);
+      setAsk("");
+      say(r.summary
+        ? `Created "${r.event.title}" and drafted the flyer. Still missing ${r.summary}.`
+        : `Created "${r.event.title}". The flyer is complete — hit PDF.`);
+    } catch (e) { say(e.message); }
+    setBusy("");
+  };
+
   const researchSpeaker = async () => {
     if (!speakerName.trim()) return;
     setBusy("research");
@@ -150,13 +168,44 @@ export const SofaJCCView = () => {
     await patchEvent({ speaker_id: speakerId ? Number(speakerId) : null, kind: speakerId ? "speaker" : selected.kind });
   };
 
+  const fileStem = () => selected
+    ? `sofa-${selected.event_date}-${(selected.title || "flyer").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+    : "sofa-flyer";
+
   const downloadHtml = () => {
     if (!previewHtml || !selected) return;
     const blob = new Blob([previewHtml], { type: "text/html" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `sofa-${selected.event_date}-${(selected.title || "flyer").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.html`;
+    a.download = `${fileStem()}.html`;
     a.click(); URL.revokeObjectURL(a.href);
+  };
+
+  /**
+   * Print / Save as PDF.
+   *
+   * The templates already declare `@page { size: <w>px <h>px; margin: 0 }`, so
+   * the browser's own print pipeline produces a pixel-exact, single-page PDF
+   * with no library and no server round trip. A hidden iframe is used rather
+   * than window.open() because a popup blocker silently kills the latter.
+   */
+  const printFlyer = () => {
+    if (!previewHtml) return;
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    Object.assign(frame.style, { position: "fixed", right: 0, bottom: 0, width: "1px", height: "1px", opacity: "0", border: "0" });
+    frame.onload = () => {
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } catch { say("Print failed — use Download HTML and print from the browser."); }
+      // Chrome's print dialog is modal but the load event fires first; leave the
+      // frame in place long enough for the dialog to read it, then clean up.
+      setTimeout(() => frame.remove(), 60000);
+    };
+    document.body.appendChild(frame);
+    frame.srcdoc = previewHtml;
+    say("Choose \u201cSave as PDF\u201d as the destination — the page size is already exact.");
   };
 
   const enablePush = async () => {
@@ -213,6 +262,27 @@ export const SofaJCCView = () => {
       </div>
 
       {toast && <div className="card-el" style={{ padding: "10px 14px", fontSize: 12, borderLeft: `3px solid ${COLORS.gold}` }}>{toast}</div>}
+
+      {/* Free-text ask. Everything the sentence does not say stays empty and
+          becomes a gap, so a vague ask produces a flyer that asks back. */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <Wand2 size={14} color={COLORS.gold} />
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Tell it what you need</div>
+        </div>
+        <Mono style={{ marginBottom: 10 }}>
+          Plain words. It reads only what you actually say — anything you leave out becomes a question, never a guess.
+        </Mono>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <div style={{ flex: 1 }}>
+            <Tex value={ask} onChange={setAsk}
+              placeholder={'Chanukah party this Sunday at 5pm in the main hall, families welcome\nor: Friday night shiur with Rabbi Meni Even-Israel on Dec 12'} />
+          </div>
+          <button className="btn btn-blue" style={{ marginTop: 2 }} onClick={quickCreate} disabled={busy === "ask" || !ask.trim()}>
+            {busy === "ask" ? <><Loader size={13} className="spin" />Drafting</> : <><Wand2 size={13} />Draft it</>}
+          </button>
+        </div>
+      </Card>
 
       {/* notifications */}
       <Card style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -388,15 +458,20 @@ export const SofaJCCView = () => {
           <Card style={{ padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <Mono>FLYER PREVIEW</Mono>
-              <button className="btn btn-ghost" style={{ padding: "3px 10px", fontSize: 11 }} onClick={downloadHtml} disabled={!previewHtml}>
-                <Download size={12} />HTML
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-blue" style={{ padding: "3px 10px", fontSize: 11 }} onClick={printFlyer} disabled={!previewHtml}>
+                  <Printer size={12} />PDF
+                </button>
+                <button className="btn btn-ghost" style={{ padding: "3px 10px", fontSize: 11 }} onClick={downloadHtml} disabled={!previewHtml}>
+                  <Download size={12} />HTML
+                </button>
+              </div>
             </div>
             {previewHtml
               ? <iframe title="flyer" srcDoc={previewHtml} sandbox=""
                   style={{ width: "100%", aspectRatio: "1080 / 1350", border: "1px solid var(--border)", borderRadius: 10, background: "#fff", display: "block" }} />
               : <Mono>Nothing to preview.</Mono>}
-            <Mono style={{ marginTop: 8 }}>1080 × 1350 · brand-locked · edits above update this live</Mono>
+            <Mono style={{ marginTop: 8 }}>1275 × 1650 · brand-locked · edits above update this live</Mono>
           </Card>
 
           <Card style={{ padding: 14 }}>

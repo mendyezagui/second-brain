@@ -27,6 +27,41 @@ its own tables, its own console, its own schedule, and its own push channel.
 | **Runs the speaker pipeline** | You give a name. It web-searches, fills title, org, bio and topic, records its confidence and sources, and flags anything it could not verify rather than inventing it. |
 | **Keeps its own history** | Every event, flyer version, gap list, answer and nudge is a row. Nothing is regenerated from scratch; drafts supersede, they don't overwrite. |
 
+## How you actually use it
+
+Two ways in, both at `#/sofa_jcc`.
+
+**1. Tell it what you need.** A plain-English box at the top of the console:
+
+> *"Chanukah party this Sunday at 5pm in the main hall, families welcome"*
+> *"Friday night shiur with Rabbi Meni Even-Israel on Dec 12"*
+
+It extracts what the sentence actually says, creates the event, drafts the
+flyer, and reports what is still missing. **It never fills a blank with a
+guess** — anything you left out becomes a question. A date is the one hard
+requirement; without one it asks rather than inventing a day.
+
+Name a speaker and they are added to the roster automatically, ready for the
+research step.
+
+**2. Wait for it to come to you.** For anything on the Jewish calendar you do
+nothing — the flyer is drafted days ahead and the push tells you what it needs.
+
+Either way you land in the same place: fields on the left, live flyer on the
+right, updating as you type.
+
+### Getting the flyer out
+
+| button | gives you | good for |
+|---|---|---|
+| **PDF** | Opens the print dialog — choose *Save as PDF*. The template declares `@page { size: 1275px 1650px; margin: 0 }`, so it comes out pixel-exact and single-page, no library and no server. | Printing, bulletin board, emailing |
+| **HTML** | The flyer as a standalone file | Editing by hand, archiving |
+| `scripts/render-flyer.mjs` | PNG at exact canvas size (needs Playwright locally) | WhatsApp / Instagram |
+
+There is no one-click PNG in the browser yet. Browser-side rasterisers
+re-implement CSS and get `object-fit` on the headshot wrong, which would ship a
+distorted face — not worth it. Save as PDF, or use the script.
+
 ## Autonomy rails
 
 Following `docs/proactive-orchestrator-spec.md` §5:
