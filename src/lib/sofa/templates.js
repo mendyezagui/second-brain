@@ -469,7 +469,92 @@ export function guideFlyer(g = {}, opts = {}) {
   return shell({ w, h, title: `${BRAND.name} — ${g.headline || "Guide"}`, body, extraCss, origin: opts.origin, print: !!opts.print });
 }
 
-export const TEMPLATES = { speaker: speakerFlyer, holiday: holidayFlyer, weekly: weeklyFlyer, schedule: scheduleFlyer, guide: guideFlyer, label: labelSheet };
+// ------------------------------------------------------------------
+// CARD — a square announcement built to be forwarded.
+//
+// Different job from every other template here. A flyer is read; this is
+// glanced at in a chat list, at thumbnail size, on a phone, and forwarded on
+// by people who will not zoom in. So: one message, very large type, generous
+// air, and nothing that survives poorly when WhatsApp recompresses it.
+//
+// The ornament is drawn as inline SVG rather than loaded as artwork so it
+// stays crisp at any scale and needs no network fetch at render time.
+// ------------------------------------------------------------------
+
+/** Shofar, apple and honey pot.
+ *
+ *  The shofar is a FILLED, tapering silhouette rather than a stroked path — a
+ *  constant-width stroke reads as a hook, not a horn. It narrows at the
+ *  mouthpiece and flares to an open bell, which is what makes it legible at
+ *  thumbnail size in a chat list. Solid shapes and heavy outlines throughout,
+ *  because hairlines disappear under WhatsApp's recompression.
+ */
+const roshOrnament = (w = 430) => `
+<svg viewBox="0 0 570 180" width="${w}" role="img" aria-label="Shofar, apple and honey">
+  <g stroke="${COLORS.navyDeep}" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
+    <!-- shofar: mouthpiece bottom-left, bell flaring to upper-right -->
+    <path fill="${COLORS.gold}" d="
+      M18 116
+      C 66 132, 176 134, 236 112
+      C 292 92, 314 58, 328 24
+      L 368 46
+      C 350 90, 318 122, 256 144
+      C 178 170, 62 154, 14 124
+      Z"/>
+    <!-- bell opening -->
+    <path fill="${COLORS.goldLight}" d="M328 24 L368 46 C 360 60, 350 68, 342 72 C 336 58, 332 40, 328 24 Z"/>
+    <!-- one ridge, to read as horn rather than a shape -->
+    <path fill="none" stroke-width="4" opacity=".55" d="M74 132 C 140 146, 210 138, 258 118"/>
+
+    <!-- honey pot — clear of the shofar's bell -->
+    <path fill="${COLORS.goldLight}" d="M404 118 h56 c4 0 6 3 5 7 l-7 40 c-1 4-4 6-8 6 h-36 c-4 0-7-2-8-6 l-7-40 c-1-4 1-7 5-7z"/>
+    <rect fill="${COLORS.gold}" x="400" y="104" width="64" height="16" rx="5"/>
+
+    <!-- apple, sharing the pot's baseline and inside the viewBox -->
+    <path fill="${COLORS.maroon}" d="
+      M482 116 c0-17 12-29 26-29 6 0 10 3 13 3 s7-3 13-3 c14 0 26 12 26 29
+      c0 21-17 40-28 40 -4 0-8-3-11-3 s-7 3-11 3 c-11 0-28-19-28-40z"/>
+    <path fill="none" d="M521 87 c0-10 6-17 15-20"/>
+  </g>
+</svg>`;
+
+export function cardFlyer(c = {}, opts = {}) {
+  const { w, h } = CANVAS[opts.canvas] || CANVAS.square;
+  const extraCss = `
+  .card-wrap {
+    width: ${w}px; height: ${h}px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 62px 68px; position: relative;
+  }
+  .bh-corner { position: absolute; top: 40px; right: 52px; font-family: ${FONTS.hebrew}; font-size: 30px; color: ${COLORS.navy}; }
+  .card-he { font-family: ${FONTS.hebrew}; font-size: 74px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1.15; direction: rtl; }
+  .card-en { font-family: ${FONTS.sans}; font-size: 27px; font-weight: 700; letter-spacing: 5px; text-transform: uppercase; color: ${COLORS.gold}; }
+  .card-sub { font-size: 34px; font-style: italic; color: ${COLORS.navy}; }
+  .card-rule { width: 190px; height: 3px; background: ${COLORS.gold}; }
+  .card-label { font-family: ${FONTS.sans}; font-size: 25px; font-weight: 700; letter-spacing: 6px; text-transform: uppercase; color: ${COLORS.maroon}; }
+  .card-time { font-size: 116px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1; letter-spacing: -2px; }
+  .card-where { font-size: 33px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1.3; }
+  .card-foot { font-family: ${FONTS.sans}; font-size: 19px; letter-spacing: 3px; text-transform: uppercase; color: ${COLORS.muted}; }`;
+
+  const body = `
+  <div class="card-wrap">
+    <div class="bh-corner">${esc(BRAND.bh)}</div>
+    ${c.greeting_he ? `<div class="card-he">${esc(c.greeting_he)}</div>${gap(16)}` : ""}
+    ${c.greeting_en ? `<div class="card-en">${esc(c.greeting_en)}</div>${gap(14)}` : ""}
+    ${c.subtitle ? `<div class="card-sub">${esc(c.subtitle)}</div>${gap(30)}` : ""}
+    ${roshOrnament(430)}
+    ${gap(30)}<div class="card-rule"></div>${gap(30)}
+    <div class="card-label">${esc(c.label || "Shofar Blowing")}</div>
+    ${gap(14)}
+    <div class="card-time">${esc(c.time || "")}</div>
+    ${gap(22)}
+    <div class="card-where">${esc(c.where || "")}</div>
+    ${c.note ? `${gap(16)}<div class="card-foot">${esc(c.note)}</div>` : ""}
+  </div>`;
+  return shell({ w, h, title: `${BRAND.name} — ${c.label || "Card"}`, body, extraCss, origin: opts.origin, print: !!opts.print });
+}
+
+export const TEMPLATES = { speaker: speakerFlyer, holiday: holidayFlyer, weekly: weeklyFlyer, schedule: scheduleFlyer, guide: guideFlyer, card: cardFlyer, label: labelSheet };
 
 /** Single entry point used by the console and the server. */
 export function renderFlyer(template, payload, opts = {}) {
@@ -478,6 +563,7 @@ export function renderFlyer(template, payload, opts = {}) {
   if (template === "weekly") return weeklyFlyer(payload.week || payload, opts);
   if (template === "schedule") return scheduleFlyer(payload.schedule || payload, opts);
   if (template === "guide") return guideFlyer(payload.guide || payload, opts);
+  if (template === "card") return cardFlyer(payload.card || payload, { canvas: "square", ...opts });
   if (template === "label") return labelSheet(payload.label || payload, opts);
   return holidayFlyer(payload.event || payload, opts);
 }

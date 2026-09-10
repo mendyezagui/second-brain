@@ -68,6 +68,7 @@ export const CANVAS = {
   letter:   { w: 1275, h: 1650, label: "Letter @150dpi — print + WhatsApp (default)" },
   portrait: { w: 1080, h: 1350, label: "Portrait 4:5 — Instagram feed" },
   story:    { w: 1080, h: 1920, label: "Story 9:16 — status / reels" },
+  square:   { w: 1080, h: 1080, label: "Square 1:1 — WhatsApp forward" },
 };
 
 // Locked rules, asserted in templates.js rather than merely documented.
@@ -77,5 +78,5 @@ export const RULES = {
   maxHeadlineChars: 34,
   maxSubheadChars: 92,
   requireFooter: true,
-  allowedTemplates: ["speaker", "holiday", "weekly", "schedule", "guide", "label"],
+  allowedTemplates: ["speaker", "holiday", "weekly", "schedule", "guide", "card", "label"],
 };
