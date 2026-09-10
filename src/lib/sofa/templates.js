@@ -347,7 +347,11 @@ export function scheduleFlyer(sch = {}, opts = {}) {
   }
   .callout .k { font-family: ${FONTS.sans}; font-size: 16px; font-weight: 700; letter-spacing: 3.6px; text-transform: uppercase; color: ${COLORS.gold}; }
   .callout .v { font-family: ${FONTS.display}; font-size: 36px; font-weight: 700; color: ${COLORS.navyDeep}; margin-top: 9px; line-height: 1.2; }
-  .callout .s { font-size: 19px; color: ${COLORS.navy}; margin-top: 7px; }`;
+  .callout .s { font-size: 19px; color: ${COLORS.navy}; margin-top: 7px; }
+  .note-box { width: 100%; text-align: center; padding-top: 16px; border-top: 2px solid ${COLORS.line}; }
+  .note-box b { font-family: ${FONTS.sans}; font-size: 14px; font-weight: 700; letter-spacing: 2.8px; text-transform: uppercase; color: ${COLORS.maroon}; display: block; }
+  .note-box i { display: block; font-size: 16px; font-style: italic; color: ${COLORS.navy}; margin-top: 4px; }
+  .note-box span { display: block; font-size: 17px; color: ${COLORS.ink}; margin-top: 6px; line-height: 1.45; }`;
 
   const body = `
   ${header()}
@@ -379,6 +383,11 @@ export function scheduleFlyer(sch = {}, opts = {}) {
       </div>` : ""}
     </div>
     <div class="tail">
+      ${sch.note ? `${gap(18)}<div class="note-box">
+        <b>${esc(sch.note.title || "")}</b>
+        ${sch.note.sub ? `<i>${esc(sch.note.sub)}</i>` : ""}
+        ${(sch.note.lines || []).map((l) => `<span>${esc(l)}</span>`).join("")}
+      </div>` : ""}
       ${gap(22)}
       ${sch.greeting_he ? `<div class="name-he" style="font-size:40px;color:${COLORS.navyDeep}">${esc(sch.greeting_he)}</div>${gap(8)}` : ""}
       ${sch.greeting_en ? `<div class="note" style="font-size:21px">${esc(sch.greeting_en)}</div>${gap(10)}` : ""}
@@ -390,7 +399,62 @@ export function scheduleFlyer(sch = {}, opts = {}) {
   return shell({ w, h, title: `${BRAND.name} — ${sch.headline || "Schedule"}`, body, extraCss, origin: opts.origin });
 }
 
-export const TEMPLATES = { speaker: speakerFlyer, holiday: holidayFlyer, weekly: weeklyFlyer, schedule: scheduleFlyer, label: labelSheet };
+// ------------------------------------------------------------------
+// GUIDE — the reverse side. Halachos and minhagim set as tight bullets in two
+// columns, because this is reference text people scan standing up, not prose
+// they read through.
+//
+// Content is passed in verbatim. Nothing here generates, paraphrases or
+// completes halachic text: a detail invented on a shul flyer is acted on by
+// the community, so a missing section stays missing rather than being filled.
+// ------------------------------------------------------------------
+export function guideFlyer(g = {}, opts = {}) {
+  const { w, h } = CANVAS[opts.canvas] || CANVAS.letter;
+  const sections = Array.isArray(g.sections) ? g.sections : [];
+  const extraCss = `
+  .cols { column-count: 2; column-gap: 44px; column-fill: balance; width: 100%; text-align: left; }
+  .sec { break-inside: avoid; margin-bottom: 20px; }
+  .sec-hd {
+    font-family: ${FONTS.sans}; font-size: 15px; font-weight: 700; letter-spacing: 2.8px;
+    text-transform: uppercase; color: ${COLORS.maroon};
+    padding-bottom: 6px; border-bottom: 2px solid ${COLORS.line}; margin-bottom: 9px;
+  }
+  .sec-sub { font-size: 15px; color: ${COLORS.navy}; font-style: italic; margin: -4px 0 9px; }
+  .sec ul { list-style: none; margin: 0; padding: 0; }
+  .sec li { font-size: 16px; line-height: 1.5; color: ${COLORS.ink}; padding: 0 0 8px 15px; position: relative; }
+  .sec li::before { content: "·"; position: absolute; left: 3px; color: ${COLORS.gold}; font-weight: 700; }
+  .sec li b { color: ${COLORS.navyDeep}; }
+  .sec li i { font-style: italic; }`;
+
+  const body = `
+  ${header()}
+  <div class="body" style="padding-top:26px">
+    <div class="content" style="justify-content:flex-start">
+      ${g.occasion ? `<div class="eyebrow">${esc(g.occasion)}</div>${gap(10)}` : ""}
+      <div class="name" style="font-size:52px">${esc(g.headline || "")}</div>
+      ${g.subhead ? `${gap(10)}<div class="note" style="font-size:19px">${esc(g.subhead)}</div>` : ""}
+      ${gap(18)}<div class="divider"></div>${gap(22)}
+      <div class="cols">
+        ${sections.map((sec) => `
+        <div class="sec">
+          <div class="sec-hd">${esc(sec.title || "")}</div>
+          ${sec.sub ? `<div class="sec-sub">${esc(sec.sub)}</div>` : ""}
+          <ul>${(sec.items || []).map((it) => `<li>${esc(it)}</li>`).join("")}</ul>
+        </div>`).join("")}
+      </div>
+    </div>
+    <div class="tail">
+      ${gap(14)}
+      ${g.source ? `<div class="note" style="font-size:14px;color:${COLORS.muted}">${esc(g.source)}</div>${gap(10)}` : ""}
+      <div class="eyebrow gold sm">${esc(g.org || BRAND.publicName)}</div>
+      ${gap(20)}
+    </div>
+  </div>
+  ${footer(g.footer_greeting || " ")}`;
+  return shell({ w, h, title: `${BRAND.name} — ${g.headline || "Guide"}`, body, extraCss, origin: opts.origin });
+}
+
+export const TEMPLATES = { speaker: speakerFlyer, holiday: holidayFlyer, weekly: weeklyFlyer, schedule: scheduleFlyer, guide: guideFlyer, label: labelSheet };
 
 /** Single entry point used by the console and the server. */
 export function renderFlyer(template, payload, opts = {}) {
@@ -398,6 +462,7 @@ export function renderFlyer(template, payload, opts = {}) {
   if (template === "speaker") return speakerFlyer(payload.event || {}, payload.speaker || {}, opts);
   if (template === "weekly") return weeklyFlyer(payload.week || payload, opts);
   if (template === "schedule") return scheduleFlyer(payload.schedule || payload, opts);
+  if (template === "guide") return guideFlyer(payload.guide || payload, opts);
   if (template === "label") return labelSheet(payload.label || payload, opts);
   return holidayFlyer(payload.event || payload, opts);
 }
