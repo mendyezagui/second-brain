@@ -13,13 +13,14 @@ export const NAV_MODULE = {
   _ai_controls: "controls", voitra_gate: "controls", rc_controls: "controls", rambam_controls: "controls",
   vantaca_controls: "controls", cometchat: "controls", cometchat_dev: "controls",
   spectari: "spectari",
+  sofa_jcc: "sofa_jcc",
   multi_llm: "ai_playground",
   admin: "admin",
 };
 
 // The full set of optional modules (used for the "owner / all-on" default).
 export const OPTIONAL_MODULES = [
-  "financials", "associates", "marketing", "cadences", "loops", "controls", "admin", "spectari", "ai_playground",
+  "financials", "associates", "marketing", "cadences", "loops", "controls", "admin", "spectari", "ai_playground", "sofa_jcc",
 ];
 
 // Runtime singleton: null = owner / no tenant record => everything on.

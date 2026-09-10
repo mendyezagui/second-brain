@@ -1,0 +1,84 @@
+// "What's missing?" — computed, not guessed.
+//
+// This is deliberately deterministic. The associate may use Claude to WRITE
+// copy, but it must never use Claude to DECIDE whether a flyer is printable:
+// a model that hallucinates a start time produces a flyer that sends the
+// community to a locked door. Every gap below is a field that is empty.
+//
+// severity:
+//   "blocking" — do not print. The flyer is wrong without it.
+//   "ask"      — Mendy should answer, but the flyer stands if he doesn't.
+//   "nice"     — improves the flyer; silently omitted when absent.
+
+const has = (v) => typeof v === "string" ? v.trim().length > 0 : v != null && v !== "";
+
+// field, label, severity, and the exact question the push notification asks.
+const COMMON = [
+  { field: "start_time", label: "Start time",  severity: "blocking", question: "What time does it start?" },
+  { field: "location",   label: "Location",    severity: "blocking", question: "Where is it — venue name?" },
+  { field: "address",    label: "Address",     severity: "ask",      question: "What's the street address for the flyer footer?" },
+  { field: "description",label: "Description", severity: "ask",      question: "One line on what this is — I'll write the rest." },
+  { field: "rsvp_url",   label: "RSVP link",   severity: "nice",     question: "Is there an RSVP link or phone number?" },
+  { field: "audience",   label: "Audience",    severity: "nice",     question: "Who's it for — men, women, families, all?" },
+];
+
+const BY_TEMPLATE = {
+  holiday: [
+    { field: "candle_lighting", label: "Candle lighting", severity: "nice", question: "Confirm candle lighting time?" },
+  ],
+  weekly: [
+    { field: "end_time", label: "End time", severity: "nice", question: "When does it wrap up?" },
+  ],
+  speaker: [
+    { field: "speaker.name",      label: "Speaker name",  severity: "blocking", question: "Who is the speaker?" },
+    { field: "speaker.short_bio", label: "Speaker bio",   severity: "ask",      question: "I couldn't verify a bio — give me one line, or confirm mine." },
+    { field: "speaker.topic",     label: "Talk topic",    severity: "ask",      question: "What's the talk actually called?" },
+    { field: "speaker.headshot_url", label: "Headshot",   severity: "ask",      question: "Send a headshot, or I'll use the crest instead." },
+    { field: "speaker.title",     label: "Speaker title", severity: "nice",     question: "How should I title them — Rabbi, Dr., role?" },
+  ],
+};
+
+/** Read "speaker.short_bio" out of { event, speaker }. */
+const read = (event, speaker, field) => {
+  if (field.startsWith("speaker.")) return speaker ? speaker[field.slice(8)] : "";
+  return event ? event[field] : "";
+};
+
+/**
+ * The gap list for one event + its flyer.
+ *
+ * `answers` is what Mendy already replied on a previous round — an answered
+ * field is never asked again, even if the column is still blank, so the
+ * associate does not nag about something he has explicitly waved off.
+ */
+export function computeGaps(event, { speaker = null, template = "holiday", answers = {} } = {}) {
+  const specs = [...COMMON, ...(BY_TEMPLATE[template] || [])];
+  return specs
+    .filter((s) => !has(read(event, speaker, s.field)) && !has(answers[s.field]))
+    .map((s) => ({ ...s }));
+}
+
+export const blocking = (gaps) => gaps.filter((g) => g.severity === "blocking");
+export const askable  = (gaps) => gaps.filter((g) => g.severity !== "nice");
+
+/** draft → needs_input → ready. Purely a function of the gaps. */
+export function flyerStatus(gaps) {
+  if (blocking(gaps).length > 0) return "needs_input";
+  if (askable(gaps).length > 0) return "draft";
+  return "ready";
+}
+
+/**
+ * The notification body: "Your SoFa JCC agent is missing X, Y and Z."
+ * Capped at three items — a push notification that lists eight fields is a
+ * wall of text nobody reads on a lock screen. The rest live in the console.
+ */
+export function missingSentence(gaps, { max = 3 } = {}) {
+  const items = askable(gaps).map((g) => g.label.toLowerCase());
+  if (items.length === 0) return "";
+  const shown = items.slice(0, max);
+  const rest = items.length - shown.length;
+  const list = shown.length === 1 ? shown[0]
+    : `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+  return rest > 0 ? `${list}, +${rest} more` : list;
+}

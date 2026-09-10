@@ -5,6 +5,7 @@
 // because the Hobby plan caps Vercel crons at 2).
 
 import { createClient } from "@supabase/supabase-js";
+import { runSofaScan } from "./sofa-jcc.js";
 
 // Web search in the news step can push total runtime past the default budget.
 export const config = { maxDuration: 60 };
@@ -290,11 +291,25 @@ export default async function handler(req, res) {
     // Best-effort real-news refresh (after the core sweep work is safely saved).
     const newsResult = await refreshNews();
 
+    // SoFa JCC associate — rides this cron for the same reason the news
+    // refresh does: the Hobby plan caps Vercel crons at 2 and both are spent.
+    // Best-effort and last, so a calendar or push failure can never cost
+    // Mendy his morning brief.
+    let sofaResult;
+    try {
+      const sofa = await runSofaScan({ sb: supabase });
+      sofaResult = { ok: true, summary: sofa.summary, ...sofa.applied };
+    } catch (e) {
+      console.error("sofa scan (in sweep) failed:", e);
+      sofaResult = { ok: false, error: String(e) };
+    }
+
     return res.status(200).json({
       ok: true,
       swept: new Date().toISOString(),
       logsWritten: logsToInsert.length,
       news: newsResult,
+      sofa: sofaResult,
       metrics: snap.metrics,
     });
 

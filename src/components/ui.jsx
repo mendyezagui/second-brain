@@ -484,6 +484,7 @@ const RAW_NAV = [
   {id:"cometchat",icon:MessageSquare,label:"CometChat Logs",parent:"_ai_controls"},
   {id:"cometchat_dev",icon:MessageSquare,label:"CometChat Dev",parent:"_ai_controls"},
   {id:"spectari",icon:Glasses,label:"Spectari"},
+  {id:"sofa_jcc",icon:Calendar,label:"SoFa JCC"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 

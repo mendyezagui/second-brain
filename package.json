@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "flyer": "node scripts/render-flyer.mjs",
+    "vapid": "node scripts/gen-vapid.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
     "lucide-react": "^0.383.0",
     "recharts": "^2.12.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
