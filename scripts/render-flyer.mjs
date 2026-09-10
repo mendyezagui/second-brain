@@ -25,6 +25,8 @@ const out = arg("out");
 if (!out) { console.error("--out <path.png> is required"); process.exit(1); }
 
 const canvasName = arg("canvas", "letter");
+// --print gives the white-ground variant, matching the printable PDF.
+const printMode = argv.includes("--print");
 const canvas = CANVAS[canvasName] || CANVAS.letter;
 
 let html = arg("html") ? await readFile(resolve(arg("html")), "utf8") : null;
@@ -33,7 +35,7 @@ if (!html) {
   const dataPath = arg("data");
   if (!dataPath) { console.error("--data <payload.json> or --html <file> is required"); process.exit(1); }
   const payload = JSON.parse(await readFile(resolve(dataPath), "utf8"));
-  html = renderFlyer(template, payload, { canvas: canvasName });
+  html = renderFlyer(template, payload, { canvas: canvasName, print: printMode });
 }
 
 let chromium;
@@ -76,4 +78,4 @@ await browser.close();
 server.close();
 
 if (arg("save-html")) await writeFile(resolve(arg("save-html")), html, "utf8");
-console.log(`rendered ${canvasName} ${canvas.w}x${canvas.h} -> ${out}`);
+console.log(`rendered ${canvasName} ${canvas.w}x${canvas.h}${printMode ? " white" : ""} @${arg("scale","1")}x -> ${out}`);
