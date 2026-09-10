@@ -77,16 +77,31 @@ export async function planDay({
   for (const h of due) {
     const existing = byKey.get(h.key);
 
-    // 1. Keep the event row in sync with the calendar. Calendar-owned fields
-    //    (dates, candle times) are refreshed; anything Mendy typed is kept.
+    // 1. Keep the event row in sync with the calendar.
+    //
+    //    A CONFIRMED candle time is never overwritten. Once a human has checked
+    //    it against the shul's own luach it outranks anything computed — the
+    //    two demonstrably disagree, and re-deriving it every morning would
+    //    silently undo the confirmation and put a wrong time back on the flyer.
+    //    The Hebrew date is safe to refresh either way; it is not a judgement
+    //    call.
     const row = eventFromHoliday(h);
     if (!existing) {
       upserts.push({ ...row, reason: `${h.title} is ${h.leadDays} day(s) out and has no event row yet` });
-    } else if (
-      existing.candle_lighting !== row.candle_lighting ||
-      existing.hebrew_date !== row.hebrew_date
-    ) {
-      upserts.push({ id: existing.id, hebcal_key: h.key, candle_lighting: row.candle_lighting, hebrew_date: row.hebrew_date, reason: "calendar fields drifted" });
+    } else {
+      const patch = {};
+      if (existing.hebrew_date !== row.hebrew_date) patch.hebrew_date = row.hebrew_date;
+      if (!existing.candle_confirmed && existing.candle_lighting !== row.candle_lighting) {
+        patch.candle_lighting = row.candle_lighting;
+      }
+      if (Object.keys(patch).length) {
+        upserts.push({
+          id: existing.id, hebcal_key: h.key, ...patch,
+          reason: existing.candle_confirmed
+            ? "calendar fields drifted (confirmed candle time left alone)"
+            : "calendar fields drifted",
+        });
+      }
     }
 
     // 2. Draft a flyer if there isn't one yet. A published flyer is never

@@ -23,8 +23,8 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { planDay, renderFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/0730b55d506d80e15dd5d46fb4376bf5607f041c/src/lib/sofa/agent.js";
-import { isoDate } from "https://raw.githubusercontent.com/mendyezagui/second-brain/0730b55d506d80e15dd5d46fb4376bf5607f041c/src/lib/sofa/hebcal.js";
+import { planDay, renderFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/e62a88f91a55900394eb744d960b1960a17ec357/src/lib/sofa/agent.js";
+import { isoDate } from "https://raw.githubusercontent.com/mendyezagui/second-brain/e62a88f91a55900394eb744d960b1960a17ec357/src/lib/sofa/hebcal.js";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {
