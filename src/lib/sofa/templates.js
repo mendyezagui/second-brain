@@ -532,6 +532,7 @@ export function cardFlyer(c = {}, opts = {}) {
   .card-sub { font-size: 34px; font-style: italic; color: ${COLORS.navy}; }
   .card-rule { width: 190px; height: 3px; background: ${COLORS.gold}; }
   .card-label { font-family: ${FONTS.sans}; font-size: 25px; font-weight: 700; letter-spacing: 6px; text-transform: uppercase; color: ${COLORS.maroon}; }
+  .card-date { font-size: 36px; font-weight: 700; color: ${COLORS.navy}; line-height: 1.2; }
   .card-time { font-size: 116px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1; letter-spacing: -2px; }
   .card-where { font-size: 33px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1.3; }
   .card-foot { font-family: ${FONTS.sans}; font-size: 19px; letter-spacing: 3px; text-transform: uppercase; color: ${COLORS.muted}; }`;
@@ -545,6 +546,7 @@ export function cardFlyer(c = {}, opts = {}) {
     ${roshOrnament(430)}
     ${gap(30)}<div class="card-rule"></div>${gap(30)}
     <div class="card-label">${esc(c.label || "Shofar Blowing")}</div>
+    ${c.date ? `${gap(14)}<div class="card-date">${esc(c.date)}</div>` : ""}
     ${gap(14)}
     <div class="card-time">${esc(c.time || "")}</div>
     ${gap(22)}
