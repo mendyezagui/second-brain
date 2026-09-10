@@ -49,6 +49,31 @@ Minor fasts and Rosh Chodesh are read from the calendar and appear on the
 weekly flyer, but do not trigger a draft or a push. Add or remove names in that
 one set to change the policy.
 
+## 2a. Candle lighting is never auto-trusted
+
+The one field that is dangerous when auto-filled.
+
+Every other gap fires because a field is **empty**. Candle lighting fires
+because a field was **filled by a machine and nobody checked it**.
+
+The shul's published zmanim follow their own luach and do not match Hebcal's
+sunset model. Measured:
+
+| | shul publishes | Hebcal (ZIP 90035, 18 min) |
+|---|---|---|
+| Erev Rosh Hashana 5787 | 6:47 PM | 6:47 PM ✓ |
+| Fri 7 Aug 2026 | 7:36 PM | 7:30 PM ✗ |
+| Holiday ends Sun 13 Sep | 7:45 PM | 7:40 PM ✗ |
+
+No single Hebcal setting explains all three. An earlier version of this repo
+fitted a 12-minute offset to the August flyer alone; Rosh Hashana then came in
+at 6:47 PM, which that offset misses by five minutes.
+
+**A candle time five minutes late is worse than a blank line, because people
+act on it.** So the calendar is trusted for *which day* a holiday falls on —
+unambiguous — and its candle time is a suggestion that stays an open question
+until `sofa_events.candle_confirmed` is set by a human.
+
 ## 3. Severity: what "missing" means
 
 | severity | meaning | example |

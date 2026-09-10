@@ -5,7 +5,6 @@
 // because the Hobby plan caps Vercel crons at 2).
 
 import { createClient } from "@supabase/supabase-js";
-import { runSofaScan } from "./sofa-jcc.js";
 
 // Web search in the news step can push total runtime past the default budget.
 export const config = { maxDuration: 60 };
@@ -297,6 +296,12 @@ export default async function handler(req, res) {
     // Mendy his morning brief.
     let sofaResult;
     try {
+      // Imported lazily, INSIDE the try. A static import of this module pulls in
+      // web-push transitively, and a top-level import that throws kills the whole
+      // function before any try/catch can run — which would take the morning
+      // brief down with it. The brief is the load-bearing thing here; the SoFa
+      // scan is a passenger and must never be able to crash the vehicle.
+      const { runSofaScan } = await import("./sofa-jcc.js");
       const sofa = await runSofaScan({ sb: supabase });
       sofaResult = { ok: true, summary: sofa.summary, ...sofa.applied };
     } catch (e) {
