@@ -52,6 +52,11 @@ create table if not exists sofa_events (
   cost            text default '',
   rsvp_url        text default '',
   hebrew_date     text default '',
+  -- The house flyer leads with a maroon eyebrow and an italic lede; gaps.js
+  -- asks for the occasion, so the event needs somewhere to keep the answer.
+  occasion        text default '',           -- "Friday Night" / "Erev Rosh Hashana"
+  lede            text default '',           -- the italic welcome line
+  parsha          text default '',           -- "Shabbos Parshas Re'eh · Mevorchim Chodesh Elul"
   hebcal_key      text unique,               -- e.g. "2026-09-12:rosh-hashana-5787"
   candle_lighting text default '',
   havdalah        text default '',

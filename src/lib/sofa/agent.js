@@ -34,6 +34,9 @@ export function eventFromHoliday(h) {
     hebrew_date: h.hdate,
     candle_lighting: h.candleLighting || "",
     havdalah: h.havdalah || "",
+    // Seed the eyebrow from the calendar so the flyer has its maroon lead-in
+    // and the occasion gap starts answered.
+    occasion: h.erev ? h.title : name,
     status: "draft",
     source: "agent:hebcal",
     notes: h.memo || "",
