@@ -74,6 +74,21 @@ Following `docs/proactive-orchestrator-spec.md` §5:
 
 ---
 
+## Where it runs
+
+The associate has **two** runtimes, and the Supabase one is the reliable one:
+
+| runtime | drives | works on |
+|---|---|---|
+| `supabase/functions/sofa-jcc-scan` + `pg_cron` | the daily scan | **anywhere** — needs no frontend and no Vercel |
+| `api/sofa-jcc.js` via `/api/sweep` | the same scan, plus speaker research and quick-create | Vercel only |
+
+This matters because the app is served from **Cloudflare Pages**
+(`2nd.mendyezagui.com`), where Vercel-format `api/*.js` routes do not run —
+`POST /api/sofa-jcc` returns 405 there, not JSON. The Edge Function keeps the
+associate working regardless. See
+`supabase/functions/sofa-jcc-scan/README.md`.
+
 ## How it runs
 
 ```
