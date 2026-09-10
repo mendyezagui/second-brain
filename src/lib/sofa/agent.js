@@ -172,20 +172,25 @@ export async function planDay({
 export function defaultCopy(ev, holiday, speaker, template) {
   if (template === "speaker" && speaker) {
     return {
-      headline: ev.headline || speaker.topic || `An evening with ${speaker.name}`,
-      subhead: [speaker.title, speaker.org].filter(Boolean).join(" · "),
+      headline: speaker.name || "",
+      subhead: [speaker.title, speaker.org].filter(Boolean).join(", "),
       body: speaker.short_bio || "",
+      occasion: ev.occasion || "",
+      lede: ev.lede || "We have the honor of welcoming our guest speaker",
       footer: BRAND.site,
     };
   }
   if (template === "weekly") {
-    return { headline: "This Week at SoFa", subhead: "", body: "", footer: BRAND.site };
+    return { headline: `This Week at ${BRAND.publicName.replace(" Jewish Community Center", "")}`, subhead: "", body: "", occasion: "This Week", lede: "", footer: BRAND.site };
   }
   const name = holiday?.baseTitle || ev.title || "";
   return {
     headline: name,
-    subhead: [ev.hebrew_date, holiday?.erev ? "Erev" : ""].filter(Boolean).join(" · "),
+    subhead: ev.subhead || "",
     body: ev.description || holiday?.memo || "",
+    // The house layout leads with a maroon eyebrow; Erev flyers say so.
+    occasion: ev.occasion || (holiday?.erev ? "Erev " + name : ""),
+    lede: ev.lede || "",
     footer: BRAND.site,
   };
 }
@@ -195,12 +200,24 @@ export function flyerPayload(ev, flyer = {}, speaker = null) {
   const merged = {
     ...ev,
     headline: flyer.headline || ev.title,
-    subhead: flyer.subhead || ev.hebrew_date || "",
+    subhead: flyer.subhead || "",
     description: flyer.body || ev.description || "",
+    occasion: flyer.occasion || ev.occasion || "",
+    lede: flyer.lede || ev.lede || "",
   };
-  return templateFor(ev) === "speaker"
-    ? { event: merged, speaker: speaker || {} }
-    : { event: merged };
+  if (templateFor(ev) !== "speaker") return { event: merged };
+  const sp = speaker || {};
+  return {
+    event: merged,
+    speaker: {
+      ...sp,
+      // The template shows up to three short credential lines. A researched
+      // one-line bio becomes the first of them.
+      credentials: Array.isArray(sp.credentials) && sp.credentials.length
+        ? sp.credentials
+        : [sp.short_bio].filter(Boolean),
+    },
+  };
 }
 
 export function renderFor(ev, flyer, speaker, opts) {

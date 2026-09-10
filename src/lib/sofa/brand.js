@@ -1,67 +1,81 @@
 // SoFa JCC brand — the single locked source of truth for anything the
-// associate draws. Values are lifted verbatim from the live site's
-// assets/styles.css (aventary repo, sofajcc/) so a flyer and sofajcc.org
-// can never drift apart. Change them HERE, nowhere else.
+// associate draws.
+//
+// These values are NOT invented. The palette is sampled directly from the
+// shul's own logo artwork (public/sofa-jcc/brand/logo-lockup-original.png) and
+// the layout language is taken from the real Friday-night speaker flyer.
+// Change them HERE, nowhere else.
 
 export const BRAND = {
-  name: "SoFa Jewish Community Center",
+  // The shul's actual name. "The SoFa" is how it is known publicly; Beis
+  // Chacham Yitzchak is what goes at the top of a flyer.
+  name: "Beis Chacham Yitzchak",
+  nameHe: "בית חכם יצחק",
+  publicName: "The SoFa Jewish Community Center",
   shortName: "SoFa JCC",
-  wordmark: "SoFa",
-  kicker: "Chabad Jewish Community Center",
-  tagline: "Pray  ·  Celebrate  ·  Love  ·  Friendship",
+  kicker: "Jewish Community Center",
+  tagline: "Pray · Celebrate · Love · Friendship",
   site: "www.sofajcc.org",
   url: "https://www.sofajcc.org",
-  region: "South Florida",
+  city: "Los Angeles",
+  // Placed top-right on every flyer, as on the shul's own.
+  bh: 'ב"ה',
+  shabbosGreeting: { he: "שבת שלום", en: "Good Shabbos" },
 };
 
-// Palette — same hexes as sofajcc/assets/styles.css :root
+// Sampled from the logo artwork. Do not eyeball replacements.
 export const COLORS = {
-  navy: "#17335c",
-  navyDeep: "#0f2542",
-  gold: "#c99a3f",
-  goldSoft: "#e6cd93",
-  cream: "#faf6ee",
-  cream2: "#f3ecdd",
-  ink: "#23272e",
+  navy: "#1c374a",       // the logo navy — rules, footer bar, body copy
+  navyDeep: "#16293d",   // headings, the big display name
+  navySoft: "#293c4b",   // the seated figures; secondary text
+  gold: "#b79549",       // eyebrows, dividers, labels  (sampled from the sofa)
+  goldLight: "#dcb96d",  // the dancer's disc; accents on navy
+  olive: "#8f8f5a",      // the sofa's back panel; rare accent
+  maroon: "#8b2635",     // section eyebrows and the emphasised phrase
+  cream: "#f5edda",      // the parchment ground
+  cream2: "#efe4cc",     // detail strip, subtle fills
+  line: "#ddd0b4",       // hairlines on cream
+  ink: "#1f2a33",
   muted: "#5c6470",
-  line: "#e7ddc8",
   white: "#ffffff",
 };
 
-// Type — the site pairs a serif display with a system sans for everything
-// else. Flyers are rendered headless, so both stacks stay web-safe.
+// The house pairing: a serif for everything that carries weight, a system
+// sans only for small uppercase labels. Both stacks stay web-safe because
+// flyers render headless — a webfont that fails to load is a flyer that
+// ships in the wrong typeface.
 export const FONTS = {
-  display: `"Georgia", "Times New Roman", serif`,
-  sans: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`,
+  display: `"Georgia", "Times New Roman", "Liberation Serif", serif`,
+  hebrew: `"Times New Roman", "Frank Ruehl CLM", "David", "FreeSerif", serif`,
+  sans: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Liberation Sans", Helvetica, Arial, sans-serif`,
 };
 
-// The sofa mark, inline. Identical geometry to assets/favicon.svg.
-// `size` scales it; `plate` draws the rounded navy tile behind it.
-export const logoSvg = ({ size = 96, plate = true } = {}) => `
-<svg viewBox="0 0 64 64" width="${size}" height="${size}" role="img" aria-label="${BRAND.shortName}">
-  ${plate ? `<rect width="64" height="64" rx="14" fill="${COLORS.navy}"/>` : ""}
-  <g fill="none" stroke="${COLORS.goldSoft}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M16 34v-4a4 4 0 0 1 4-4h24a4 4 0 0 1 4 4v4"/>
-    <path d="M13 34a3 3 0 0 1 3 3v6h32v-6a3 3 0 0 1 6 0v9a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2v-9a3 3 0 0 1 3-3z" fill="${COLORS.gold}" stroke="${COLORS.gold}"/>
-    <path d="M20 45v3M44 45v3" stroke="${COLORS.navyDeep}"/>
-  </g>
-</svg>`;
+// Logo files live in public/ and are referenced by URL so the browser preview
+// and the headless renderer resolve them identically.
+export const LOGO = {
+  lockup: "/sofa-jcc/brand/logo-lockup.png",   // sofa + wordmark, transparent
+  mark: "/sofa-jcc/brand/logo-mark.png",       // sofa only, transparent
+  dancer: "/sofa-jcc/brand/mark-dancer.png",   // gold-disc dancing chassid
+};
 
-// Flyer canvas sizes. Every template renders at one of these, so the
-// archive is dimensionally consistent and PNGs drop straight into
-// WhatsApp / print without re-cropping.
+/** Absolute URL for the headless renderer, which has no page origin. */
+export const logoUrl = (key = "lockup", origin = "") =>
+  `${origin || ""}${LOGO[key] || LOGO.lockup}`;
+
+// Flyer canvas sizes. Letter is the default: the shul's own flyers are
+// portrait sheets that get both printed and sent to WhatsApp.
 export const CANVAS = {
-  portrait: { w: 1080, h: 1350, label: "Portrait 4:5 — WhatsApp / Instagram feed" },
+  letter:   { w: 1275, h: 1650, label: "Letter @150dpi — print + WhatsApp (default)" },
+  portrait: { w: 1080, h: 1350, label: "Portrait 4:5 — Instagram feed" },
   story:    { w: 1080, h: 1920, label: "Story 9:16 — status / reels" },
-  print:    { w: 1275, h: 1650, label: "Letter @150dpi — print / bulletin board" },
 };
 
-// Locked rules the associate is not allowed to improvise around. These are
-// asserted in templates.js, not just documented.
+// Locked rules, asserted in templates.js rather than merely documented.
 export const RULES = {
   logoAlwaysPresent: true,
-  maxHeadlineChars: 34,     // beyond this the display type stops fitting one line
-  maxSubheadChars: 78,
-  requireSiteFooter: true,
-  allowedTemplates: ["weekly", "holiday", "speaker"],
+  bhAlwaysPresent: true,
+  maxHeadlineChars: 34,
+  maxSubheadChars: 92,
+  requireFooter: true,
+  allowedTemplates: ["speaker", "holiday", "weekly", "label"],
 };

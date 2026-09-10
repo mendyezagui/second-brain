@@ -14,6 +14,7 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { createServer } from "node:http";
 import { renderFlyer } from "../src/lib/sofa/templates.js";
 import { CANVAS } from "../src/lib/sofa/brand.js";
 
@@ -23,8 +24,8 @@ const arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i > -1 ? argv[i
 const out = arg("out");
 if (!out) { console.error("--out <path.png> is required"); process.exit(1); }
 
-const canvasName = arg("canvas", "portrait");
-const canvas = CANVAS[canvasName] || CANVAS.portrait;
+const canvasName = arg("canvas", "letter");
+const canvas = CANVAS[canvasName] || CANVAS.letter;
 
 let html = arg("html") ? await readFile(resolve(arg("html")), "utf8") : null;
 if (!html) {
@@ -46,6 +47,23 @@ try {
 const launch = process.env.PLAYWRIGHT_CHROMIUM_PATH
   ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
   : {};
+// The templates reference the logo at a root-relative URL (/sofa-jcc/brand/...)
+// because that is what resolves in the deployed app. setContent() has no
+// origin, so serve public/ for the life of the render and point <base> at it —
+// otherwise every flyer ships with a broken logo.
+const root = resolve(new URL("..", import.meta.url).pathname, "public");
+const server = createServer(async (req, res) => {
+  try {
+    const rel = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    if (rel.includes("..")) { res.writeHead(403).end(); return; }
+    const buf = await readFile(resolve(root, "." + rel));
+    res.writeHead(200, { "Content-Type": rel.endsWith(".png") ? "image/png" : "application/octet-stream" }).end(buf);
+  } catch { res.writeHead(404).end(); }
+});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const origin = `http://127.0.0.1:${server.address().port}/`;
+html = html.replace(/<base href="[^"]*">/, `<base href="${origin}">`);
+
 const browser = await chromium.launch(launch);
 const page = await browser.newPage({
   viewport: { width: canvas.w, height: canvas.h },
@@ -55,6 +73,7 @@ await page.setContent(html, { waitUntil: "networkidle" });
 await mkdir(dirname(resolve(out)), { recursive: true });
 await page.screenshot({ path: resolve(out), type: "png" });
 await browser.close();
+server.close();
 
 if (arg("save-html")) await writeFile(resolve(arg("save-html")), html, "utf8");
 console.log(`rendered ${canvasName} ${canvas.w}x${canvas.h} -> ${out}`);

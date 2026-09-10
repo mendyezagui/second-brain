@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, Bell, BellOff, CalendarDays, CheckCircle2, Download, Loader,
-  RefreshCw, Search, Send, Sparkles, User,
+  Code2, RefreshCw, Search, Send, Sparkles, User,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { Field, Inp, Sel, Tex } from "../components/ui";
@@ -200,6 +200,9 @@ export const SofaJCCView = () => {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn btn-ghost" onClick={() => { window.location.hash = "#/sofa_dev"; }}>
+            <Code2 size={13} />Developer
+          </button>
           <button className="btn btn-ghost" onClick={preview} disabled={busy === "preview"}>
             {busy === "preview" ? <Loader size={13} className="spin" /> : <RefreshCw size={13} />}Preview plan
           </button>

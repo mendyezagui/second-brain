@@ -10,10 +10,16 @@
 // truth means the console and the cron can never disagree about what day
 // Rosh Hashana is.
 
-// Miami. The shul is in South Florida; candle times are useless if they are
-// computed for the wrong coast. Override with SOFA_HEBCAL_GEONAMEID (server)
-// or VITE_SOFA_HEBCAL_GEONAMEID (client) once the exact city is confirmed.
-export const DEFAULT_GEONAMEID = "4164138";
+// Los Angeles. (The website's meta description says "South Florida", which is
+// stale — the shul's own printed flyers give Los Angeles candle times.)
+// Override with SOFA_HEBCAL_GEONAMEID / VITE_SOFA_HEBCAL_GEONAMEID.
+export const DEFAULT_GEONAMEID = "5368361";
+
+// Minutes before sunset for candle lighting. Hebcal defaults to 18; this shul
+// uses 12 — derived by matching the printed flyer for Fri 7 Aug 2026, which
+// reads 7:36pm (b=18 gives 7:30pm, b=12 gives exactly 7:36pm).
+// Confirm against a second flyer before trusting it blindly.
+export const CANDLE_MINUTES_BEFORE_SUNSET = 12;
 
 // How far ahead the associate starts caring, and on which days it speaks up.
 // Mendy asked for "3 or 4 days before": T-4 opens, T-2 chases if the flyer
@@ -89,13 +95,17 @@ const timeOf = (item) => {
  * Raw calendar read for a date window.
  * Returns Hebcal's items untouched; callers normalize.
  */
-export async function fetchCalendar({ start, end, geonameid = DEFAULT_GEONAMEID, fetchImpl } = {}) {
+export async function fetchCalendar({
+  start, end, geonameid = DEFAULT_GEONAMEID,
+  candleMinutes = CANDLE_MINUTES_BEFORE_SUNSET, fetchImpl,
+} = {}) {
   const f = fetchImpl || globalThis.fetch;
   if (typeof f !== "function") throw new Error("hebcal: no fetch available");
   const qs = new URLSearchParams({
     v: "1", cfg: "json",
     maj: "on", min: "on", mod: "off", nx: "off", ss: "on", mf: "on",
     c: "on", M: "on", s: "on",
+    b: String(candleMinutes),
     geo: "geoname", geonameid: String(geonameid),
     start, end,
   });
@@ -113,10 +123,11 @@ export async function fetchCalendar({ start, end, geonameid = DEFAULT_GEONAMEID,
  * `leadDays` is what the nudge logic keys off.
  */
 export async function upcomingHolidays({
-  from = isoDate(), days = LOOKAHEAD_DAYS, geonameid = DEFAULT_GEONAMEID, fetchImpl,
+  from = isoDate(), days = LOOKAHEAD_DAYS, geonameid = DEFAULT_GEONAMEID,
+  candleMinutes = CANDLE_MINUTES_BEFORE_SUNSET, fetchImpl,
 } = {}) {
   const end = addDays(from, days);
-  const { items, location } = await fetchCalendar({ start: from, end, geonameid, fetchImpl });
+  const { items, location } = await fetchCalendar({ start: from, end, geonameid, candleMinutes, fetchImpl });
 
   const candlesByDate = {};
   const havdalahByDate = {};
@@ -184,8 +195,8 @@ export function actionable(holidays, { leadDays = NUDGE_LEAD_DAYS } = {}) {
 }
 
 /** Friday-night / Shabbos info for the coming week, for the weekly flyer. */
-export async function nextShabbat({ from = isoDate(), geonameid = DEFAULT_GEONAMEID, fetchImpl } = {}) {
-  const { items } = await fetchCalendar({ start: from, end: addDays(from, 8), geonameid, fetchImpl });
+export async function nextShabbat({ from = isoDate(), geonameid = DEFAULT_GEONAMEID, candleMinutes = CANDLE_MINUTES_BEFORE_SUNSET, fetchImpl } = {}) {
+  const { items } = await fetchCalendar({ start: from, end: addDays(from, 8), geonameid, candleMinutes, fetchImpl });
   const candles = items.find((it) => it.category === "candles");
   const havdalah = items.find((it) => it.category === "havdalah");
   const parasha = items.find((it) => it.category === "parashat");

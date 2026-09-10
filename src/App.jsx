@@ -35,9 +35,10 @@ import { VantacaControlsView } from "./views/VantacaControlsView";
 import { CometChatView } from "./views/CometChatView";
 import { SpectariInventoryView } from "./views/SpectariInventoryView";
 import { SofaJCCView } from "./views/SofaJCCView";
+import { SofaDevView } from "./views/SofaDevView";
 
 export default function App() {
-  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","rambam_controls","vantaca_controls","cometchat","cometchat_dev","cometchat_sandbox","cometchat_production","spectari","sofa_jcc","admin","record"];
+  const VALID_VIEWS = ["dashboard","brief","associates","crm","companies","deals","marketing","social","cadences","loops","tasks","projects","documents","voice","invoices","payments","goals","strategies","ai_memories","multi_llm","voitra_gate","rc_controls","rambam_controls","vantaca_controls","cometchat","cometchat_dev","cometchat_sandbox","cometchat_production","spectari","sofa_jcc","sofa_dev","admin","record"];
   const VIEW_ALIASES = { mstack: "associates", orchestrator: "brief" };
   const routeFromHash = () => {
     const route = parseAppHash();
@@ -227,6 +228,7 @@ export default function App() {
     admin:        <AdminView session={session}/>,
     spectari:     <SpectariInventoryView/>,
     sofa_jcc:     <SofaJCCView/>,
+    sofa_dev:     <SofaDevView/>,
   };
 
   return (

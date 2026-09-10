@@ -5,23 +5,35 @@ The associate owns the brand. This is the contract it enforces.
 Every value below lives in exactly one place: **`src/lib/sofa/brand.js`**.
 Change it there and every flyer changes. Do not hardcode a hex anywhere else.
 
-These values are lifted verbatim from the live site's
-`assets/styles.css` (the `sofajcc/` static site), so a flyer and sofajcc.org
-can never drift apart.
+The palette is **sampled directly from the shul's own logo artwork**
+(`public/sofa-jcc/brand/logo-lockup-original.png`), not eyeballed. The layout
+language is taken from the shul's real Friday-night speaker flyer.
+
+## Identity
+
+| | |
+|---|---|
+| Name | **Beis Chacham Yitzchak** · בית חכם יצחק |
+| Known as | The SoFa Jewish Community Center |
+| City | Los Angeles |
+| On every flyer | ב"ה top right, logo lockup top left |
 
 ## Palette
 
+Sampled from the logo. Do not eyeball replacements.
+
 | token | hex | used for |
 |---|---|---|
-| `navy` | `#17335c` | hero ground, footer, headings on cream |
-| `navyDeep` | `#0f2542` | hero gradient end |
-| `gold` | `#c99a3f` | rules, labels, the sofa cushion, badge numerals |
-| `goldSoft` | `#e6cd93` | eyebrow text and subheads on navy |
-| `cream` | `#faf6ee` | body ground |
-| `cream2` | `#f3ecdd` | badge fill, headshot plate |
-| `ink` | `#23272e` | body text |
-| `muted` | `#5c6470` | secondary text |
-| `line` | `#e7ddc8` | dividers, badge border |
+| `navy` | `#1c374a` | header rule, footer bar, body copy |
+| `navyDeep` | `#16293d` | headings, the big display name |
+| `navySoft` | `#293c4b` | the seated figures; secondary text |
+| `gold` | `#b79549` | eyebrows, dividers, labels, the portrait frame |
+| `goldLight` | `#dcb96d` | the dancer's disc; accents on navy |
+| `olive` | `#8f8f5a` | the sofa's back panel; rare accent |
+| `maroon` | `#8b2635` | section eyebrows, the emphasised organisation |
+| `cream` | `#f5edda` | the parchment ground |
+| `cream2` | `#efe4cc` | detail strip, placeholder plate |
+| `line` | `#ddd0b4` | hairlines on cream |
 
 ## Type
 
@@ -32,13 +44,18 @@ can never drift apart.
 Both are web-safe, because flyers render headless and a webfont that fails to
 load is a flyer that ships in Times New Roman by accident.
 
-## The crest
+## Logo files
 
-The sofa mark, inline SVG, identical geometry to `assets/favicon.svg`.
-`logoSvg({ size, plate })` — `plate: true` draws the rounded navy tile,
-`plate: false` gives the bare mark for use on navy.
+| file | what |
+|---|---|
+| `logo-lockup.png` | Sofa + "THE SOFA / JEWISH COMMUNITY CENTER". Transparent, trimmed. **The header mark.** |
+| `logo-mark.png` | Sofa only, no wordmark. Transparent. Used for the no-headshot placeholder. |
+| `mark-dancer.png` | Dancing chassid on a gold disc. Secondary mark. |
+| `*-original.png` | The untouched source artwork. Never delete these. |
+| `sefarim-label-template.docx` | The shul's original Word label template, kept as the reference. |
 
-**It appears on every flyer.** `RULES.logoAlwaysPresent`.
+The lockup appears on **every** flyer (`RULES.logoAlwaysPresent`), and ב"ה sits
+top-right on every one (`RULES.bhAlwaysPresent`).
 
 ## Canvas sizes
 
@@ -51,23 +68,39 @@ The sofa mark, inline SVG, identical geometry to `assets/favicon.svg`.
 Every template renders at one of these, so the archive is dimensionally
 consistent and a PNG drops straight into a group chat without re-cropping.
 
-## The three templates
+## The house layout
 
-**`holiday`** — navy hero, holiday name at 96px display, Hebrew date as
-subhead, gold rule, long-form date. Cream body with a labelled detail grid
-(TIME / WHERE / WHO / RSVP), the description, and a candle-lighting badge.
+Held constant across every template:
 
-**`speaker`** — navy hero carrying a 268px circular headshot in a gold ring
-beside the name at 70px. Title · org in gold-soft. Gold rule, then the talk
-title at 44px display. Cream body: bio, then the same detail grid. No headshot
-→ the crest fills the circle.
+1. Parchment ground — **never** a dark hero.
+2. ב"ה top right, logo lockup top left, shul name in serif with the Hebrew name
+   beneath it, then a 5px navy rule.
+3. Everything centred.
+4. Maroon uppercase eyebrows, gold uppercase labels.
+5. Serif display voice; the Hebrew name set directly under the English.
+6. A three-column detail strip separated by hairlines. Empty columns are
+   dropped, so a flyer with two facts still reads as balanced.
+7. A navy footer bar carrying the greeting (שבת שלום · GOOD SHABBOS).
 
-**`weekly`** — cream-led rather than navy-led, so it reads as the routine
-rhythm and not an event. Compact navy hero, then a day-ruled list. Shabbos
-candle badge at the foot.
+## The four templates
 
-All three close with the same navy footer: `www.sofajcc.org` in display gold
-on the left, `PRAY · CELEBRATE · LOVE · FRIENDSHIP` on the right.
+**`speaker`** — the one that must be identical every time. Maroon occasion +
+parsha eyebrows, an italic lede, a gold-framed 330×400 portrait plate, the
+honorific in gold, the name at 92px with the Hebrew name under it, a gold
+divider, then role with the **organisation emphasised in maroon**, up to three
+credential lines, and the strip: DATE / CANDLE LIGHTING / WORDS OF INSPIRATION.
+No headshot yet → the plate goes dashed with the sofa mark at low opacity: an
+intentional placeholder, not a broken image.
+
+**`holiday`** — the same frame with the festival name where the speaker's name
+goes, and its Hebrew name beneath.
+
+**`weekly`** — a day-ruled list where the display name would be. Strip carries
+candle lighting / parsha / havdalah.
+
+**`label`** — the 4-up sefarim dedication sheet, reproducing the shul's Word
+template. The one template on a **white** ground, because labels print on
+white stock and cream would print as a muddy box on every sticker.
 
 ## Why the layout is code, not a prompt
 

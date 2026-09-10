@@ -25,16 +25,20 @@ const COMMON = [
 const BY_TEMPLATE = {
   holiday: [
     { field: "candle_lighting", label: "Candle lighting", severity: "nice", question: "Confirm candle lighting time?" },
+    { field: "occasion",        label: "Occasion line",   severity: "nice", question: "Eyebrow line — e.g. \"Friday Night\" or \"Yom Tov\"?" },
   ],
   weekly: [
     { field: "end_time", label: "End time", severity: "nice", question: "When does it wrap up?" },
   ],
   speaker: [
     { field: "speaker.name",      label: "Speaker name",  severity: "blocking", question: "Who is the speaker?" },
+    { field: "speaker.headshot_url", label: "Headshot",   severity: "ask",      question: "Send a headshot — the plate is a dashed placeholder without one." },
     { field: "speaker.short_bio", label: "Speaker bio",   severity: "ask",      question: "I couldn't verify a bio — give me one line, or confirm mine." },
-    { field: "speaker.topic",     label: "Talk topic",    severity: "ask",      question: "What's the talk actually called?" },
-    { field: "speaker.headshot_url", label: "Headshot",   severity: "ask",      question: "Send a headshot, or I'll use the crest instead." },
-    { field: "speaker.title",     label: "Speaker title", severity: "nice",     question: "How should I title them — Rabbi, Dr., role?" },
+    { field: "speaker.title",     label: "Role",          severity: "ask",      question: "What's their role — Executive Director, Rav, author?" },
+    { field: "speaker.org",       label: "Organisation",  severity: "ask",      question: "Which institution should I name under them?" },
+    { field: "speaker.name_he",   label: "Hebrew name",   severity: "nice",     question: "Hebrew name to set under the English?" },
+    { field: "speaker.honorific", label: "Honorific",     severity: "nice",     question: "Rabbi, Rav, Dr., or none?" },
+    { field: "speaker.topic",     label: "Talk topic",    severity: "nice",     question: "What's the talk called?" },
   ],
 };
 

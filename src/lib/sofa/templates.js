@@ -1,244 +1,330 @@
-// Flyer templates — the reason week-to-week output stays on-brand.
+// Flyer templates — modelled directly on the shul's own Friday-night speaker
+// flyer, not on a generic layout.
 //
-// Consistency here is STRUCTURAL, not a prompt instruction. The layout,
-// palette, type scale and crest positions are fixed in code; the model only
-// ever supplies words, and those words land in slots. Two flyers six months
-// apart are the same object with different text.
+// The house language, held constant across all templates:
+//   · parchment ground, never a dark hero
+//   · ב"ה top right, logo lockup top left, navy rule under the header
+//   · everything centred
+//   · maroon uppercase eyebrows, gold uppercase labels
+//   · a serif display voice, with the Hebrew name set directly under the English
+//   · a three-column detail strip separated by hairlines
+//   · a navy footer bar carrying the greeting
 //
-// Each template returns a complete standalone HTML document sized to a
-// CANVAS. That document is what gets stored in sofa_flyers.html, previewed
-// in an iframe in the console, and screenshotted to PNG.
+// Consistency is STRUCTURAL. The layout, palette, type scale and logo position
+// are fixed here; a model only ever supplies words, and those words land in
+// slots. Two flyers six months apart are the same object with different text.
 
-import { BRAND, COLORS, FONTS, CANVAS, RULES, logoSvg } from "./brand.js";
+import { BRAND, COLORS, FONTS, CANVAS, RULES, LOGO } from "./brand.js";
 
-/** Everything interpolated into the templates goes through this. Flyer copy
- *  can come from a model or from a speaker's own website — neither is trusted
- *  markup. */
+/** Flyer copy can come from a model or a speaker's own website. Neither is
+ *  trusted markup. */
 export const esc = (s) => String(s ?? "")
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-/** "2026-09-12" -> "Saturday, September 12" (date-only; no timezone shift). */
+/** "2026-09-12" -> "Saturday, September 12". Date-only maths: no TZ shift. */
 export const longDate = (iso, { weekday = true } = {}) => {
   if (!iso) return "";
   const [y, m, d] = String(iso).split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString("en-US", {
-    ...(weekday ? { weekday: "long" } : {}),
-    month: "long", day: "numeric",
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    ...(weekday ? { weekday: "long" } : {}), month: "long", day: "numeric",
   });
 };
 
-/** Enforce RULES rather than trusting callers. Over-long copy silently
- *  breaks the layout, so we clip and flag instead. */
+/** Over-long copy breaks the layout silently. Clip and move on. */
 const clip = (s, max) => {
   const t = String(s ?? "").trim();
   return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + "…";
 };
 
-const shell = ({ w, h, title, body, extraCss = "" }) => `<!doctype html>
+// `origin` lets the headless renderer pass an absolute base for the logo,
+// which has no page origin to resolve a root-relative path against.
+const shell = ({ w, h, title, body, extraCss = "", origin = "" }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
+<base href="${esc(origin || "/")}">
 <title>${esc(title)}</title>
 <style>
   @page { size: ${w}px ${h}px; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: ${w}px; height: ${h}px; }
   body {
-    font-family: ${FONTS.sans};
-    color: ${COLORS.ink};
+    font-family: ${FONTS.display};
+    color: ${COLORS.navyDeep};
     background: ${COLORS.cream};
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
   }
-  .flyer { width: ${w}px; height: ${h}px; display: flex; flex-direction: column; position: relative; }
-  .display { font-family: ${FONTS.display}; }
-  .crest { display: flex; align-items: center; gap: 18px; }
-  .crest svg { display: block; }
-  .crest .wm { line-height: 1.05; }
-  .crest .wm b { font-family: ${FONTS.display}; font-size: 40px; font-weight: 700; color: ${COLORS.white}; letter-spacing: .3px; display: block; }
-  .crest .wm span { font-size: 13px; letter-spacing: 3.4px; text-transform: uppercase; color: ${COLORS.goldSoft}; font-weight: 600; display: block; margin-top: 5px; }
-  .hero {
-    background:
-      radial-gradient(900px 420px at 82% -12%, rgba(201,154,63,.30), transparent 62%),
-      linear-gradient(160deg, ${COLORS.navy} 0%, ${COLORS.navyDeep} 100%);
-    color: ${COLORS.white};
-    padding: 62px 68px 56px;
-  }
+  .flyer { width: ${w}px; height: ${h}px; display: flex; flex-direction: column; }
+
+  /* ---- header ---- */
+  .hdr { display: flex; align-items: center; gap: 26px; padding: 34px 54px 26px; }
+  .hdr img { height: 104px; width: auto; display: block; flex: none; }
+  .hdr .names { flex: 1; min-width: 0; }
+  .hdr .en { font-size: 46px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1.08; letter-spacing: -.3px; }
+  .hdr .he { font-family: ${FONTS.hebrew}; font-size: 27px; color: ${COLORS.gold}; margin-top: 6px; direction: rtl; text-align: left; }
+  .hdr .bh { font-family: ${FONTS.hebrew}; font-size: 25px; color: ${COLORS.navy}; align-self: flex-start; flex: none; }
+  .hrule { height: 5px; background: ${COLORS.navy}; }
+
+  /* ---- body ---- */
+  .body { flex: 1; display: flex; flex-direction: column; text-align: center;
+          padding: 40px 82px 0; min-height: 0; }
+  .content { flex: 1; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; min-height: 0; }
+  .tail { flex: none; display: flex; flex-direction: column; align-items: center; }
   .eyebrow {
-    display: inline-block; font-size: 15px; letter-spacing: 4.6px; text-transform: uppercase;
-    color: ${COLORS.goldSoft}; font-weight: 700;
+    font-family: ${FONTS.sans}; font-size: 21px; font-weight: 700;
+    letter-spacing: 5px; text-transform: uppercase; color: ${COLORS.maroon};
   }
-  .rule { height: 3px; width: 92px; background: ${COLORS.gold}; border-radius: 2px; }
-  .body { flex: 1; padding: 54px 68px 0; display: flex; flex-direction: column; }
-  .meta { display: flex; flex-direction: column; gap: 22px; }
-  .row { display: flex; align-items: baseline; gap: 20px; }
-  .row .k {
-    font-size: 14px; letter-spacing: 3px; text-transform: uppercase; color: ${COLORS.gold};
-    font-weight: 700; width: 168px; flex: none;
+  .eyebrow.gold { color: ${COLORS.gold}; }
+  .eyebrow.sm { font-size: 17px; letter-spacing: 4px; }
+  .lede { font-size: 33px; font-style: italic; color: ${COLORS.navy}; line-height: 1.42; max-width: 900px; }
+  .name { font-size: 92px; font-weight: 700; line-height: 1.02; letter-spacing: -1.5px; color: ${COLORS.navyDeep}; }
+  .name-he { font-family: ${FONTS.hebrew}; font-size: 54px; color: ${COLORS.navyDeep}; direction: rtl; margin-top: 8px; line-height: 1.15; }
+  .divider { width: 210px; height: 3px; background: ${COLORS.gold}; }
+  .role { font-size: 31px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1.35; }
+  .role em { font-style: normal; color: ${COLORS.maroon}; }
+  .note { font-size: 22px; color: ${COLORS.navy}; line-height: 1.55; max-width: 940px; }
+  .portrait {
+    border: 3px solid ${COLORS.gold}; padding: 5px; background: ${COLORS.white};
+    width: 330px; height: 400px; overflow: hidden; display: flex; align-items: center; justify-content: center;
   }
-  .row .v { font-size: 30px; color: ${COLORS.ink}; font-weight: 600; line-height: 1.32; }
-  .row .v small { display: block; font-size: 21px; font-weight: 500; color: ${COLORS.muted}; margin-top: 4px; }
-  .badge {
-    display: inline-flex; align-items: baseline; gap: 14px;
-    background: ${COLORS.cream2}; border: 2px solid ${COLORS.line};
-    border-radius: 18px; padding: 20px 28px;
+  .portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* No headshot yet: an intentional placeholder, not a broken image. The gap
+     list is already asking for one. */
+  .portrait.empty { background: ${COLORS.cream2}; border-style: dashed; }
+  .portrait .fallback { width: 74%; height: auto; object-fit: contain; opacity: .26; }
+
+  /* ---- detail strip ---- */
+  .strip { display: flex; width: 100%; border-top: 2px solid ${COLORS.line}; }
+  .strip .col { flex: 1; padding: 26px 18px 22px; text-align: center; }
+  .strip .col + .col { border-left: 2px solid ${COLORS.line}; }
+  .strip .k {
+    font-family: ${FONTS.sans}; font-size: 16px; font-weight: 700;
+    letter-spacing: 3.4px; text-transform: uppercase; color: ${COLORS.gold};
   }
-  .badge .k { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: ${COLORS.gold}; font-weight: 700; }
-  .badge .v { font-family: ${FONTS.display}; font-size: 34px; font-weight: 700; color: ${COLORS.navy}; }
+  .strip .v { font-size: 34px; font-weight: 700; color: ${COLORS.navyDeep}; margin-top: 10px; line-height: 1.2; }
+  .strip .sub { font-size: 20px; color: ${COLORS.navy}; margin-top: 7px; line-height: 1.3; }
+  .strip .sub.he { font-family: ${FONTS.hebrew}; direction: rtl; }
+
+  /* ---- footer ---- */
   .foot {
-    margin-top: auto; padding: 34px 68px; background: ${COLORS.navy}; color: ${COLORS.cream};
-    display: flex; align-items: center; justify-content: space-between; gap: 24px;
-    margin-left: -68px; margin-right: -68px;
+    background: ${COLORS.navy}; color: ${COLORS.cream};
+    padding: 22px; text-align: center; font-size: 25px; letter-spacing: 2.4px;
   }
-  .foot .site { font-family: ${FONTS.display}; font-size: 27px; font-weight: 700; color: ${COLORS.goldSoft}; letter-spacing: .4px; }
-  .foot .tag { font-size: 16px; letter-spacing: 2.2px; text-transform: uppercase; color: rgba(250,246,238,.72); font-weight: 600; }
+  .foot .he { font-family: ${FONTS.hebrew}; color: ${COLORS.goldLight}; }
 ${extraCss}
 </style></head>
 <body><div class="flyer">${body}</div></body></html>`;
 
-const footer = () => `
-  <div class="foot">
-    <span class="site">${esc(BRAND.site)}</span>
-    <span class="tag">${esc(BRAND.tagline)}</span>
-  </div>`;
-
-const heroHead = (eyebrow) => `
-  <div class="crest">
-    ${logoSvg({ size: 88, plate: false })}
-    <div class="wm"><b>${esc(BRAND.wordmark)}</b><span>${esc(BRAND.kicker)}</span></div>
-  </div>
-  ${eyebrow ? `<div style="margin-top:44px"><span class="eyebrow">${esc(eyebrow)}</span></div>` : ""}`;
-
-const detailRows = (rows) => rows
-  .filter((r) => r && r.v)
-  .map((r) => `<div class="row"><span class="k">${esc(r.k)}</span><span class="v">${esc(r.v)}${r.sub ? `<small>${esc(r.sub)}</small>` : ""}</span></div>`)
-  .join("\n");
-
-// ------------------------------------------------------------------
-// HOLIDAY — the High-Holiday / festival flyer.
-// ------------------------------------------------------------------
-export function holidayFlyer(ev = {}, { canvas = "portrait" } = {}) {
-  const { w, h } = CANVAS[canvas] || CANVAS.portrait;
-  const headline = clip(ev.headline || ev.title || "", RULES.maxHeadlineChars);
-  const subhead = clip(ev.subhead || ev.hebrew_date || "", RULES.maxSubheadChars);
-  const body = `
-  <div class="hero">
-    ${heroHead("You are invited")}
-    <h1 class="display" style="font-size:96px;line-height:1.02;font-weight:700;margin-top:26px;letter-spacing:-1px">${esc(headline)}</h1>
-    ${subhead ? `<p style="font-size:29px;color:${COLORS.goldSoft};margin-top:18px;font-weight:500">${esc(subhead)}</p>` : ""}
-    <div class="rule" style="margin-top:34px"></div>
-    <p style="font-size:32px;margin-top:26px;font-weight:600">${esc(longDate(ev.event_date))}</p>
-  </div>
-  <div class="body">
-    <div class="meta">
-      ${detailRows([
-        { k: "Time",     v: ev.start_time, sub: ev.end_time ? `until ${ev.end_time}` : "" },
-        { k: "Where",    v: ev.location,   sub: ev.address || "" },
-        { k: "Who",      v: ev.audience },
-        { k: "RSVP",     v: ev.rsvp_url },
-      ])}
+const header = () => `
+  <div class="hdr">
+    <img src="${LOGO.lockup}" alt="${esc(BRAND.publicName)}">
+    <div class="names">
+      <div class="en">${esc(BRAND.name)}</div>
+      <div class="he">${esc(BRAND.nameHe)}</div>
     </div>
-    ${ev.description ? `<p style="font-size:25px;line-height:1.62;color:${COLORS.muted};margin-top:36px;max-width:840px">${esc(ev.description)}</p>` : ""}
-    ${ev.candle_lighting ? `<div style="margin-top:40px"><div class="badge"><span class="k">Candle lighting</span><span class="v">${esc(ev.candle_lighting)}</span></div></div>` : ""}
-    <div style="margin-top:auto"></div>
-    ${footer()}
-  </div>`;
-  return shell({ w, h, title: `${BRAND.shortName} — ${headline}`, body });
-}
+    <div class="bh">${esc(BRAND.bh)}</div>
+  </div>
+  <div class="hrule"></div>`;
+
+const footer = (greeting) => `
+  <div class="foot">${greeting
+    ? esc(greeting)
+    : `<span class="he">${esc(BRAND.shabbosGreeting.he)}</span> &nbsp;·&nbsp; ${esc(BRAND.shabbosGreeting.en).toUpperCase()}`}</div>`;
+
+/** The three-column strip. Columns with no value are dropped, so a flyer with
+ *  two facts is still balanced rather than showing an empty cell. */
+const strip = (cols) => {
+  const live = cols.filter((c) => c && c.v);
+  if (!live.length) return "";
+  return `<div class="strip">${live.map((c) => `
+    <div class="col">
+      <div class="k">${esc(c.k)}</div>
+      <div class="v">${esc(c.v)}</div>
+      ${c.sub ? `<div class="sub${c.subHe ? " he" : ""}">${esc(c.sub)}</div>` : ""}
+    </div>`).join("")}</div>`;
+};
+
+const gap = (px) => `<div style="height:${px}px"></div>`;
 
 // ------------------------------------------------------------------
-// SPEAKER — every guest gets the identical frame. This is the template
-// Mendy specifically asked to be consistent, so the headshot plate, the
-// name scale and the "Guest Speaker" eyebrow are not parameterised.
+// SPEAKER — the template Mendy asked to be identical every time. Nothing
+// about the frame is parameterised: same header, same portrait plate, same
+// name scale, same strip. Only the words change.
 // ------------------------------------------------------------------
-export function speakerFlyer(ev = {}, speaker = {}, { canvas = "portrait" } = {}) {
-  const { w, h } = CANVAS[canvas] || CANVAS.portrait;
-  const topic = clip(ev.headline || speaker.topic || ev.title || "", 62);
-  const extraCss = `
-  .portrait {
-    width: 268px; height: 268px; border-radius: 50%; flex: none; overflow: hidden;
-    background: ${COLORS.cream2}; border: 6px solid ${COLORS.gold};
-    display: flex; align-items: center; justify-content: center;
-  }
-  .portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }`;
-  const headshot = speaker.headshot_url
+export function speakerFlyer(ev = {}, speaker = {}, opts = {}) {
+  const { w, h } = CANVAS[opts.canvas] || CANVAS.letter;
+  const hasHeadshot = !!speaker.headshot_url;
+  const portrait = hasHeadshot
     ? `<img src="${esc(speaker.headshot_url)}" alt="${esc(speaker.name)}">`
-    : logoSvg({ size: 150, plate: false });
+    : `<img class="fallback" src="${LOGO.mark}" alt="">`;
+  // "Executive Director, The Steinsaltz Center, Jerusalem" — the org is
+  // emphasised in maroon, matching the shul's own flyer.
+  const role = speaker.org
+    ? [speaker.title, `<em>${esc(speaker.org)}</em>`, speaker.org_place].filter(Boolean).join(", ")
+    : esc(speaker.title || "");
   const body = `
-  <div class="hero" style="padding-bottom:48px">
-    ${heroHead("Guest Speaker")}
-    <div style="display:flex;align-items:center;gap:40px;margin-top:40px">
-      <div class="portrait">${headshot}</div>
-      <div style="min-width:0">
-        <h1 class="display" style="font-size:70px;line-height:1.06;font-weight:700;letter-spacing:-.5px">${esc(speaker.name || "")}</h1>
-        ${speaker.title || speaker.org ? `<p style="font-size:26px;color:${COLORS.goldSoft};margin-top:14px;font-weight:600">${esc([speaker.title, speaker.org].filter(Boolean).join(" · "))}</p>` : ""}
-      </div>
-    </div>
-    <div class="rule" style="margin-top:38px"></div>
-    <p class="display" style="font-size:44px;line-height:1.2;margin-top:26px;font-weight:700">${esc(topic)}</p>
-  </div>
+  ${header()}
   <div class="body">
-    ${speaker.short_bio ? `<p style="font-size:24px;line-height:1.66;color:${COLORS.muted};max-width:860px">${esc(speaker.short_bio)}</p>` : ""}
-    <div class="meta" style="margin-top:${speaker.short_bio ? 40 : 0}px">
-      ${detailRows([
-        { k: "When",  v: longDate(ev.event_date), sub: ev.start_time || "" },
-        { k: "Where", v: ev.location, sub: ev.address || "" },
-        { k: "Who",   v: ev.audience },
-        { k: "RSVP",  v: ev.rsvp_url },
-      ])}
+    <div class="content">
+    ${ev.occasion ? `<div class="eyebrow">${esc(ev.occasion)}</div>${gap(14)}` : ""}
+    ${ev.parsha ? `<div class="eyebrow">${esc(ev.parsha)}</div>${gap(26)}` : ""}
+    ${ev.lede ? `<div class="lede">${esc(ev.lede)}</div>${gap(30)}` : ""}
+    <div class="portrait${hasHeadshot ? "" : " empty"}">${portrait}</div>
+    ${gap(26)}
+    ${speaker.honorific ? `<div class="eyebrow gold sm">${esc(speaker.honorific)}</div>${gap(10)}` : ""}
+    <div class="name">${esc(clip(speaker.name || "", RULES.maxHeadlineChars))}</div>
+    ${speaker.name_he ? `<div class="name-he">${esc(speaker.name_he)}</div>` : ""}
+    ${gap(26)}<div class="divider"></div>${gap(26)}
+    ${role ? `<div class="role">${role}</div>${gap(16)}` : ""}
+    ${(speaker.credentials || []).slice(0, 3).map((c) => `<div class="note">${esc(c)}</div>`).join("")}
     </div>
-    <div style="margin-top:auto"></div>
-    ${footer()}
-  </div>`;
-  return shell({ w, h, title: `${BRAND.shortName} — ${speaker.name || "Guest Speaker"}`, body, extraCss });
+    <div class="tail">
+    ${gap(28)}
+    ${strip([
+      { k: "Date", v: longDate(ev.event_date), sub: ev.hebrew_date, subHe: true },
+      { k: ev.time_label || "Candle Lighting", v: ev.candle_lighting || ev.start_time, sub: ev.candle_lighting ? BRAND.city : ev.location },
+      { k: ev.slot_label || "Words of Inspiration", v: ev.slot || "", sub: ev.slot_note || "" },
+    ])}
+    ${gap(22)}
+    <div class="eyebrow gold sm">${esc(ev.welcome || "All Are Welcome")}</div>
+    ${gap(26)}
+    </div>
+  </div>
+  ${footer(ev.greeting)}`;
+  return shell({ w, h, title: `${BRAND.name} — ${speaker.name || "Guest Speaker"}`, body, origin: opts.origin });
 }
 
 // ------------------------------------------------------------------
-// WEEKLY — the week-at-a-glance. Cream-led rather than navy-led so it
-// reads as the routine rhythm, not an event.
+// HOLIDAY — same frame, the festival name where the speaker's name goes.
 // ------------------------------------------------------------------
-export function weeklyFlyer(week = {}, { canvas = "portrait" } = {}) {
-  const { w, h } = CANVAS[canvas] || CANVAS.portrait;
+export function holidayFlyer(ev = {}, opts = {}) {
+  const { w, h } = CANVAS[opts.canvas] || CANVAS.letter;
+  const body = `
+  ${header()}
+  <div class="body">
+    <div class="content">
+    ${ev.occasion ? `<div class="eyebrow">${esc(ev.occasion)}</div>${gap(26)}` : ""}
+    ${ev.lede ? `<div class="lede">${esc(ev.lede)}</div>${gap(30)}` : ""}
+    <div class="eyebrow gold sm">${esc(ev.kicker || "Join Us For")}</div>${gap(14)}
+    <div class="name">${esc(clip(ev.headline || ev.title || "", RULES.maxHeadlineChars))}</div>
+    ${ev.headline_he ? `<div class="name-he">${esc(ev.headline_he)}</div>` : ""}
+    ${gap(26)}<div class="divider"></div>${gap(26)}
+    ${ev.subhead ? `<div class="role">${esc(clip(ev.subhead, RULES.maxSubheadChars))}</div>${gap(18)}` : ""}
+    ${ev.description ? `<div class="note">${esc(ev.description)}</div>` : ""}
+    </div>
+    <div class="tail">
+    ${gap(28)}
+    ${strip([
+      { k: "Date", v: longDate(ev.event_date), sub: ev.hebrew_date, subHe: true },
+      { k: ev.candle_lighting ? "Candle Lighting" : "Time", v: ev.candle_lighting || ev.start_time, sub: ev.candle_lighting ? BRAND.city : (ev.end_time ? `until ${ev.end_time}` : "") },
+      { k: "Where", v: ev.location, sub: ev.address },
+    ])}
+    ${gap(22)}
+    <div class="eyebrow gold sm">${esc(ev.welcome || "All Are Welcome")}</div>
+    ${gap(26)}
+    </div>
+  </div>
+  ${footer(ev.greeting)}`;
+  return shell({ w, h, title: `${BRAND.name} — ${ev.headline || ev.title || "Flyer"}`, body, origin: opts.origin });
+}
+
+// ------------------------------------------------------------------
+// WEEKLY — the week at a glance. Same header and footer, a ruled list where
+// the display name would be.
+// ------------------------------------------------------------------
+export function weeklyFlyer(week = {}, opts = {}) {
+  const { w, h } = CANVAS[opts.canvas] || CANVAS.letter;
   const items = Array.isArray(week.items) ? week.items : [];
   const extraCss = `
-  .item { display: flex; gap: 24px; padding: 26px 0; border-bottom: 2px solid ${COLORS.line}; }
+  .list { width: 100%; }
+  .item { display: flex; gap: 26px; padding: 24px 6px; border-bottom: 2px solid ${COLORS.line}; text-align: left; align-items: baseline; }
   .item:last-child { border-bottom: 0; }
   .item .day {
-    width: 156px; flex: none; font-size: 15px; letter-spacing: 3px; text-transform: uppercase;
-    color: ${COLORS.gold}; font-weight: 700; padding-top: 8px;
+    width: 210px; flex: none; font-family: ${FONTS.sans}; font-size: 17px; font-weight: 700;
+    letter-spacing: 3.2px; text-transform: uppercase; color: ${COLORS.gold};
   }
-  .item .what { font-family: ${FONTS.display}; font-size: 33px; font-weight: 700; color: ${COLORS.navy}; line-height: 1.25; }
-  .item .when { font-size: 21px; color: ${COLORS.muted}; margin-top: 6px; }`;
+  .item .what { font-size: 34px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1.25; }
+  .item .when { font-size: 21px; color: ${COLORS.navy}; margin-top: 5px; }`;
   const body = `
-  <div class="hero" style="padding:52px 68px 46px">
-    ${heroHead("")}
-    <h1 class="display" style="font-size:74px;line-height:1.04;font-weight:700;margin-top:34px">${esc(week.headline || "This Week at SoFa")}</h1>
-    <p style="font-size:26px;color:${COLORS.goldSoft};margin-top:16px;font-weight:500">${esc(week.subhead || "")}</p>
-  </div>
-  <div class="body" style="padding-top:34px">
-    <div>
+  ${header()}
+  <div class="body">
+    <div class="content">
+    <div class="eyebrow">${esc(week.occasion || "This Week")}</div>${gap(16)}
+    <div class="name" style="font-size:74px">${esc(week.headline || "This Week at The SoFa")}</div>
+    ${gap(12)}<div class="note">${esc(week.subhead || "")}</div>
+    ${gap(26)}<div class="divider"></div>${gap(18)}
+    <div class="list">
       ${items.length ? items.map((it) => `
       <div class="item">
-        <div class="day">${esc(it.day || longDate(it.event_date, { weekday: true }).split(",")[0])}</div>
+        <div class="day">${esc(it.day || longDate(it.event_date).split(",")[0])}</div>
         <div>
           <div class="what">${esc(it.title || "")}</div>
           <div class="when">${esc([it.start_time, it.location].filter(Boolean).join(" · "))}</div>
         </div>
-      </div>`).join("") : `<p style="font-size:24px;color:${COLORS.muted}">No programs scheduled yet this week.</p>`}
+      </div>`).join("") : `<div class="note">No programs scheduled yet this week.</div>`}
     </div>
-    ${week.candle_lighting ? `<div style="margin-top:36px"><div class="badge"><span class="k">Shabbos candles</span><span class="v">${esc(week.candle_lighting)}</span></div></div>` : ""}
-    <div style="margin-top:auto"></div>
-    ${footer()}
-  </div>`;
-  return shell({ w, h, title: `${BRAND.shortName} — ${week.headline || "This Week"}`, body, extraCss });
+    </div>
+    <div class="tail">
+    ${gap(24)}
+    ${strip([
+      { k: "Candle Lighting", v: week.candle_lighting, sub: BRAND.city },
+      { k: "Parsha", v: week.parsha, sub: week.hebrew_date, subHe: true },
+      { k: "Havdalah", v: week.havdalah, sub: BRAND.city },
+    ])}
+    ${gap(22)}
+    <div class="eyebrow gold sm">${esc(week.welcome || "All Are Welcome")}</div>
+    ${gap(26)}
+    </div>
+  </div>
+  ${footer(week.greeting)}`;
+  return shell({ w, h, title: `${BRAND.name} — ${week.headline || "This Week"}`, body, extraCss, origin: opts.origin });
 }
 
-export const TEMPLATES = { holiday: holidayFlyer, speaker: speakerFlyer, weekly: weeklyFlyer };
+// ------------------------------------------------------------------
+// LABEL — the sefarim book-plate, 4 up on a Letter sheet. Reproduces the
+// shul's existing Word template so the associate can generate a dedication
+// sheet without anyone opening Word.
+// ------------------------------------------------------------------
+export function labelSheet(label = {}, opts = {}) {
+  const { w, h } = CANVAS.letter;
+  const dedication = label.dedication_he || "";
+  const per = label.count || 4;
+  // Labels print on white label stock, so this one template drops the
+  // parchment ground — cream would print as a muddy box on every sticker.
+  const extraCss = `
+  body, .flyer { background: ${COLORS.white}; }
+  .sheet { display: grid; grid-template-rows: repeat(${per}, 1fr); height: ${h}px; padding: 40px 60px; gap: 0; }
+  .label {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 12px; padding: 22px 30px;
+    border-bottom: 2px dashed ${COLORS.line};
+  }
+  .label:last-child { border-bottom: 0; }
+  .label .ded-en { font-size: 26px; font-weight: 700; color: ${COLORS.navyDeep}; }
+  .label img { height: 118px; width: auto; }
+  .label .shul { font-family: ${FONTS.hebrew}; font-size: 30px; color: ${COLORS.navyDeep}; direction: rtl; font-weight: 700; }
+  .label .ded-he { font-family: ${FONTS.hebrew}; font-size: 22px; color: ${COLORS.navy}; direction: rtl; line-height: 1.5; max-width: 820px; }`;
+  const one = `
+    <div class="label">
+      ${label.heading_en !== "" ? `<div class="ded-en">${esc(label.heading_en || "This book is dedicated to:")}</div>` : ""}
+      <img src="${LOGO.lockup}" alt="${esc(BRAND.publicName)}">
+      <div class="shul">${esc(BRAND.nameHe)}</div>
+      ${dedication ? `<div class="ded-he">${esc(dedication)}</div>` : ""}
+    </div>`;
+  return shell({
+    w, h, title: `${BRAND.name} — Sefarim Labels`, extraCss, origin: opts.origin,
+    body: `<div class="sheet">${one.repeat(per)}</div>`,
+  });
+}
+
+export const TEMPLATES = { speaker: speakerFlyer, holiday: holidayFlyer, weekly: weeklyFlyer, label: labelSheet };
 
 /** Single entry point used by the console and the server. */
 export function renderFlyer(template, payload, opts = {}) {
   if (!RULES.allowedTemplates.includes(template)) throw new Error(`unknown template: ${template}`);
   if (template === "speaker") return speakerFlyer(payload.event || {}, payload.speaker || {}, opts);
   if (template === "weekly") return weeklyFlyer(payload.week || payload, opts);
+  if (template === "label") return labelSheet(payload.label || payload, opts);
   return holidayFlyer(payload.event || payload, opts);
 }

@@ -154,3 +154,38 @@ create policy "auth_all" on sofa_events        for all using (auth.role() = 'aut
 create policy "auth_all" on sofa_flyers        for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "auth_all" on sofa_nudges        for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "auth_all" on push_subscriptions for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- ------------------------------------------------------------
+-- WORK ORDERS — the handoff between the two SoFa associates.
+-- The business associate (sofa-jcc) raises one; the developer associate
+-- (sofa-dev) specs it, builds what it can, and hands off the rest.
+-- dedupe_key keeps an auto-raised order from being raised twice.
+-- ------------------------------------------------------------
+create table if not exists sofa_work_orders (
+  id              serial primary key,
+  title           text not null,
+  kind            text default 'other',      -- flyer_publish | page | asset | content | label_sheet | fix | other
+  request         text default '',           -- what the business associate asked for, in plain words
+  spec            text default '',           -- the developer associate's build spec
+  acceptance      jsonb default '[]'::jsonb,
+  target_repo     text,
+  target_path     text,
+  status          text default 'queued',     -- queued | speccing | ready | in_progress | done | blocked
+  priority        text default 'normal',
+  requested_by    text default 'agent:sofa-jcc',
+  event_id        int references sofa_events(id) on delete set null,
+  flyer_id        int references sofa_flyers(id) on delete set null,
+  artifact_html   text default '',           -- what the developer built in-app
+  artifact_path   text default '',
+  handoff_prompt  text default '',           -- standalone brief for a repo session
+  result          text default '',
+  dedupe_key      text unique,
+  created_at      timestamptz default now(),
+  modified_by     text,
+  modified_at     timestamptz default now()
+);
+create index if not exists sofa_work_orders_status_idx on sofa_work_orders (status);
+
+alter table sofa_work_orders enable row level security;
+drop policy if exists "auth_all" on sofa_work_orders;
+create policy "auth_all" on sofa_work_orders for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

@@ -1,6 +1,10 @@
 # SoFa JCC Associate
 
-The associate that runs SoFa Jewish Community Center: the weekly calendar, the
+> Paired with the **[SoFa Developer Associate](./DEVELOPER.md)** (`#/sofa_dev`), which
+> builds what this one asks for. This associate watches the business; that one
+> does the work.
+
+The associate that runs Beis Chacham Yitzchak — The SoFa Jewish Community Center: the weekly calendar, the
 Jewish holidays, the flyers, the brand, and the speaker pipeline.
 
 It is one of the Second Brain associates (`ASSOCIATES` in
@@ -87,7 +91,7 @@ Add to Vercel → Settings → Environment Variables:
 | `VAPID_PRIVATE_KEY` | server | never commit |
 | `VAPID_SUBJECT` | server | `mailto:you@yourdomain.com` |
 | `VITE_VAPID_PUBLIC_KEY` | client | same value as the public key |
-| `SOFA_HEBCAL_GEONAMEID` | server | optional; defaults to Miami (`4164138`) |
+| `SOFA_HEBCAL_GEONAMEID` | server | optional; defaults to Los Angeles (`5368361`) |
 
 `VITE_*` vars are inlined at build time — **redeploy after adding them.**
 
@@ -103,11 +107,15 @@ Open `#/sofa_jcc` → **Turn on**.
 > on there. The console detects this and says so rather than pretending push is
 > working. Android and desktop work in the tab.
 
-### 4. Confirm the city
+### 4. Candle-lighting times
 
-The default is Miami. Candle-lighting times are wrong for the wrong city, so
-set `SOFA_HEBCAL_GEONAMEID` to the shul's actual location
-(search at hebcal.com/home/195/jewish-calendar-cities) if it isn't Miami.
+The default is **Los Angeles**, lighting **12 minutes** before sunset. That
+offset is not a guess: Hebcal's default of 18 minutes gives 7:30pm for Friday
+7 August 2026, and the shul's own printed flyer for that night reads 7:36pm —
+which is exactly `b=12`. Confirm it against a second flyer before trusting it
+blindly; it is one data point. Both are overridable
+(`SOFA_HEBCAL_GEONAMEID`, and `CANDLE_MINUTES_BEFORE_SUNSET` in
+`src/lib/sofa/hebcal.js`).
 
 ---
 
@@ -127,6 +135,10 @@ set `SOFA_HEBCAL_GEONAMEID` to the shul's actual location
 | `api/push.js`, `api/_push.js` | Device registry + sender |
 | `scripts/render-flyer.mjs` | HTML → PNG (local; needs playwright) |
 | `scripts/gen-vapid.mjs` | One-time keygen |
+| `src/lib/sofa/dev.js` | Work orders + handoff briefs (developer associate) |
+| `src/views/SofaDevView.jsx` | The developer console |
+| `api/sofa-dev.js` | Spec, build, handoff |
+| `public/sofa-jcc/brand/` | The real logo files + the sefarim label template |
 | `schema-sofa-jcc.sql` | The tables |
 
 ## Exporting a flyer as PNG

@@ -19,6 +19,7 @@ import { createClient } from "@supabase/supabase-js";
 import { sendPush } from "./_push.js";
 import { planDay, renderFor, templateFor } from "../src/lib/sofa/agent.js";
 import { computeGaps, flyerStatus, missingSentence } from "../src/lib/sofa/gaps.js";
+import { handoffPrompt, workFromPlan } from "../src/lib/sofa/dev.js";
 import { isoDate } from "../src/lib/sofa/hebcal.js";
 
 // Web search for speaker research can exceed the default budget.
@@ -182,9 +183,21 @@ export async function runSofaScan({ today = isoDate(), dryRun = false, sb = db()
     else applied.pushErrors.push(result.reason || (result.errors || []).join("; "));
   }
 
+  // 4. Hand work to the developer associate. Only flyers with no gaps left
+  //    become work orders — a half-finished flyer is the business associate's
+  //    problem, not the developer's. dedupe_key stops a re-scan re-raising it.
+  const { data: existingOrders } = await sb.from("sofa_work_orders").select("dedupe_key");
+  const orders = workFromPlan(plan, { existingKeys: (existingOrders || []).map((o) => o.dedupe_key) });
+  applied.workOrders = 0;
+  for (const o of orders) {
+    const row = { ...o, handoff_prompt: handoffPrompt(o), modified_by: "agent:sofa-jcc" };
+    const { error } = await sb.from("sofa_work_orders").insert(row);
+    if (!error) applied.workOrders++;
+  }
+
   await log(
     sb, "daily-scan",
-    `${plan.summary} · applied ${applied.events} event(s), ${applied.flyers} flyer(s), ${applied.nudges} nudge(s), ${applied.pushed} push(es).` +
+    `${plan.summary} · applied ${applied.events} event(s), ${applied.flyers} flyer(s), ${applied.nudges} nudge(s), ${applied.pushed} push(es), ${applied.workOrders} work order(s).` +
     (applied.pushErrors.length ? ` Push issues: ${applied.pushErrors.join("; ")}` : ""),
     plan.nudges.some((n) => n.severity === "high") ? "high" : "medium"
   );

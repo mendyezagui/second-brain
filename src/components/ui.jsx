@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, RefreshCw, Save, Search, Settings, Shield, SlidersHorizontal, Sparkles, Target, Trash2, Upload, Users, X, Calendar, Glasses } from "lucide-react";
+import { Activity, AlertCircle, ArrowDown, ArrowUp, Award, BarChart2, BookOpen, Brain, Briefcase, Building2, CheckCircle, ChevronRight, CreditCard, DollarSign, ExternalLink, FileText, Loader, Megaphone, MessageSquare, Mic, MoreVertical, Paperclip, Pencil, Phone, Plus, RefreshCw, Save, Search, Settings, Shield, SlidersHorizontal, Sparkles, Target, Trash2, Upload, Users, X, Calendar, Glasses, Code2} from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { navEnabled } from "../lib/modules";
 import { blankDocument, buildDocOptions, docAssociationKey, docHasAssociation, formatDocSize, getDocEntityLabel, getDocKindLabel, nextId, normalizeDocId, recordPath, sc, uploadDocumentFile } from "../lib/utils";
@@ -484,7 +484,9 @@ const RAW_NAV = [
   {id:"cometchat",icon:MessageSquare,label:"CometChat Logs",parent:"_ai_controls"},
   {id:"cometchat_dev",icon:MessageSquare,label:"CometChat Dev",parent:"_ai_controls"},
   {id:"spectari",icon:Glasses,label:"Spectari"},
-  {id:"sofa_jcc",icon:Calendar,label:"SoFa JCC"},
+  {id:"_sofa",icon:Calendar,label:"SoFa JCC",group:true,children:["sofa_jcc","sofa_dev"]},
+  {id:"sofa_jcc",icon:Calendar,label:"Business",parent:"_sofa"},
+  {id:"sofa_dev",icon:Code2,label:"Developer",parent:"_sofa"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 

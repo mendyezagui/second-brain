@@ -13,7 +13,7 @@ export const NAV_MODULE = {
   _ai_controls: "controls", voitra_gate: "controls", rc_controls: "controls", rambam_controls: "controls",
   vantaca_controls: "controls", cometchat: "controls", cometchat_dev: "controls",
   spectari: "spectari",
-  sofa_jcc: "sofa_jcc",
+  sofa_jcc: "sofa_jcc", sofa_dev: "sofa_jcc", _sofa: "sofa_jcc",
   multi_llm: "ai_playground",
   admin: "admin",
 };
