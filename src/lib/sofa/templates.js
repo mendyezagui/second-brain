@@ -39,7 +39,21 @@ const clip = (s, max) => {
 
 // `origin` lets the headless renderer pass an absolute base for the logo,
 // which has no page origin to resolve a root-relative path against.
-const shell = ({ w, h, title, body, extraCss = "", origin = "" }) => `<!doctype html>
+/**
+ * Print mode. The parchment ground is right on a screen and on a single
+ * professionally printed sheet, but a handout gets photocopied: a full-bleed
+ * cream page burns toner on every copy and greys out on a cheap printer.
+ * `print: true` drops the page to white and keeps the ink where it carries
+ * meaning — the navy rule, the gold labels, the maroon headings.
+ * Appended last so it wins on cascade order without !important.
+ */
+const printOverrides = () => `
+  body, .flyer { background: ${COLORS.white}; }
+  .callout { background: ${COLORS.white}; }
+  .portrait.empty { background: ${COLORS.white}; }
+  .badge { background: ${COLORS.white}; }`;
+
+const shell = ({ w, h, title, body, extraCss = "", origin = "", print = false }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <base href="${esc(origin || "/")}">
 <title>${esc(title)}</title>
@@ -113,6 +127,7 @@ const shell = ({ w, h, title, body, extraCss = "", origin = "" }) => `<!doctype 
   }
   .foot .he { font-family: ${FONTS.hebrew}; color: ${COLORS.goldLight}; }
 ${extraCss}
+${print ? printOverrides() : ""}
 </style></head>
 <body><div class="flyer">${body}</div></body></html>`;
 
@@ -192,7 +207,7 @@ export function speakerFlyer(ev = {}, speaker = {}, opts = {}) {
     </div>
   </div>
   ${footer(ev.greeting)}`;
-  return shell({ w, h, title: `${BRAND.name} — ${speaker.name || "Guest Speaker"}`, body, origin: opts.origin });
+  return shell({ w, h, title: `${BRAND.name} — ${speaker.name || "Guest Speaker"}`, body, origin: opts.origin, print: !!opts.print });
 }
 
 // ------------------------------------------------------------------
@@ -226,7 +241,7 @@ export function holidayFlyer(ev = {}, opts = {}) {
     </div>
   </div>
   ${footer(ev.greeting)}`;
-  return shell({ w, h, title: `${BRAND.name} — ${ev.headline || ev.title || "Flyer"}`, body, origin: opts.origin });
+  return shell({ w, h, title: `${BRAND.name} — ${ev.headline || ev.title || "Flyer"}`, body, origin: opts.origin, print: !!opts.print });
 }
 
 // ------------------------------------------------------------------
@@ -278,7 +293,7 @@ export function weeklyFlyer(week = {}, opts = {}) {
     </div>
   </div>
   ${footer(week.greeting)}`;
-  return shell({ w, h, title: `${BRAND.name} — ${week.headline || "This Week"}`, body, extraCss, origin: opts.origin });
+  return shell({ w, h, title: `${BRAND.name} — ${week.headline || "This Week"}`, body, extraCss, origin: opts.origin, print: !!opts.print });
 }
 
 // ------------------------------------------------------------------
@@ -396,7 +411,7 @@ export function scheduleFlyer(sch = {}, opts = {}) {
     </div>
   </div>
   ${footer(sch.footer_greeting || " ")}`;
-  return shell({ w, h, title: `${BRAND.name} — ${sch.headline || "Schedule"}`, body, extraCss, origin: opts.origin });
+  return shell({ w, h, title: `${BRAND.name} — ${sch.headline || "Schedule"}`, body, extraCss, origin: opts.origin, print: !!opts.print });
 }
 
 // ------------------------------------------------------------------
@@ -451,7 +466,7 @@ export function guideFlyer(g = {}, opts = {}) {
     </div>
   </div>
   ${footer(g.footer_greeting || " ")}`;
-  return shell({ w, h, title: `${BRAND.name} — ${g.headline || "Guide"}`, body, extraCss, origin: opts.origin });
+  return shell({ w, h, title: `${BRAND.name} — ${g.headline || "Guide"}`, body, extraCss, origin: opts.origin, print: !!opts.print });
 }
 
 export const TEMPLATES = { speaker: speakerFlyer, holiday: holidayFlyer, weekly: weeklyFlyer, schedule: scheduleFlyer, guide: guideFlyer, label: labelSheet };
