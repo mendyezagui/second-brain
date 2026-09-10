@@ -10,16 +10,35 @@
 // truth means the console and the cron can never disagree about what day
 // Rosh Hashana is.
 
-// Los Angeles. (The website's meta description says "South Florida", which is
-// stale — the shul's own printed flyers give Los Angeles candle times.)
-// Override with SOFA_HEBCAL_GEONAMEID / VITE_SOFA_HEBCAL_GEONAMEID.
-export const DEFAULT_GEONAMEID = "5368361";
+// Los Angeles ZIP 90035 (Pico-Robertson), not the "Los Angeles" city geonameid.
+// The geonameid resolves to downtown, whose coordinates and elevation give
+// candle times a minute or two off from the neighbourhood the shul is in.
+// 90035 at the standard 18 minutes reproduces the shul's own published
+// 6:47pm for Erev Rosh Hashana 5787 exactly.
+export const DEFAULT_ZIP = "90035";
+export const DEFAULT_GEONAMEID = "";   // set to use a geonameid instead of a ZIP
 
-// Minutes before sunset for candle lighting. Hebcal defaults to 18; this shul
-// uses 12 — derived by matching the printed flyer for Fri 7 Aug 2026, which
-// reads 7:36pm (b=18 gives 7:30pm, b=12 gives exactly 7:36pm).
-// Confirm against a second flyer before trusting it blindly.
-export const CANDLE_MINUTES_BEFORE_SUNSET = 12;
+// Minutes before sunset. 18 is the standard and the Hebcal default.
+//
+// A previous version of this file set 12, reverse-engineered from a single
+// printed flyer (Fri 7 Aug 2026, which reads 7:36pm where 18 minutes gives
+// 7:30pm). That was overfitting to one data point: the shul's Rosh Hashana
+// times then came in at 6:47pm, which 18 minutes matches and 12 does not.
+// Two flyers cannot both be explained by one offset, which is the real lesson
+// below.
+export const CANDLE_MINUTES_BEFORE_SUNSET = 18;
+
+// WHY CANDLE TIMES ARE SUGGESTIONS, NOT FACTS.
+//
+// The shul's published zmanim do not come from Hebcal's sunset model. Their
+// havdalah and holiday-end times differ from Hebcal's defaults by ~5 minutes
+// too. Communities follow a specific luach, and printing a time that is five
+// minutes wrong sends people to light candles after the deadline.
+//
+// So the calendar is trusted for WHICH DAY a holiday falls on — which is
+// unambiguous — and its candle times are offered as a starting value that a
+// human confirms before anything is printed. See `candle_confirmed`.
+export const CANDLE_TIMES_NEED_CONFIRMATION = true;
 
 // How far ahead the associate starts caring, and on which days it speaks up.
 // Mendy asked for "3 or 4 days before": T-4 opens, T-2 chases if the flyer
@@ -96,7 +115,7 @@ const timeOf = (item) => {
  * Returns Hebcal's items untouched; callers normalize.
  */
 export async function fetchCalendar({
-  start, end, geonameid = DEFAULT_GEONAMEID,
+  start, end, geonameid = DEFAULT_GEONAMEID, zip = DEFAULT_ZIP,
   candleMinutes = CANDLE_MINUTES_BEFORE_SUNSET, fetchImpl,
 } = {}) {
   const f = fetchImpl || globalThis.fetch;
@@ -106,7 +125,8 @@ export async function fetchCalendar({
     maj: "on", min: "on", mod: "off", nx: "off", ss: "on", mf: "on",
     c: "on", M: "on", s: "on",
     b: String(candleMinutes),
-    geo: "geoname", geonameid: String(geonameid),
+    ...(geonameid ? { geo: "geoname", geonameid: String(geonameid) }
+                  : { geo: "zip", zip: String(zip) }),
     start, end,
   });
   const res = await f(`https://www.hebcal.com/hebcal?${qs}`);
@@ -123,11 +143,11 @@ export async function fetchCalendar({
  * `leadDays` is what the nudge logic keys off.
  */
 export async function upcomingHolidays({
-  from = isoDate(), days = LOOKAHEAD_DAYS, geonameid = DEFAULT_GEONAMEID,
+  from = isoDate(), days = LOOKAHEAD_DAYS, geonameid = DEFAULT_GEONAMEID, zip = DEFAULT_ZIP,
   candleMinutes = CANDLE_MINUTES_BEFORE_SUNSET, fetchImpl,
 } = {}) {
   const end = addDays(from, days);
-  const { items, location } = await fetchCalendar({ start: from, end, geonameid, candleMinutes, fetchImpl });
+  const { items, location } = await fetchCalendar({ start: from, end, geonameid, zip, candleMinutes, fetchImpl });
 
   const candlesByDate = {};
   const havdalahByDate = {};
@@ -195,8 +215,8 @@ export function actionable(holidays, { leadDays = NUDGE_LEAD_DAYS } = {}) {
 }
 
 /** Friday-night / Shabbos info for the coming week, for the weekly flyer. */
-export async function nextShabbat({ from = isoDate(), geonameid = DEFAULT_GEONAMEID, candleMinutes = CANDLE_MINUTES_BEFORE_SUNSET, fetchImpl } = {}) {
-  const { items } = await fetchCalendar({ start: from, end: addDays(from, 8), geonameid, candleMinutes, fetchImpl });
+export async function nextShabbat({ from = isoDate(), geonameid = DEFAULT_GEONAMEID, zip = DEFAULT_ZIP, candleMinutes = CANDLE_MINUTES_BEFORE_SUNSET, fetchImpl } = {}) {
+  const { items } = await fetchCalendar({ start: from, end: addDays(from, 8), geonameid, zip, candleMinutes, fetchImpl });
   const candles = items.find((it) => it.category === "candles");
   const havdalah = items.find((it) => it.category === "havdalah");
   const parasha = items.find((it) => it.category === "parashat");

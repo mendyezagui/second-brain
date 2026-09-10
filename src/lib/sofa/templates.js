@@ -318,13 +318,86 @@ export function labelSheet(label = {}, opts = {}) {
   });
 }
 
-export const TEMPLATES = { speaker: speakerFlyer, holiday: holidayFlyer, weekly: weeklyFlyer, label: labelSheet };
+// ------------------------------------------------------------------
+// SCHEDULE — a multi-day Yom Tov timetable. The holiday template carries one
+// moment; a three-day festival needs the whole run of services in one sheet,
+// which is what actually goes on the door and into the group chat.
+//
+// Same header, same footer, same palette. Only the middle changes.
+// ------------------------------------------------------------------
+export function scheduleFlyer(sch = {}, opts = {}) {
+  const { w, h } = CANVAS[opts.canvas] || CANVAS.letter;
+  const days = Array.isArray(sch.days) ? sch.days : [];
+  const extraCss = `
+  .day { width: 100%; margin-bottom: 22px; }
+  .day-hd {
+    font-family: ${FONTS.sans}; font-size: 17px; font-weight: 700; letter-spacing: 3.2px;
+    text-transform: uppercase; color: ${COLORS.maroon}; text-align: left;
+    padding-bottom: 9px; border-bottom: 2px solid ${COLORS.line}; margin-bottom: 4px;
+  }
+  .slot { display: flex; align-items: baseline; gap: 20px; padding: 11px 2px; text-align: left; }
+  .slot + .slot { border-top: 1px solid ${COLORS.line}; }
+  .slot .t { width: 132px; flex: none; font-size: 27px; font-weight: 700; color: ${COLORS.navyDeep}; }
+  .slot .e { flex: 1; min-width: 0; }
+  .slot .e b { display: block; font-size: 25px; font-weight: 700; color: ${COLORS.navyDeep}; line-height: 1.3; }
+  .slot .e span { display: block; font-size: 18px; color: ${COLORS.navy}; margin-top: 3px; line-height: 1.4; }
+  .callout {
+    width: 100%; background: ${COLORS.cream2}; border: 3px solid ${COLORS.gold};
+    border-radius: 16px; padding: 24px 30px; text-align: center;
+  }
+  .callout .k { font-family: ${FONTS.sans}; font-size: 16px; font-weight: 700; letter-spacing: 3.6px; text-transform: uppercase; color: ${COLORS.gold}; }
+  .callout .v { font-family: ${FONTS.display}; font-size: 36px; font-weight: 700; color: ${COLORS.navyDeep}; margin-top: 9px; line-height: 1.2; }
+  .callout .s { font-size: 19px; color: ${COLORS.navy}; margin-top: 7px; }`;
+
+  const body = `
+  ${header()}
+  <div class="body" style="padding-top:30px">
+    <div class="content" style="justify-content:flex-start">
+      ${sch.occasion ? `<div class="eyebrow">${esc(sch.occasion)}</div>${gap(12)}` : ""}
+      <div class="name" style="font-size:76px">${esc(sch.headline || "")}</div>
+      ${sch.headline_he ? `<div class="name-he" style="font-size:46px">${esc(sch.headline_he)}</div>` : ""}
+      ${gap(14)}
+      <div class="role" style="font-size:26px">${esc(sch.dates || "")}${sch.year ? ` &nbsp;·&nbsp; <em>${esc(sch.year)}</em>` : ""}</div>
+      ${gap(20)}<div class="divider"></div>${gap(24)}
+
+      <div style="width:100%">
+        ${days.map((d) => `
+        <div class="day">
+          <div class="day-hd">${esc(d.label || "")}</div>
+          ${(d.slots || []).map((sl) => `
+          <div class="slot">
+            <div class="t">${esc(sl.time || "")}</div>
+            <div class="e"><b>${esc(sl.event || "")}</b>${sl.note ? `<span>${esc(sl.note)}</span>` : ""}</div>
+          </div>`).join("")}
+        </div>`).join("")}
+      </div>
+
+      ${sch.callout ? `${gap(6)}<div class="callout">
+        <div class="k">${esc(sch.callout.kicker || "")}</div>
+        <div class="v">${esc(sch.callout.title || "")}</div>
+        ${sch.callout.sub ? `<div class="s">${esc(sch.callout.sub)}</div>` : ""}
+      </div>` : ""}
+    </div>
+    <div class="tail">
+      ${gap(22)}
+      ${sch.greeting_he ? `<div class="name-he" style="font-size:40px;color:${COLORS.navyDeep}">${esc(sch.greeting_he)}</div>${gap(8)}` : ""}
+      ${sch.greeting_en ? `<div class="note" style="font-size:21px">${esc(sch.greeting_en)}</div>${gap(10)}` : ""}
+      <div class="eyebrow gold sm">${esc(sch.org || BRAND.publicName)}</div>
+      ${gap(24)}
+    </div>
+  </div>
+  ${footer(sch.footer_greeting || " ")}`;
+  return shell({ w, h, title: `${BRAND.name} — ${sch.headline || "Schedule"}`, body, extraCss, origin: opts.origin });
+}
+
+export const TEMPLATES = { speaker: speakerFlyer, holiday: holidayFlyer, weekly: weeklyFlyer, schedule: scheduleFlyer, label: labelSheet };
 
 /** Single entry point used by the console and the server. */
 export function renderFlyer(template, payload, opts = {}) {
   if (!RULES.allowedTemplates.includes(template)) throw new Error(`unknown template: ${template}`);
   if (template === "speaker") return speakerFlyer(payload.event || {}, payload.speaker || {}, opts);
   if (template === "weekly") return weeklyFlyer(payload.week || payload, opts);
+  if (template === "schedule") return scheduleFlyer(payload.schedule || payload, opts);
   if (template === "label") return labelSheet(payload.label || payload, opts);
   return holidayFlyer(payload.event || payload, opts);
 }

@@ -77,5 +77,5 @@ export const RULES = {
   maxHeadlineChars: 34,
   maxSubheadChars: 92,
   requireFooter: true,
-  allowedTemplates: ["speaker", "holiday", "weekly", "label"],
+  allowedTemplates: ["speaker", "holiday", "weekly", "schedule", "label"],
 };

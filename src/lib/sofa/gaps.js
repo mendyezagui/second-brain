@@ -24,8 +24,7 @@ const COMMON = [
 
 const BY_TEMPLATE = {
   holiday: [
-    { field: "candle_lighting", label: "Candle lighting", severity: "nice", question: "Confirm candle lighting time?" },
-    { field: "occasion",        label: "Occasion line",   severity: "nice", question: "Eyebrow line — e.g. \"Friday Night\" or \"Yom Tov\"?" },
+    { field: "occasion", label: "Occasion line", severity: "nice", question: "Eyebrow line — e.g. \"Friday Night\" or \"Yom Tov\"?" },
   ],
   weekly: [
     { field: "end_time", label: "End time", severity: "nice", question: "When does it wrap up?" },
@@ -40,6 +39,32 @@ const BY_TEMPLATE = {
     { field: "speaker.honorific", label: "Honorific",     severity: "nice",     question: "Rabbi, Rav, Dr., or none?" },
     { field: "speaker.topic",     label: "Talk topic",    severity: "nice",     question: "What's the talk called?" },
   ],
+};
+
+/**
+ * Candle lighting is the one field that is dangerous when auto-filled.
+ *
+ * Every other gap fires because a field is EMPTY. This one fires because a
+ * field is FILLED BY A MACHINE and nobody has checked it. The shul's published
+ * zmanim follow their own luach and do not match Hebcal's sunset model — the
+ * two disagreed by five minutes on Rosh Hashana 5787 — and a candle time that
+ * is five minutes late is worse than a blank line, because people act on it.
+ *
+ * So: a suggested time is offered, and it stays an open question until
+ * `candle_confirmed` is set. Confirming is one click; getting it wrong is a
+ * community lighting candles after the deadline.
+ */
+const candleGap = (event) => {
+  if (!event) return null;
+  if (event.candle_confirmed) return null;
+  if (!has(event.candle_lighting)) return null;   // nothing suggested, nothing to check
+  return {
+    field: "candle_confirmed",
+    label: "Candle lighting",
+    severity: "ask",
+    question: `Confirm candle lighting is ${event.candle_lighting} — this is Hebcal's time for ZIP 90035, and your luach may differ.`,
+    suggested: event.candle_lighting,
+  };
 };
 
 /** Read "speaker.short_bio" out of { event, speaker }. */
@@ -57,9 +82,13 @@ const read = (event, speaker, field) => {
  */
 export function computeGaps(event, { speaker = null, template = "holiday", answers = {} } = {}) {
   const specs = [...COMMON, ...(BY_TEMPLATE[template] || [])];
-  return specs
+  const gaps = specs
     .filter((s) => !has(read(event, speaker, s.field)) && !has(answers[s.field]))
     .map((s) => ({ ...s }));
+  // Holidays and the weekly sheet print a candle time; a speaker evening may too.
+  const candle = template === "speaker" ? null : candleGap(event);
+  if (candle && !has(answers[candle.field])) gaps.push(candle);
+  return gaps;
 }
 
 export const blocking = (gaps) => gaps.filter((g) => g.severity === "blocking");
