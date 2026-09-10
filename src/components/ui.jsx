@@ -454,6 +454,9 @@ export const PRODUCT_MODE = import.meta.env.VITE_PRODUCT_MODE === "1"
   || (typeof window !== "undefined" && /(^|\.)secondbrain-app\.pages\.dev$|(^|\.)os\.aventary\.com$/.test(window.location.host));
 const RAW_NAV = [
   {id:"dashboard",icon:BarChart2,label:"Dashboard"},
+  {id:"_sofa",icon:Calendar,label:"SoFa JCC",group:true,children:["sofa_jcc","sofa_dev"]},
+  {id:"sofa_jcc",icon:Calendar,label:"Business",parent:"_sofa"},
+  {id:"sofa_dev",icon:Code2,label:"Developer",parent:"_sofa"},
   {id:"brief",icon:Sparkles,label:"Morning Brief"},
   {id:"loops",icon:RefreshCw,label:"Loops"},
   {id:"associates",icon:BookOpen,label:"Associates"},
@@ -484,9 +487,6 @@ const RAW_NAV = [
   {id:"cometchat",icon:MessageSquare,label:"CometChat Logs",parent:"_ai_controls"},
   {id:"cometchat_dev",icon:MessageSquare,label:"CometChat Dev",parent:"_ai_controls"},
   {id:"spectari",icon:Glasses,label:"Spectari"},
-  {id:"_sofa",icon:Calendar,label:"SoFa JCC",group:true,children:["sofa_jcc","sofa_dev"]},
-  {id:"sofa_jcc",icon:Calendar,label:"Business",parent:"_sofa"},
-  {id:"sofa_dev",icon:Code2,label:"Developer",parent:"_sofa"},
   {id:"admin",icon:Shield,label:"Admin"},
 ];
 

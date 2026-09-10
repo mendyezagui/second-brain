@@ -43,7 +43,7 @@ export const collectAssociateContext = (db, ids) => {
 };
 
 export const AssociatesView = ({ db, setDB, navigate }) => {
-  const [selected, setSelected] = useState(ASSOCIATES[4].id);
+  const [selected, setSelected] = useState(ASSOCIATES[0].id);
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
   const [output, setOutput] = useState("");
@@ -183,7 +183,10 @@ export const AssociatesView = ({ db, setDB, navigate }) => {
             {ASSOCIATES.map(c => (
               <button key={c.id} onClick={()=>setSelected(c.id)} className="row-hover" style={{ textAlign:"left", border:"1px solid "+(selected===c.id ? "rgba(0,119,204,0.25)" : "var(--border)"), background:selected===c.id ? "var(--blue-dim)" : "var(--bg-card)", borderRadius:8, padding:"10px 12px", cursor:"pointer" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"center" }}>
+                  <span style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
+                    {c.active && <span className="blink" title="Runs on a schedule" style={{ width:7, height:7, borderRadius:"50%", background:"var(--green)", flex:"none" }}/>}
                   <span style={{ fontSize:13, fontWeight:700, color:selected===c.id ? "var(--blue)" : "var(--text)" }}>{c.label}</span>
+                  </span>
                   <span className="mono" style={{ fontSize:9, color:"var(--text-sec)" }}>{c.group}</span>
                 </div>
                 <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:4 }}>{c.artifact}</div>
@@ -199,7 +202,10 @@ export const AssociatesView = ({ db, setDB, navigate }) => {
                 <div className="display" style={{ fontSize:17, fontWeight:800 }}>{associate.label}</div>
                 <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.5, marginTop:3 }}>{associate.prompt}</div>
               </div>
+              <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+                {associate.console && <button className="btn btn-ghost" onClick={()=>{ window.location.hash = associate.console; }}>Open console</button>}
               <button className="btn btn-blue" onClick={runAssociate} disabled={running}>{running ? <><Loader size={13} className="spin"/>Running</> : <><Zap size={13}/>Run</>}</button>
+              </div>
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
               <Field label="Request"><Inp value={title} onChange={setTitle} placeholder={`${associate.artifact} - client / deal / project`}/></Field>
