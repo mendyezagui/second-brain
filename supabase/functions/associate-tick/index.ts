@@ -33,8 +33,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Pinned deliberately. Bump both URLs together and redeploy when you want the
 // cron to pick up new core logic; a push to main must never change what runs
 // tonight on its own.
-import { planTick, planAssociate, isoDate, missingSentence } from "https://raw.githubusercontent.com/mendyezagui/second-brain/aef7f0867257d5a1b2e4f580c0c4cda7babb9c30/src/lib/associates/core.js";
-import { tablesFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/aef7f0867257d5a1b2e4f580c0c4cda7babb9c30/src/lib/associates/context.js";
+import { planTick, planAssociate, isoDate, missingSentence } from "https://raw.githubusercontent.com/mendyezagui/second-brain/2385386a00feb694aef97fa343d35758f7200e83/src/lib/associates/core.js";
+import { tablesFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/2385386a00feb694aef97fa343d35758f7200e83/src/lib/associates/context.js";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {

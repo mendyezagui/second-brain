@@ -120,7 +120,7 @@ asked to follow — there is no code path that sends.
 ## How it runs
 
 ```
-pg_cron 'associate-daily-tick'
+pg_cron 'associate-tick' (hourly)
         │
         ▼
 supabase/functions/associate-tick        ← one function, N associates
@@ -193,8 +193,15 @@ records `status: error` with that exact message rather than failing silently.
 
 ### 3. The cron
 
+The tick runs **hourly**, not daily. Each associate carries its own
+`run_at_utc`, and a once-a-day cron can only honour one of them: an associate
+set to 16:00 would be held at the 15:00 tick for "not until 16:00", and by the
+next tick 23 hours later its weekday has passed — so it would never run at all.
+Hourly makes `run_at_utc` mean what it says. A tick with nothing due is one
+small query and no model call.
+
 ```sql
-select cron.schedule('associate-daily-tick', '0 15 * * *', $$
+select cron.schedule('associate-tick', '0 * * * *', $$
   select net.http_post(
     url     := 'https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/associate-tick',
     headers := jsonb_build_object('Content-Type','application/json',
@@ -204,9 +211,16 @@ select cron.schedule('associate-daily-tick', '0 15 * * *', $$
 $$);
 ```
 
-`verify_jwt` is **on**, so the cron sends the service-role key and the console
-sends the signed-in user's JWT. An unauthenticated caller cannot spend model
-credits — which is why this differs from `sofa-jcc-scan`, deployed open.
+`verify_jwt` is **on**: the console sends the signed-in user's JWT, and the
+scheduled job (`cron.job` id 6) sends the anon key, which is a valid JWT.
+
+Be honest about what that buys. The anon key ships inside the browser bundle,
+so this stops a drive-by with the bare URL and nothing more. What actually
+limits the damage is that scheduled runs are idempotent per day — hammering
+`{"action":"tick"}` writes one run and then no-ops. The exposed surface is
+`{"action":"run"}`, which someone with the anon key could use to burn model
+credits. To close that, set an `ASSOCIATE_TICK_SECRET` function secret, check
+it on `action: "run"`, and put it in the cron's Authorization header instead.
 
 `pg_net` is async: `net.http_post` queues and returns an id immediately.
 Delivery lands in `net._http_response`:
