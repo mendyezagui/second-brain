@@ -439,7 +439,18 @@ export function guideFlyer(g = {}, opts = {}) {
   .sec li { font-size: 16px; line-height: 1.5; color: ${COLORS.ink}; padding: 0 0 8px 15px; position: relative; }
   .sec li::before { content: "·"; position: absolute; left: 3px; color: ${COLORS.gold}; font-weight: 700; }
   .sec li b { color: ${COLORS.navyDeep}; }
-  .sec li i { font-style: italic; }`;
+  .sec li i { font-style: italic; }
+  /* Table mode. An item given as {cue, text} becomes a row: the cue is a
+     navigation label so a reader can find the moment they are in without
+     reading every line. The halachic text itself is never abbreviated. */
+  .sec table { width: 100%; border-collapse: collapse; }
+  .sec td { vertical-align: top; padding: 7px 0; border-top: 1px solid ${COLORS.line}; }
+  .sec tr:first-child td { border-top: none; padding-top: 2px; }
+  .sec td.cue {
+    width: 34%; padding-right: 12px; font-family: ${FONTS.sans}; font-size: 13px;
+    font-weight: 700; line-height: 1.35; color: ${COLORS.navyDeep};
+  }
+  .sec td.txt { font-size: 15px; line-height: 1.45; color: ${COLORS.ink}; }`;
 
   const body = `
   ${header()}
@@ -454,7 +465,13 @@ export function guideFlyer(g = {}, opts = {}) {
         <div class="sec">
           <div class="sec-hd">${esc(sec.title || "")}</div>
           ${sec.sub ? `<div class="sec-sub">${esc(sec.sub)}</div>` : ""}
-          <ul>${(sec.items || []).map((it) => `<li>${esc(it)}</li>`).join("")}</ul>
+          ${(sec.items || []).some((it) => it && typeof it === "object")
+            ? `<table>${(sec.items || []).map((it) => {
+                const cue = typeof it === "object" ? (it.cue || "") : "";
+                const txt = typeof it === "object" ? (it.text || "") : it;
+                return `<tr><td class="cue">${esc(cue)}</td><td class="txt">${esc(txt)}</td></tr>`;
+              }).join("")}</table>`
+            : `<ul>${(sec.items || []).map((it) => `<li>${esc(it)}</li>`).join("")}</ul>`}
         </div>`).join("")}
       </div>
     </div>
