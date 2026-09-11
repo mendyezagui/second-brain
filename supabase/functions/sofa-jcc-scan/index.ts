@@ -10,21 +10,25 @@
 // browser console runs, pinned to a commit so a deploy is reproducible and a
 // later push to main cannot silently change what the cron executes.
 //
-//   POST { action: "scan", dry_run?: bool, today?: "YYYY-MM-DD" }
-//   GET  -> dry run, writes nothing
+// THE PIN IS A MAINTENANCE STEP, NOT A SET-AND-FORGET. Twice now a fix landed
+// on main while this function kept running the older commit — once leaving the
+// wrong candle-lighting time in place. PINNED_SHA is therefore echoed in every
+// response and in every agentlog line, so a stale pin is visible instead of
+// silent. Compare it against origin/main whenever the scan looks wrong.
 //
-// Guarded by SOFA_SCAN_SECRET when set (Bearer). Push notification delivery
-// is deliberately NOT here yet — VAPID signing needs its own implementation
-// and the keys are not configured. Nudges are still written, so nothing is
-// lost; they simply sit as `pending` until a sender picks them up.
-//
-// Deployed with: mcp Supabase deploy_edge_function (project xwacfwagyhgbbhefecdt)
-// Scheduled by:  cron job 'sofa-jcc-daily-scan', 30 14 * * * (matches vercel.json)
+// The same hazard runs the other way, and bit us too: this file in the repo
+// drifted BEHIND what was deployed, so a redeploy from the checkout would have
+// silently reverted the zip override and the pin echo. Pull the live copy
+// (Supabase MCP get_edge_function) before editing.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { planDay, renderFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/e62a88f91a55900394eb744d960b1960a17ec357/src/lib/sofa/agent.js";
-import { isoDate } from "https://raw.githubusercontent.com/mendyezagui/second-brain/e62a88f91a55900394eb744d960b1960a17ec357/src/lib/sofa/hebcal.js";
+import { planDay, renderFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/agent.js";
+import { isoDate } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/hebcal.js";
+import { workFromPlan, handoffPrompt } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/dev.js";
+
+// Keep in step with the three import URLs above.
+const PINNED_SHA = "PINNED_SHA_PLACEHOLDER";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {
@@ -41,9 +45,11 @@ const admin = () =>
 
 async function log(sb: any, type: string, message: string, priority = "medium") {
   try {
-    const { data } = await sb.from("agentlogs").select("id").order("id", { ascending: false }).limit(1);
+    // agentlogs.id has a sequence; let Postgres allocate it. Computing
+    // max(id)+1 by hand — what this used to do — does not advance the
+    // sequence, so it sets up exactly the collision ops/resync_sequences.sh
+    // exists to clean up after.
     await sb.from("agentlogs").insert({
-      id: ((data?.[0]?.id) || 0) + 1,
       agent: "SoFa JCC",
       type,
       message,
@@ -71,16 +77,20 @@ async function runScan({ today = isoDate(), dryRun = false }) {
     sentNudgeKeys: (nudges.data || []).map((n: any) => n.dedupe_key),
     speakersById,
     geonameid: Deno.env.get("SOFA_HEBCAL_GEONAMEID") || undefined,
+    zip: Deno.env.get("SOFA_HEBCAL_ZIP") || undefined,
   });
 
-  if (dryRun) return { ...plan, dryRun: true, applied: null };
+  if (dryRun) return { ...plan, pinned_sha: PINNED_SHA, dryRun: true, applied: null };
 
-  const applied = { events: 0, flyers: 0, nudges: 0 };
+  const applied = { events: 0, flyers: 0, nudges: 0, workOrders: 0 };
   const idByKey = new Map<string, number>(
     (events.data || []).filter((e: any) => e.hebcal_key).map((e: any) => [e.hebcal_key, e.id]),
   );
 
   // 1. Event rows, upserted on hebcal_key so a re-run updates in place.
+  //    planDay already refuses to touch a candle time a human has confirmed;
+  //    Hebcal's sunset model and the shul's luach do not agree, so the
+  //    confirmation has to outrank the calculation.
   for (const u of plan.upserts) {
     const { reason: _reason, ...row } = u as any;
     const { data, error } = await sb
@@ -136,14 +146,33 @@ async function runScan({ today = isoDate(), dryRun = false }) {
     if (!error) applied.nudges++;
   }
 
+  // 4. Hand finished work to the developer associate.
+  //
+  //    This step existed only in api/sofa-jcc.js — the Vercel path — and that
+  //    path does not run: every daily-scan line in agentlogs is tagged [edge],
+  //    and sofa_work_orders sat empty for the entire life of the pair. The
+  //    developer associate was not idle, it was unreachable.
+  //
+  //    Only a flyer with no gaps left becomes an order; a half-finished flyer
+  //    is the business associate's problem, not the developer's. dedupe_key
+  //    keeps a re-scan from raising the same order twice.
+  const { data: existingOrders } = await sb.from("sofa_work_orders").select("dedupe_key");
+  const orders = workFromPlan(plan, { existingKeys: (existingOrders || []).map((o: any) => o.dedupe_key) });
+  for (const o of orders as any[]) {
+    const { error } = await sb.from("sofa_work_orders")
+      .insert({ ...o, handoff_prompt: handoffPrompt(o), modified_by: "agent:sofa-jcc" });
+    if (!error) applied.workOrders++;
+  }
+
   await log(
     sb,
     "daily-scan",
-    `${plan.summary} · applied ${applied.events} event(s), ${applied.flyers} flyer(s), ${applied.nudges} nudge(s). [edge]`,
+    `${plan.summary} · applied ${applied.events} event(s), ${applied.flyers} flyer(s), ` +
+      `${applied.nudges} nudge(s), ${applied.workOrders} work order(s). [edge @ ${PINNED_SHA.slice(0, 8)}]`,
     plan.nudges.some((n: any) => n.severity === "high") ? "high" : "medium",
   );
 
-  return { ...plan, applied };
+  return { ...plan, pinned_sha: PINNED_SHA, applied };
 }
 
 Deno.serve(async (req: Request) => {

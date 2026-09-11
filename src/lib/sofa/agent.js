@@ -13,6 +13,30 @@ import { computeGaps, flyerStatus, missingSentence, blocking } from "./gaps.js";
 import { renderFlyer, longDate } from "./templates.js";
 import { BRAND } from "./brand.js";
 
+/**
+ * Has the gap list actually moved since the stored draft?
+ *
+ * This cannot be `JSON.stringify(a) !== JSON.stringify(b)`, and the reason is
+ * not cosmetic. `sofa_flyers.missing` is a jsonb column, and Postgres does not
+ * preserve object key order in jsonb — it re-sorts keys by length, then
+ * bytewise. So a gap written as {field,label,severity,question} reads back as
+ * {field,label,question,severity}, and a stringify comparison reports "the
+ * gaps changed" on every single scan, forever.
+ *
+ * The visible symptom was a flyer redrafted every morning — the scan logged
+ * "1 draft(s)" daily for a flyer nobody had touched — and the real cost was
+ * that a genuine gap change could never be distinguished from that noise.
+ *
+ * Compare the identity of the gaps instead: which fields are outstanding and
+ * at what severity. Label and question are copy, not state; if they change,
+ * the flyer does not need redrawing.
+ */
+const gapKey = (g) => `${g?.field}:${g?.severity}`;
+export const gapsChanged = (a, b) => {
+  const norm = (list) => (Array.isArray(list) ? list : []).map(gapKey).sort().join("|");
+  return norm(a) !== norm(b);
+};
+
 /** Pick the template an event should be drawn with. */
 export const templateFor = (ev) =>
   ev.speaker_id || ev.kind === "speaker" ? "speaker"
@@ -125,7 +149,7 @@ export async function planDay({
         copy: defaultCopy(ev, h, speaker, template),
         reason: prior ? "previous draft was superseded" : `no flyer exists for ${h.title}`,
       });
-    } else if (prior.status !== "published" && JSON.stringify(prior.missing || []) !== JSON.stringify(gaps)) {
+    } else if (prior.status !== "published" && gapsChanged(prior.missing, gaps)) {
       drafts.push({
         event_key: h.key,
         event_id: existing?.id ?? null,
