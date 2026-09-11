@@ -34,6 +34,7 @@ create table if not exists associates (
   label           text not null,
   group_name      text default '',            -- Sales | Delivery | Voitra | Operator | Power | SoFa JCC
   artifact        text default '',            -- what it produces, one noun phrase
+  artifact_kind   text default 'document',    -- document | email | linkedin | memo | spec | other
   brief           text default '',            -- the role prompt: who it is and what it owns
   runtime         text default 'prompt',      -- prompt | custom
   active          bool default true,          -- false = retired, keeps its history

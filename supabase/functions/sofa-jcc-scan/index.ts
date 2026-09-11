@@ -23,12 +23,12 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { planDay, renderFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/agent.js";
-import { isoDate } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/hebcal.js";
-import { ordersForFlyers, handoffPrompt } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/dev.js";
+import { planDay, renderFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/0abc8cbcb160afc3a633f58109eebfb3cd24bdd1/src/lib/sofa/agent.js";
+import { isoDate } from "https://raw.githubusercontent.com/mendyezagui/second-brain/0abc8cbcb160afc3a633f58109eebfb3cd24bdd1/src/lib/sofa/hebcal.js";
+import { ordersForFlyers, handoffPrompt } from "https://raw.githubusercontent.com/mendyezagui/second-brain/0abc8cbcb160afc3a633f58109eebfb3cd24bdd1/src/lib/sofa/dev.js";
 
 // Keep in step with the three import URLs above.
-const PINNED_SHA = "PINNED_SHA_PLACEHOLDER";
+const PINNED_SHA = "0abc8cbcb160afc3a633f58109eebfb3cd24bdd1";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {

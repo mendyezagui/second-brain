@@ -6,10 +6,6 @@
     {
       "path": "/api/sweep",
       "schedule": "30 14 * * *"
-    },
-    {
-      "path": "/api/content",
-      "schedule": "0 15 * * 1"
     }
   ]
 }

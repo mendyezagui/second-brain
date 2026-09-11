@@ -147,8 +147,10 @@ run and a manual run cannot drift.
 
 Two reasons, both load-bearing:
 
-1. **The Vercel Hobby plan caps crons at 2** and both are spent (`/api/sweep`,
+1. **The Vercel Hobby plan caps crons at 2** and both were spent (`/api/sweep`,
    `/api/content`). One more agent on that path meant no more agents, ever.
+   Moving Content Brain onto this runtime has since freed one of the two, but
+   the ceiling is the point: the roster grows here without ever touching it.
 2. **The app is served from Cloudflare Pages** (`2nd.mendyezagui.com`), where
    Vercel-format `api/*.js` routes do not run at all — `POST /api/sofa-jcc`
    returns **405** there, not JSON. That is a live bug in `SofaJCCView`, which
@@ -177,7 +179,7 @@ pick up new logic.
 
 ```
 schema-associates.sql   -- associates, associate_runs, associate_drafts
-seed-associates.sql     -- the 17-row roster, idempotent on slug
+seed-associates.sql     -- the roster (17 migrated + content-brain), idempotent on slug
 ```
 
 Applied via the Supabase MCP `apply_migration` per repo convention. Re-seeding
@@ -250,6 +252,24 @@ would do:
 ```
 GET https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/associate-tick
 ```
+
+## What moved onto it
+
+**Content Brain** (`content-brain`, Mondays). It used to be `/api/content` on
+a Vercel cron, and it had not produced anything since 8 June. It was not
+broken — it wrote drafts to `content_queue`, **nothing in the app reads
+`content_queue`** (the Social tab reads `contentCalendar` and `ai_memories`),
+so six unreviewed drafts accumulated, hit `QUEUE_CEILING = 6`, and it
+correctly declined to run every Monday after that.
+
+Clearing the queue would have restarted it for exactly two runs. Moving it
+here points its output at a queue that has a reader. The six stranded drafts
+were carried into `associate_drafts` (`source = 'migrated:content_queue'`) so
+they are finally visible. `api/content.js` is kept as the grounding reference
+its brief was built from, and still runs by hand with `?force=1`.
+
+That also freed the second Vercel cron slot: `vercel.json` is down to
+`/api/sweep` alone.
 
 ## What it does NOT do yet
 

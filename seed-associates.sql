@@ -187,3 +187,43 @@ on conflict (slug) do update set
 -- NOTE: schedule, run_at_utc, active and last_run_at are intentionally absent
 -- from the update list. Re-seeding refreshes an associate's definition; it
 -- must never silently take a live one off its clock.
+
+-- ------------------------------------------------------------
+-- Content Brain, migrated off api/content.js.
+--
+-- It was never broken, it was starved: it wrote to content_queue, nothing in
+-- the app reads content_queue, six unreviewed drafts hit QUEUE_CEILING and it
+-- correctly declined to run from 8 June on. Clearing the queue would have
+-- bought two more runs. Here its output lands in associate_drafts, which the
+-- console actually shows. The /api/content cron was removed from vercel.json
+-- at the same time, so there is only ever one producer.
+-- ------------------------------------------------------------
+insert into associates
+  (slug, label, group_name, artifact, artifact_kind, runtime, schedule, run_at_utc, sort_order, max_tokens, brief, inputs, requirements, rails)
+values (
+ 'content-brain', 'Content Brain', 'Operator', 'LinkedIn post drafts', 'linkedin', 'prompt', 'weekly:mon', '15:00', 13, 3000,
+ $$You draft the week's LinkedIn posts for Mendy. Ground every post in a real signal from the context — a piece of company news, a live deal pattern, a goal, something that actually happened. A post with no signal behind it is filler; write fewer rather than padding.
+
+Follow the canonical voice profile in the context (memory_type 'brand_voice') exactly — it outranks your instincts about what sounds good. Do not reuse an angle that appears in the recent drafts or the content calendar; pick a fresh one.
+
+Produce three distinct drafts. For each, give: the hook, the post body, the content pillar it belongs to, and one line on why it is worth posting now. No hashtag soup, no "thoughts?" sign-off, no engagement bait.$$,
+ $${"linked":false,"tables":[
+   {"table":"socialStrategy","where":[["platform","eq","LinkedIn"],["status","eq","Active"]],"limit":3},
+   {"table":"ai_memories","fields":["subject","memory_summary"],"where":[["memory_type","eq","brand_voice"]],"limit":2},
+   {"table":"content_queue","fields":["hook","pillar","status","created_at"],"order":{"field":"id","dir":"desc"},"limit":12},
+   {"table":"contentCalendar","fields":["videoTitle","track","caption","status"],"order":{"field":"id","dir":"desc"},"limit":12},
+   {"table":"company_news","fields":["headline","summary","published_date"],"where":[["action_taken","is_false",true]],"order":{"field":"published_date","dir":"desc"},"limit":12},
+   {"table":"goals","fields":["name","target_value","current_value","unit","period"],"where":[["status","eq","active"]],"limit":6}
+ ]}$$::jsonb,
+ $$[{"field":"tables.socialStrategy","label":"Active LinkedIn strategy","severity":"blocking",
+     "question":"No active LinkedIn socialStrategy row — without it there is nothing to ground the posts in."},
+    {"field":"tables.ai_memories","label":"Voice profile","severity":"blocking",
+     "question":"The brand_voice memory is missing. I will not guess at your voice."},
+    {"field":"tables.company_news","label":"Fresh signals","severity":"ask",
+     "question":"No unactioned company news to draw on — posts will lean on goals and pipeline instead."}]$$::jsonb,
+ '{"save_draft":true,"save_memory":false,"save_document":false,"create_task":false}'::jsonb
+)
+on conflict (slug) do update set
+  brief = excluded.brief, inputs = excluded.inputs, requirements = excluded.requirements,
+  rails = excluded.rails, artifact_kind = excluded.artifact_kind, max_tokens = excluded.max_tokens,
+  modified_by = 'seed-associates.sql', modified_at = now();

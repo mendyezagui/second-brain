@@ -1,5 +1,22 @@
 // api/content.js — Content Brain (LinkedIn draft-and-hold)
-// Vercel cron: Mondays 15:00 UTC (~7-8 AM PT) — preps the week's drafts.
+//
+// SUPERSEDED. The job now runs as the `content-brain` associate on the
+// associate runtime (docs/associates/README.md), and this route is no longer
+// on a cron — it was removed from vercel.json, which also frees the second of
+// the two Hobby-plan cron slots.
+//
+// Why it moved: this route was never broken, it was starved. It wrote drafts
+// to content_queue, NOTHING in the app reads content_queue (the Social tab
+// reads contentCalendar and ai_memories), so six unreviewed drafts piled up,
+// hit QUEUE_CEILING, and the brain correctly declined to run from 8 June
+// onward. Clearing the queue would have bought exactly two more runs. The
+// associate runtime writes to associate_drafts, which has a review queue in
+// the Associates console, so the drafts now have somewhere to be seen.
+//
+// Kept, not deleted: the prompt below is the grounding reference the
+// associate's brief was built from, and this route still works if called by
+// hand with ?force=1.
+//
 // Reads socialStrategy + recent posts + live signals → calls Claude →
 // writes post DRAFTS to content_queue (status="draft"). NEVER posts anything.
 
