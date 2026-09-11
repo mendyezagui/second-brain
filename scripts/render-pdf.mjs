@@ -40,7 +40,12 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${server.address().port}/`;
 
 const { chromium } = await import("playwright");
-const browser = await chromium.launch();
+// Same override render-flyer.mjs takes: sandboxes and CI images often ship a
+// Chromium whose build number does not match the installed playwright, and
+// without this the render dies on a path that does not exist.
+const browser = await chromium.launch(
+  process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {},
+);
 const buffers = [];
 for (const spec of pages) {
   const [tpl, dataPath] = spec.split(":");
