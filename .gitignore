@@ -1,1 +1,18 @@
+# Build output. Cloudflare Pages builds this itself; a committed copy only
+# creates doubt about which build is actually live — which is exactly the
+# confusion that hid three weeks of work.
+dist
+
+# Dependencies. These were committed, all 8,869 files of them, and they carry
+# platform-specific binaries: rollup ships a different native module per OS, so
+# a checkout made on one machine fails to build on another with
+# MODULE_NOT_FOUND. A Linux CI runner installing on top of a macOS tree is the
+# exact case that breaks. package-lock.json is what makes installs reproducible;
+# the tree itself is not.
+node_modules
+
+# Leftover from when this was a Vercel project.
 .vercel
+
+.DS_Store
+*.log
