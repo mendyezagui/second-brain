@@ -2,7 +2,12 @@ import { useEffect, useState, useRef } from "react";
 import { Phone, RefreshCw, Loader, Calendar, Clock, Plus, Trash2, Power, Pencil, Check, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
-const API_BASE = "https://xwacfwagyhgbbhefecdt.supabase.co/functions/v1/rc-queue-toggle";
+// The rc_* tables — rc_activity, rc_schedules, rc_triggers, rc_scheduler_settings
+// — exist only in secondbrain-os. This pointed at the old project, where a
+// rc-queue-toggle function does answer but has no tables to answer about. The
+// deployed bundle has always called the secondbrain-os copy; this line was the
+// odd one out.
+const API_BASE = "https://fukehjqikxqsntwhmgsk.supabase.co/functions/v1/rc-queue-toggle";
 
 const authHeaders = async () => {
   const { data: { session } } = await supabase.auth.getSession();
