@@ -89,20 +89,44 @@ export function blankWorkOrder(overrides = {}) {
  * the developer to build? Kept narrow on purpose — a queue that fills itself
  * with speculative work is a queue nobody reads.
  */
-export function workFromPlan(plan, { existingKeys = [] } = {}) {
+/**
+ * Which finished flyers are work the developer associate should pick up.
+ *
+ * This reads the STORED flyers, not the plan's freshly-emitted drafts, and
+ * that distinction is the whole fix. The original version walked
+ * `plan.drafts`, so an order could only ever be raised on the same run that
+ * drafted a ready flyer. In practice a flyer is drafted with gaps, a human
+ * fills them in days later, and by then the scan emits no draft for it at
+ * all — so the order was never raised and `sofa_work_orders` stayed empty
+ * for the entire life of the pair.
+ *
+ * Reading stored state covers both cases with one code path: step 2 has
+ * already written any new draft by the time this runs, so a flyer that
+ * became ready this morning and one that became ready last Tuesday are
+ * treated identically. dedupe_key keeps a re-scan from raising it twice.
+ *
+ * A flyer that has everything it needs is work: it should reach people.
+ */
+export function ordersForFlyers(flyers = [], eventsById = {}, { existingKeys = [] } = {}) {
   const seen = new Set(existingKeys);
   const out = [];
-  for (const d of plan.drafts || []) {
-    // A flyer that has everything it needs is work: it should reach people.
-    if (d.status !== "ready") continue;
-    const key = `publish:${d.event_key}:v${d.version}`;
+  for (const f of flyers) {
+    if (f?.status !== "ready") continue;
+    const ev = eventsById[f.event_id] || null;
+    // A published flyer is already out; nothing left to hand over.
+    if (ev?.status === "published" || ev?.status === "cancelled") continue;
+
+    const key = `publish:${ev?.hebcal_key || `event-${f.event_id}`}:v${f.version || 1}`;
     if (seen.has(key)) continue;
+    seen.add(key);
+
     out.push(blankWorkOrder({
       dedupe_key: key,
-      title: `Publish the ${d.event_key.split(":")[1].replace(/-/g, " ")} flyer`,
+      title: `Publish the ${ev?.title || "SoFa"} flyer`,
       kind: "flyer_publish",
       request: "This flyer has no gaps left. Export it and put it where the community will see it.",
-      event_id: d.event_id,
+      event_id: f.event_id ?? null,
+      flyer_id: f.id ?? null,
       priority: "high",
       ...pathsFor("flyer_publish"),
     }));

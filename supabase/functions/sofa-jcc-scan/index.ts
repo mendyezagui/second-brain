@@ -25,7 +25,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { planDay, renderFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/agent.js";
 import { isoDate } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/hebcal.js";
-import { workFromPlan, handoffPrompt } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/dev.js";
+import { ordersForFlyers, handoffPrompt } from "https://raw.githubusercontent.com/mendyezagui/second-brain/PINNED_SHA_PLACEHOLDER/src/lib/sofa/dev.js";
 
 // Keep in step with the three import URLs above.
 const PINNED_SHA = "PINNED_SHA_PLACEHOLDER";
@@ -156,8 +156,17 @@ async function runScan({ today = isoDate(), dryRun = false }) {
   //    Only a flyer with no gaps left becomes an order; a half-finished flyer
   //    is the business associate's problem, not the developer's. dedupe_key
   //    keeps a re-scan from raising the same order twice.
+  //
+  //    It reads STORED flyers rather than the plan's drafts, because a flyer
+  //    usually turns ready days after it was drafted — on a run that emits no
+  //    draft for it at all.
   const { data: existingOrders } = await sb.from("sofa_work_orders").select("dedupe_key");
-  const orders = workFromPlan(plan, { existingKeys: (existingOrders || []).map((o: any) => o.dedupe_key) });
+  // Re-read the flyers: step 2 has just written this morning's, and the ones
+  // that turned ready on an earlier day are only visible in stored state.
+  const { data: currentFlyers } = await sb.from("sofa_flyers").select("*");
+  const orders = ordersForFlyers(currentFlyers || [], eventById, {
+    existingKeys: (existingOrders || []).map((o: any) => o.dedupe_key),
+  });
   for (const o of orders as any[]) {
     const { error } = await sb.from("sofa_work_orders")
       .insert({ ...o, handoff_prompt: handoffPrompt(o), modified_by: "agent:sofa-jcc" });

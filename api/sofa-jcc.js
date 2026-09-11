@@ -19,7 +19,7 @@ import { createClient } from "@supabase/supabase-js";
 import { sendPush } from "./_push.js";
 import { planDay, renderFor, templateFor } from "../src/lib/sofa/agent.js";
 import { computeGaps, flyerStatus, missingSentence } from "../src/lib/sofa/gaps.js";
-import { handoffPrompt, workFromPlan } from "../src/lib/sofa/dev.js";
+import { handoffPrompt, ordersForFlyers } from "../src/lib/sofa/dev.js";
 import { isoDate } from "../src/lib/sofa/hebcal.js";
 
 // Web search for speaker research can exceed the default budget.
@@ -187,7 +187,10 @@ export async function runSofaScan({ today = isoDate(), dryRun = false, sb = db()
   //    become work orders — a half-finished flyer is the business associate's
   //    problem, not the developer's. dedupe_key stops a re-scan re-raising it.
   const { data: existingOrders } = await sb.from("sofa_work_orders").select("dedupe_key");
-  const orders = workFromPlan(plan, { existingKeys: (existingOrders || []).map((o) => o.dedupe_key) });
+  const { data: currentFlyers } = await sb.from("sofa_flyers").select("*");
+  const orders = ordersForFlyers(currentFlyers || [], eventById, {
+    existingKeys: (existingOrders || []).map((o) => o.dedupe_key),
+  });
   applied.workOrders = 0;
   for (const o of orders) {
     const row = { ...o, handoff_prompt: handoffPrompt(o), modified_by: "agent:sofa-jcc" };
