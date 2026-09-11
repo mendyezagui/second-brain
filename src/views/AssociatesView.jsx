@@ -1,263 +1,412 @@
-import { useMemo, useState } from "react";
-import { BookOpen, FileText, Loader, Save, Sparkles, X, Zap } from "lucide-react";
-import { ASSOCIATES } from "../lib/constants";
-import { blankDocument, callClaude, nextId, today } from "../lib/utils";
-import { Field, Inp, SearchSelect, Tex } from "../components/ui";
-import { recordLink } from "./RecordDetailView";
-import { blankTask } from "./TasksView";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, BookOpen, Check, Clock, FileText, Loader, Play, RefreshCw, Save, Sparkles, X, Zap } from "lucide-react";
+import { supabase } from "../lib/supabase";
+import { askable, blocking, missingSentence, nextRunAt, parseSchedule } from "../lib/associates/core";
+import { tablesFor } from "../lib/associates/context";
+import { Field, Inp, SearchSelect, Sel, Tex } from "../components/ui";
 
-export const selectedAssociations = ({ contactId, companyId, dealId, projectId }) => [
-  contactId && { type:"contact", id:Number(contactId) || contactId },
-  companyId && { type:"company", id:Number(companyId) || companyId },
-  dealId && { type:"deal", id:Number(dealId) || dealId },
-  projectId && { type:"project", id:Number(projectId) || projectId },
-].filter(Boolean);
+// The Associates console.
+//
+// This used to be a picker over a hard-coded array: choose a prompt, click
+// Run, read the answer, and everything about the associate vanished the
+// moment you closed the tab. Every associate now lives in the `associates`
+// table with a schedule, a declared set of inputs, a deterministic gap list
+// and a history — so this view shows what an associate IS and what it has
+// actually DONE, not just a box to run it from.
+//
+// Runs go through the `associate-tick` Edge Function rather than /api, because
+// /api does not exist on the host this app is served from (Cloudflare Pages
+// returns 405 there). functions.invoke carries the signed-in JWT, so the same
+// call works in dev and in production.
 
-export const collectAssociateContext = (db, ids) => {
-  const records = {
-    contact: ids.contactId ? (db.contacts || []).find(x => String(x.id) === String(ids.contactId)) : null,
-    company: ids.companyId ? (db.companies || []).find(x => String(x.id) === String(ids.companyId)) : null,
-    deal: ids.dealId ? (db.deals || []).find(x => String(x.id) === String(ids.dealId)) : null,
-    project: ids.projectId ? (db.projects || []).find(x => String(x.id) === String(ids.projectId)) : null,
-  };
-  const associations = selectedAssociations(ids);
-  const docs = (db.documents || []).filter(d => (d.associations || []).some(a => associations.some(sel => sel.type === a.type && String(sel.id) === String(a.id))));
-  const memories = (db.ai_memories || []).filter(m =>
-    (ids.contactId && String(m.contactId) === String(ids.contactId)) ||
-    (ids.companyId && String(m.companyId) === String(ids.companyId)) ||
-    (ids.dealId && String(m.dealId) === String(ids.dealId)) ||
-    (ids.projectId && String(m.projectId) === String(ids.projectId))
-  );
-  const tasks = (db.tasks || []).filter(t =>
-    (ids.contactId && String(t.contactId) === String(ids.contactId)) ||
-    (ids.companyId && String(t.companyId) === String(ids.companyId)) ||
-    (ids.dealId && String(t.dealId) === String(ids.dealId)) ||
-    (ids.projectId && String(t.projectId) === String(ids.projectId))
-  );
-  return {
-    records,
-    documents:docs.slice(0, 12).map(d => ({ id:d.id, title:d.title || d.file_name, description:d.description, kind:d.kind, file_name:d.file_name, url:d.url })),
-    memories:memories.slice(0, 12).map(m => ({ id:m.id, subject:m.subject, memory_type:m.memory_type, summary:m.memory_summary, source:m.source_context })),
-    tasks:tasks.slice(0, 16).map(t => ({ id:t.id, title:t.title, status:t.status, due:t.due, priority:t.priority, notes:t.notes })),
-  };
+const SCHEDULES = ["manual", "daily", "weekly:mon", "weekly:tue", "weekly:wed", "weekly:thu", "weekly:fri", "weekly:sat", "weekly:sun"];
+
+const STATUS_COLOR = {
+  ok: "var(--green)", error: "var(--red)", no_input: "var(--amber)", skipped: "var(--text-dim)",
+  ready: "var(--green)", staged: "var(--blue)", needs_input: "var(--amber)", dismissed: "var(--text-dim)", archived: "var(--text-dim)",
 };
 
-export const AssociatesView = ({ db, setDB, navigate }) => {
-  const [selected, setSelected] = useState(ASSOCIATES[0].id);
-  const [title, setTitle] = useState("");
+const when = (ts) => {
+  if (!ts) return "never";
+  const d = new Date(ts);
+  const mins = Math.round((Date.now() - d) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+
+const scheduleLabel = (a) => {
+  const s = parseSchedule(a.schedule);
+  if (s.kind === "manual") return "manual";
+  if (s.kind === "daily") return `daily ${a.run_at_utc} UTC`;
+  if (s.kind === "weekly") return `${s.day} ${a.run_at_utc} UTC`;
+  return `${a.schedule} ${a.run_at_utc} UTC`;
+};
+
+export const AssociatesView = ({ db, navigate }) => {
+  const [roster, setRoster] = useState([]);
+  const [runs, setRuns] = useState([]);
+  const [drafts, setDrafts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [slug, setSlug] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [toast, setToast] = useState("");
+
+  // the run form
   const [instructions, setInstructions] = useState("");
-  const [output, setOutput] = useState("");
   const [contactId, setContactId] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [dealId, setDealId] = useState("");
   const [projectId, setProjectId] = useState("");
-  const [running, setRunning] = useState(false);
-  const [createTask, setCreateTask] = useState(true);
-  const [saveDocument, setSaveDocument] = useState(true);
-  const [saveMemory, setSaveMemory] = useState(true);
-  const [taskTitle, setTaskTitle] = useState("");
-  const [saved, setSaved] = useState(null);
-  const associate = ASSOCIATES.find(c => c.id === selected) || ASSOCIATES[0];
-  const ids = { contactId, companyId, dealId, projectId };
-  const contextPack = useMemo(() => collectAssociateContext(db, ids), [db, contactId, companyId, dealId, projectId]);
-  const recent = (db.ai_memories || []).filter(m => (m.source_context || "").includes("associates/") || (m.source_context || "").includes("mstack/")).slice(0, 8);
-  const linkedName = contextPack.records.deal?.name || contextPack.records.project?.name || contextPack.records.company?.name || contextPack.records.contact?.name || "";
+  const [answers, setAnswers] = useState({});
 
-  const runAssociate = async () => {
-    setRunning(true);
-    setSaved(null);
+  const load = useCallback(async () => {
+    if (!supabase) return;
+    const [a, r, d] = await Promise.all([
+      supabase.from("associates").select("*").order("sort_order"),
+      supabase.from("associate_runs").select("*").order("started_at", { ascending: false }).limit(60),
+      supabase.from("associate_drafts").select("*").order("created_at", { ascending: false }).limit(60),
+    ]);
+    setRoster(a.data || []);
+    setRuns(r.data || []);
+    setDrafts(d.data || []);
+    setSlug((cur) => cur || a.data?.[0]?.slug || null);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const associate = useMemo(() => roster.find((x) => x.slug === slug) || roster[0] || null, [roster, slug]);
+  const myRuns = useMemo(() => runs.filter((r) => r.slug === associate?.slug), [runs, associate]);
+  const myDrafts = useMemo(() => drafts.filter((d) => d.slug === associate?.slug), [drafts, associate]);
+  const latestDraft = myDrafts[0] || null;
+
+  // Everything staged across the whole roster — the review queue, which is the
+  // point of draft-and-hold. Without somewhere that shows the backlog, output
+  // piles up unseen; that is exactly how the Content Brain quietly stopped.
+  const inbox = useMemo(
+    () => drafts.filter((d) => d.status === "staged" || d.status === "needs_input"),
+    [drafts],
+  );
+
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 6000); };
+
+  const invoke = async (body) => {
+    const { data, error } = await supabase.functions.invoke("associate-tick", { body });
+    if (error) throw new Error(error.message || String(error));
+    if (data?.error) throw new Error(data.error);
+    return data;
+  };
+
+  const runNow = async ({ dry = false } = {}) => {
+    if (!associate) return;
+    setBusy(dry ? "preview" : "run");
     try {
-      const system = [
-        "You are an AI associate working for Mendy Ezagui, independent AI operations and Salesforce consultant.",
-        "Brand context: Clarity Operator for consulting, Voitra AI for voice AI.",
-        "Be direct, useful, and outcome-focused. No filler. Do not invent facts not in the context.",
-        "Use value-based framing. Avoid hourly pricing unless explicitly required.",
-        "If the output is client-facing, make it polished but not corporate. Never say 'I hope this finds you well.'",
-        `Associate role: ${associate.label}. Required artifact: ${associate.artifact}.`,
-        associate.prompt,
-      ].join("\n");
-      const user = [
-        `ASSOCIATE: ${associate.label}`,
-        `REQUEST TITLE: ${title || linkedName || associate.artifact}`,
-        `LINKED SECOND BRAIN CONTEXT:\n${JSON.stringify(contextPack, null, 2)}`,
-        `ADDITIONAL INSTRUCTIONS FROM MENDY:\n${instructions || "None."}`,
-        "Return a complete, usable artifact. Include assumptions, risks, and next actions when relevant. If this is an SOW/proposal, include scope, deliverables, exclusions, timeline, fees if enough context exists, acceptance, and change control.",
-      ].join("\n\n");
-      const generated = await callClaude(system, user, 2200);
-      setOutput(generated);
-    } catch (error) {
-      console.error("Associate run failed:", error);
-      setOutput("Associate run failed. Check /api/claude and environment configuration.");
+      const res = await invoke({
+        action: "run",
+        slug: associate.slug,
+        instructions,
+        answers,
+        link: { contactId: contactId || null, companyId: companyId || null, dealId: dealId || null, projectId: projectId || null },
+        dry_run: dry,
+      });
+      if (dry) {
+        flash(res.skip === "no_input"
+          ? "Dry run: this associate's inputs matched 0 rows — it would not run."
+          : `Dry run: ${Object.entries(res.context?.digest || {}).map(([k, v]) => `${v} ${k}`).join(", ") || "no context"} · ${res.gaps?.length || 0} gap(s). Nothing written.`);
+      } else {
+        flash(res.status === "error" ? `Run failed: ${res.error}` : `Run complete — wrote ${Object.keys(res.wrote || {}).join(", ")}.`);
+        await load();
+      }
+    } catch (e) {
+      flash(`Run failed: ${e.message}`);
     }
-    setRunning(false);
+    setBusy("");
   };
 
-  const saveAssociateWork = () => {
-    const subject = title || `${associate.artifact}${linkedName ? ` - ${linkedName}` : ""}`;
-    const summary = [instructions && `Instructions:\n${instructions}`, output && `Output:\n${output}`].filter(Boolean).join("\n\n");
-    if (!summary.trim()) return;
-    setDB(prev => {
-      const memoryId = nextId(prev.ai_memories || []);
-      const documentId = nextId(prev.documents || []);
-      const associations = selectedAssociations(ids);
-      let next = { ...prev };
-      if (saveMemory) {
-        const nextMemory = {
-        id:memoryId,
-        subject,
-        ai_system:"codex",
-        memory_summary:summary,
-        memory_type:"context",
-          source_context:`associates/${associate.id}`,
-        companyId:companyId || null,
-        contactId:contactId || null,
-        dealId:dealId || null,
-        projectId:projectId || null,
-        strategyId:null,
-        files:[],
-        created_at:new Date().toISOString(),
-      };
-        next.ai_memories = [nextMemory, ...(prev.ai_memories || [])];
-      }
-      if (saveDocument) {
-        next.documents = [{
-          ...blankDocument(associations),
-          id:documentId,
-          title:subject,
-          description:output,
-          kind:"generated",
-          created_at:new Date().toISOString(),
-        }, ...(prev.documents || [])];
-      }
-      if (createTask && (taskTitle || subject)) {
-        next.tasks = [...(prev.tasks || []), {
-          ...blankTask(),
-          id:nextId(prev.tasks || []),
-          title:taskTitle || `Follow up: ${subject}`,
-          due:today(),
-          priority:"high",
-          status:"todo",
-          category:"follow_up",
-          source:"agent:associate",
-          contactId:contactId || null,
-          companyId:companyId || null,
-          dealId:dealId || null,
-          projectId:projectId || null,
-          notes:`Created from associates/${associate.id}.${saveMemory ? ` Memory #${memoryId}.` : ""}${saveDocument ? ` Document #${documentId}.` : ""}`,
-        }];
-      }
-      return next;
-    });
-    setSaved({ memoryId:saveMemory ? nextId(db.ai_memories || []) : null, documentId:saveDocument ? nextId(db.documents || []) : null });
+  const previewTick = async () => {
+    setBusy("tick");
+    try {
+      const res = await invoke({ dry_run: true });
+      flash(res.due?.length
+        ? `Due now: ${res.due.map((d) => d.associate.label).join(", ")}`
+        : "Nothing is due right now.");
+    } catch (e) { flash(`Preview failed: ${e.message}`); }
+    setBusy("");
   };
-  const resetDraft = () => {
-    setTitle("");
-    setInstructions("");
-    setOutput("");
-    setTaskTitle("");
-    setSaved(null);
+
+  const setSchedule = async (value) => {
+    if (!associate) return;
+    await supabase.from("associates")
+      .update({ schedule: value, modified_at: new Date().toISOString() })
+      .eq("id", associate.id);
+    flash(value === "manual" ? `${associate.label} is now manual-only.` : `${associate.label} runs ${value}.`);
+    load();
   };
+
+  const setDraftStatus = async (draft, status) => {
+    await supabase.from("associate_drafts")
+      .update({ status, modified_at: new Date().toISOString() })
+      .eq("id", draft.id);
+    load();
+  };
+
+  const saveAnswers = async (draft) => {
+    const merged = { ...(draft.answers || {}), ...answers };
+    await supabase.from("associate_drafts")
+      .update({ answers: merged, modified_at: new Date().toISOString() })
+      .eq("id", draft.id);
+    flash("Answers saved — the next run will not ask again.");
+    load();
+  };
+
+  if (loading) return <div style={{ padding: 24 }} className="mono">Loading associates…</div>;
+  if (!associate) return <div style={{ padding: 24 }} className="mono">No associates on the roster. Apply seed-associates.sql.</div>;
+
+  const reads = tablesFor(associate.inputs || {});
+  const rails = associate.rails || {};
+  const next = nextRunAt(associate);
+  const grouped = roster.reduce((acc, a) => { (acc[a.group_name || "Other"] ||= []).push(a); return acc; }, {});
+
   return (
-    <div style={{ padding:24, maxWidth:1180, margin:"0 auto", display:"flex", flexDirection:"column", gap:18 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", gap:16, alignItems:"flex-start", flexWrap:"wrap" }}>
+    <div style={{ padding: 24, maxWidth: 1180, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-            <BookOpen size={18} color="var(--blue)"/>
-            <span className="mono" style={{ fontSize:11, color:"var(--text-sec)" }}>AI ASSOCIATES</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <BookOpen size={18} color="var(--blue)" />
+            <span className="mono" style={{ fontSize: 11, color: "var(--text-sec)" }}>AI ASSOCIATES</span>
           </div>
-          <div className="display" style={{ fontSize:26, fontWeight:800 }}>Associates</div>
-          <div style={{ fontSize:13, color:"var(--text-sec)", marginTop:6, maxWidth:680, lineHeight:1.6 }}>
-            Give an associate the client, deal, project, documents, memories, and extra instructions. It does the work, then saves the result back into Second Brain.
+          <div className="display" style={{ fontSize: 26, fontWeight: 800 }}>Associates</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6, maxWidth: 680, lineHeight: 1.6 }}>
+            Each associate reads what its spec declares, works on its own clock, and stages the result for review. Nothing is ever sent.
           </div>
         </div>
-        <div style={{ display:"flex", gap:8 }}>
-          <button className="btn btn-ghost" onClick={()=>navigate("ai_memories")}><Sparkles size={13}/>AI Memories</button>
-          <button className="btn btn-blue" onClick={runAssociate} disabled={running}>{running ? <><Loader size={13} className="spin"/>Running</> : <><Zap size={13}/>Run Associate</>}</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost" onClick={previewTick} disabled={!!busy}>
+            {busy === "tick" ? <Loader size={13} className="spin" /> : <Clock size={13} />}What&apos;s due
+          </button>
+          <button className="btn btn-ghost" onClick={load}><RefreshCw size={13} />Refresh</button>
         </div>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:"320px minmax(0,1fr)", gap:18 }}>
-        <div className="card" style={{ padding:14, alignSelf:"start" }}>
-          <div className="mono" style={{ fontSize:11, color:"var(--text-sec)", marginBottom:10 }}>ASSOCIATES</div>
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {ASSOCIATES.map(c => (
-              <button key={c.id} onClick={()=>setSelected(c.id)} className="row-hover" style={{ textAlign:"left", border:"1px solid "+(selected===c.id ? "rgba(0,119,204,0.25)" : "var(--border)"), background:selected===c.id ? "var(--blue-dim)" : "var(--bg-card)", borderRadius:8, padding:"10px 12px", cursor:"pointer" }}>
-                <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"center" }}>
-                  <span style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
-                    {c.active && <span className="blink" title="Runs on a schedule" style={{ width:7, height:7, borderRadius:"50%", background:"var(--green)", flex:"none" }}/>}
-                  <span style={{ fontSize:13, fontWeight:700, color:selected===c.id ? "var(--blue)" : "var(--text)" }}>{c.label}</span>
-                  </span>
-                  <span className="mono" style={{ fontSize:9, color:"var(--text-sec)" }}>{c.group}</span>
-                </div>
-                <div className="mono" style={{ fontSize:10, color:"var(--text-dim)", marginTop:4 }}>{c.artifact}</div>
-              </button>
+      {toast && (
+        <div className="card-el" style={{ padding: "10px 14px", fontSize: 12, borderLeft: "3px solid var(--blue)", lineHeight: 1.6 }}>{toast}</div>
+      )}
+
+      {inbox.length > 0 && (
+        <div className="card" style={{ padding: 14 }}>
+          <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 10 }}>
+            REVIEW QUEUE — {inbox.length} DRAFT(S) WAITING
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {inbox.slice(0, 8).map((d) => (
+              <div key={d.id} className="card-el" style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: STATUS_COLOR[d.status], flex: "none" }} />
+                <button onClick={() => { setSlug(d.slug); setAnswers({}); }}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text)", fontSize: 13, fontWeight: 600, textAlign: "left", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {d.title}
+                </button>
+                {(d.gaps || []).length > 0 && (
+                  <span className="mono" style={{ fontSize: 10, color: "var(--amber)", flexShrink: 0 }}>needs {missingSentence(d.gaps)}</span>
+                )}
+                <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{when(d.created_at)}</span>
+              </div>
             ))}
           </div>
         </div>
+      )}
 
-        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-          <div className="card" style={{ padding:18 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"center", marginBottom:14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "320px minmax(0,1fr)", gap: 18 }}>
+        {/* ---------------- the roster ---------------- */}
+        <div className="card" style={{ padding: 14, alignSelf: "start" }}>
+          <div className="mono" style={{ fontSize: 11, color: "var(--text-sec)", marginBottom: 10 }}>ROSTER · {roster.length}</div>
+          {Object.entries(grouped).map(([group, items]) => (
+            <div key={group} style={{ marginBottom: 12 }}>
+              <div className="mono" style={{ fontSize: 9, color: "var(--text-dim)", marginBottom: 5 }}>{group.toUpperCase()}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {items.map((a) => {
+                  const on = a.slug === associate.slug;
+                  const scheduled = parseSchedule(a.schedule).kind !== "manual";
+                  const last = runs.find((r) => r.slug === a.slug);
+                  return (
+                    <button key={a.slug} onClick={() => { setSlug(a.slug); setAnswers({}); }} className="row-hover"
+                      style={{ textAlign: "left", border: "1px solid " + (on ? "rgba(0,119,204,0.25)" : "var(--border)"), background: on ? "var(--blue-dim)" : "var(--bg-card)", borderRadius: 8, padding: "10px 12px", cursor: "pointer" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          {scheduled && <span className="blink" title={scheduleLabel(a)} style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--green)", flex: "none" }} />}
+                          <span style={{ fontSize: 13, fontWeight: 700, color: on ? "var(--blue)" : "var(--text)" }}>{a.label}</span>
+                        </span>
+                        {last && <span title={`last run: ${last.status}`} style={{ width: 6, height: 6, borderRadius: "50%", background: STATUS_COLOR[last.status] || "var(--text-dim)", flex: "none" }} />}
+                      </div>
+                      <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
+                        {a.artifact} · {scheduleLabel(a)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ---------------- the associate ---------------- */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="card" style={{ padding: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 14 }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="display" style={{ fontSize: 17, fontWeight: 800 }}>{associate.label}</div>
+                <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.55, marginTop: 5 }}>{associate.brief}</div>
+              </div>
+              {associate.console && (
+                <button className="btn btn-ghost" style={{ flexShrink: 0 }} onClick={() => { window.location.hash = associate.console; }}>Open console</button>
+              )}
+            </div>
+
+            {/* The spec — what this associate IS, read straight off its row. */}
+            <div className="card-el" style={{ padding: 12, marginBottom: 14, display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, fontSize: 12 }}>
               <div>
-                <div className="display" style={{ fontSize:17, fontWeight:800 }}>{associate.label}</div>
-                <div style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.5, marginTop:3 }}>{associate.prompt}</div>
+                <strong>Schedule</strong>
+                <div style={{ marginTop: 4 }}>
+                  {associate.runtime === "custom"
+                    ? <span className="mono" style={{ fontSize: 10, color: "var(--text-sec)" }}>own scan</span>
+                    : <Sel value={associate.schedule} onChange={setSchedule} options={SCHEDULES.map((s) => ({ value: s, label: s }))} />}
+                </div>
+                <div className="mono" style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 4 }}>
+                  {next ? `next ${next.toLocaleString("en-US", { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "on demand only"}
+                </div>
               </div>
-              <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-                {associate.console && <button className="btn btn-ghost" onClick={()=>{ window.location.hash = associate.console; }}>Open console</button>}
-              <button className="btn btn-blue" onClick={runAssociate} disabled={running}>{running ? <><Loader size={13} className="spin"/>Running</> : <><Zap size={13}/>Run</>}</button>
+              <div>
+                <strong>Reads</strong>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 4, lineHeight: 1.6 }}>
+                  {[reads.join(", "), associate.inputs?.linked !== false ? "linked record" : ""].filter(Boolean).join(" · ") || "—"}
+                </div>
               </div>
-            </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-              <Field label="Request"><Inp value={title} onChange={setTitle} placeholder={`${associate.artifact} - client / deal / project`}/></Field>
-              <Field label="Follow-up Task"><Inp value={taskTitle} onChange={setTaskTitle} placeholder="Optional task title"/></Field>
-            </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,minmax(0,1fr))", gap:10 }}>
-              <Field label="Contact"><SearchSelect value={contactId} onChange={setContactId} options={(db.contacts || []).map(c => ({ value:c.id, label:c.name }))} placeholder="Link contact..."/></Field>
-              <Field label="Company"><SearchSelect value={companyId} onChange={setCompanyId} options={(db.companies || []).map(c => ({ value:c.id, label:c.name }))} placeholder="Link company..."/></Field>
-              <Field label="Deal"><SearchSelect value={dealId} onChange={setDealId} options={(db.deals || []).map(d => ({ value:d.id, label:d.name }))} placeholder="Link deal..."/></Field>
-              <Field label="Project"><SearchSelect value={projectId} onChange={setProjectId} options={(db.projects || []).map(p => ({ value:p.id, label:p.name }))} placeholder="Link project..."/></Field>
-            </div>
-            <Field label="Additional Instructions"><Tex value={instructions} onChange={setInstructions} placeholder="Tell the associate what is not already in Second Brain: special client asks, constraints, tone, pricing, deadlines, exclusions, or what kind of output you want."/></Field>
-            <div className="card-el" style={{ padding:12, marginBottom:14 }}>
-              <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginBottom:8 }}>CONTEXT THE ASSOCIATE WILL READ</div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, fontSize:12 }}>
-                <div><strong>Records</strong><div className="mono" style={{ color:"var(--text-sec)", fontSize:10 }}>{Object.values(contextPack.records).filter(Boolean).length} linked</div></div>
-                <div><strong>Documents</strong><div className="mono" style={{ color:"var(--text-sec)", fontSize:10 }}>{contextPack.documents.length} matched</div></div>
-                <div><strong>Memories</strong><div className="mono" style={{ color:"var(--text-sec)", fontSize:10 }}>{contextPack.memories.length} matched</div></div>
-                <div><strong>Tasks</strong><div className="mono" style={{ color:"var(--text-sec)", fontSize:10 }}>{contextPack.tasks.length} matched</div></div>
+              <div>
+                <strong>Will ask for</strong>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 4, lineHeight: 1.6 }}>
+                  {(associate.requirements || []).length ? (associate.requirements || []).map((r) => r.label).join(", ") : "nothing"}
+                </div>
               </div>
-            </div>
-            <Field label="Generated Output">
-              <textarea className="input" rows={12} value={output} onChange={e=>setOutput(e.target.value)} placeholder="Run an associate to generate the artifact. You can edit the result before saving." style={{ width:"100%", resize:"vertical", fontFamily:"inherit", fontSize:13, lineHeight:1.6 }}/>
-            </Field>
-            <div style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"center", marginTop:8 }}>
-              <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
-                <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"var(--text-sec)", cursor:"pointer" }}><input type="checkbox" checked={saveDocument} onChange={e=>setSaveDocument(e.target.checked)}/>Save generated document</label>
-                <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"var(--text-sec)", cursor:"pointer" }}><input type="checkbox" checked={saveMemory} onChange={e=>setSaveMemory(e.target.checked)}/>Save AI memory</label>
-                <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"var(--text-sec)", cursor:"pointer" }}><input type="checkbox" checked={createTask} onChange={e=>setCreateTask(e.target.checked)}/>Create task</label>
-              </div>
-              <div style={{ display:"flex", gap:8 }}>
-                {saved?.documentId && <button className="btn btn-ghost" onClick={()=>navigate("record",{type:"document",id:saved.documentId})}><FileText size={13}/>Open Document</button>}
-                {saved?.memoryId && <button className="btn btn-ghost" onClick={()=>navigate("record",{type:"ai_memory",id:saved.memoryId})}><Sparkles size={13}/>Open Memory</button>}
-                <button className="btn btn-ghost" onClick={resetDraft}><X size={13}/>Clear</button>
-                <button className="btn btn-blue" onClick={saveAssociateWork}><Save size={13}/>Save Work</button>
+              <div>
+                <strong>May</strong>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 4, lineHeight: 1.6 }}>
+                  {Object.entries(rails).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " ")).join(", ") || "—"}
+                  <div style={{ color: "var(--text-dim)" }}>never sends</div>
+                </div>
               </div>
             </div>
+
+            {associate.runtime === "custom" ? (
+              <div className="card-el" style={{ padding: 12, fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                This associate has its own hand-built runtime and its own scan. The generic tick deliberately leaves it alone —
+                running it from here as well would duplicate everything it produces. Use {associate.console || "its console"}.
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 10 }}>
+                  <Field label="Contact"><SearchSelect value={contactId} onChange={setContactId} options={(db?.contacts || []).map((c) => ({ value: c.id, label: c.name }))} placeholder="Link contact..." /></Field>
+                  <Field label="Company"><SearchSelect value={companyId} onChange={setCompanyId} options={(db?.companies || []).map((c) => ({ value: c.id, label: c.name }))} placeholder="Link company..." /></Field>
+                  <Field label="Deal"><SearchSelect value={dealId} onChange={setDealId} options={(db?.deals || []).map((d) => ({ value: d.id, label: d.name }))} placeholder="Link deal..." /></Field>
+                  <Field label="Project"><SearchSelect value={projectId} onChange={setProjectId} options={(db?.projects || []).map((p) => ({ value: p.id, label: p.name }))} placeholder="Link project..." /></Field>
+                </div>
+                <Field label="Additional Instructions">
+                  <Tex value={instructions} onChange={setInstructions} placeholder="Anything not already in Second Brain: constraints, tone, deadlines, what to leave out." />
+                </Field>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+                  <button className="btn btn-ghost" onClick={() => runNow({ dry: true })} disabled={!!busy}>
+                    {busy === "preview" ? <Loader size={13} className="spin" /> : <Play size={13} />}Dry run
+                  </button>
+                  <button className="btn btn-blue" onClick={() => runNow()} disabled={!!busy}>
+                    {busy === "run" ? <><Loader size={13} className="spin" />Running</> : <><Zap size={13} />Run now</>}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
-          <div className="card" style={{ padding:18 }}>
-            <div className="display" style={{ fontSize:15, fontWeight:800, marginBottom:12 }}>Recent Associate Work</div>
-            {recent.length === 0 ? <div className="mono" style={{ fontSize:11, color:"var(--text-dim)" }}>No associate outputs saved yet.</div> : (
-              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {recent.map(m => (
-                  <div key={m.id} className="card-el" style={{ padding:"10px 12px", display:"flex", alignItems:"center", gap:10 }}>
-                    <Sparkles size={13} color="var(--purple)"/>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:13, fontWeight:700 }}>{recordLink("ai_memory", m.id, db, navigate) || m.subject}</div>
-                      <div className="mono" style={{ fontSize:10, color:"var(--text-sec)", marginTop:2 }}>{m.source_context}</div>
+          {/* ---------------- the latest draft ---------------- */}
+          {latestDraft && (
+            <div className="card" style={{ padding: 18 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="display" style={{ fontSize: 15, fontWeight: 800 }}>{latestDraft.title}</div>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginTop: 3 }}>
+                    v{latestDraft.version} · {latestDraft.status} · {when(latestDraft.created_at)}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <button className="btn btn-ghost" onClick={() => setDraftStatus(latestDraft, "dismissed")}><X size={13} />Dismiss</button>
+                  <button className="btn btn-blue" onClick={() => setDraftStatus(latestDraft, "ready")}><Check size={13} />Mark ready</button>
+                </div>
+              </div>
+
+              {askable(latestDraft.gaps || []).length > 0 && (
+                <div className="card-el" style={{ padding: 12, marginBottom: 12, borderLeft: `3px solid ${blocking(latestDraft.gaps).length ? "var(--red)" : "var(--amber)"}` }}>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--text-sec)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    <AlertTriangle size={12} color="var(--amber)" />NEEDS FROM YOU — {askable(latestDraft.gaps).length} ITEM(S)
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {askable(latestDraft.gaps).map((g) => (
+                      <div key={g.field} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 200px", gap: 10, alignItems: "center" }}>
+                        <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+                          <span style={{ color: g.severity === "blocking" ? "var(--red)" : "var(--amber)", fontWeight: 700 }}>{g.label}</span>
+                          <span style={{ color: "var(--text-sec)" }}> — {g.question}</span>
+                        </div>
+                        <Inp value={answers[g.field] ?? latestDraft.answers?.[g.field] ?? ""} onChange={(v) => setAnswers((a) => ({ ...a, [g.field]: v }))} placeholder="Answer…" />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                    <button className="btn btn-ghost" onClick={() => saveAnswers(latestDraft)}><Save size={13} />Save answers</button>
+                  </div>
+                </div>
+              )}
+
+              <textarea className="input" rows={16} readOnly value={latestDraft.body || ""}
+                style={{ width: "100%", resize: "vertical", fontFamily: "inherit", fontSize: 13, lineHeight: 1.65 }} />
+            </div>
+          )}
+
+          {/* ---------------- history ---------------- */}
+          <div className="card" style={{ padding: 18 }}>
+            <div className="display" style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>Run history</div>
+            {myRuns.length === 0 ? (
+              <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>This associate has never run.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {myRuns.slice(0, 10).map((r) => (
+                  <div key={r.id} className="card-el" style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: STATUS_COLOR[r.status] || "var(--text-dim)", flex: "none" }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.error || r.summary}</div>
+                      <div className="mono" style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 2 }}>
+                        {r.trigger} · {Object.entries(r.input_digest || {}).map(([k, v]) => `${v} ${k}`).join(", ") || "no context"}
+                        {r.duration_ms ? ` · ${Math.round(r.duration_ms / 100) / 10}s` : ""}
+                      </div>
                     </div>
-                    {m.projectId && recordLink("project", m.projectId, db, navigate)}
-                    {m.dealId && recordLink("deal", m.dealId, db, navigate)}
+                    <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{when(r.started_at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card" style={{ padding: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div className="display" style={{ fontSize: 15, fontWeight: 800 }}>Past drafts</div>
+              <button className="btn btn-ghost" onClick={() => navigate?.("ai_memories")}><Sparkles size={13} />AI Memories</button>
+            </div>
+            {myDrafts.length <= 1 ? (
+              <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>Nothing earlier.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {myDrafts.slice(1, 10).map((d) => (
+                  <div key={d.id} className="card-el" style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                    <FileText size={13} color="var(--text-sec)" />
+                    <div style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.title}</div>
+                    <span className="mono" style={{ fontSize: 9, color: STATUS_COLOR[d.status] || "var(--text-dim)", flexShrink: 0 }}>{d.status}</span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", flexShrink: 0 }}>{when(d.created_at)}</span>
                   </div>
                 ))}
               </div>

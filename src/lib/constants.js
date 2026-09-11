@@ -6,28 +6,13 @@ export const TASK_STATUSES = ["todo","in_progress","waiting","done","cancelled"]
 
 export const TASK_CATEGORIES = ["follow_up","outreach","admin","research","meeting_prep","deliverable"];
 
-export const ASSOCIATES = [
-  // The SoFa pair leads the list: unlike the rest, these two run on a
-  // schedule, hold their own tables, and are live whether or not anyone
-  // opens this tab. `active` renders the live dot.
-  { id:"sofa-jcc", label:"SoFa JCC Associate", group:"SoFa JCC", artifact:"Flyer + program plan", prompt:"You run SoFa Jewish Community Center's weekly programming and holiday calendar. You own the brand, the flyers and the speaker pipeline. Work from the real Jewish calendar and the stored event data — never invent a time, address or bio. When something is missing, say exactly what and ask for it. The full console is at #/sofa_jcc." , active:true, console:"#/sofa_jcc" },
-  { id:"sofa-dev", label:"SoFa Developer Associate", group:"SoFa JCC", artifact:"Build spec + handoff brief", prompt:"You are the build half of the SoFa JCC pair. The business associate raises work orders; you turn each one into precise build steps against the static sofajcc/ site, build what can be built in Second Brain, and write a standalone brief for whatever needs a repo session. Never add scope, never invent a fact, never publish. Console at #/sofa_dev." , active:true, console:"#/sofa_dev" },
-  { id:"discovery-plan", label:"Discovery Associate", group:"Sales", artifact:"Discovery plan", prompt:"Prepare a client discovery call agenda, questions, qualification notes, risks, and next-step control." },
-  { id:"discovery-synthesis", label:"Synthesis Associate", group:"Sales", artifact:"Discovery synthesis", prompt:"Turn discovery notes into diagnosis, value, scope options, risks, and next actions." },
-  { id:"pitch-draft", label:"Pitch Associate", group:"Sales", artifact:"Outbound pitch", prompt:"Draft targeted outreach, referral asks, follow-ups, and pitch messages for Clarity Operator or Voitra AI." },
-  { id:"pricing-strategy", label:"Pricing Associate", group:"Sales", artifact:"Pricing recommendation", prompt:"Price diagnostics, projects, retainers, and change orders based on value, risk, and leverage." },
-  { id:"sow-builder", label:"SOW Associate", group:"Delivery", artifact:"Statement of work", prompt:"Build a tight statement of work with scope, deliverables, exclusions, assumptions, timeline, fees, and change control." },
-  { id:"proposal", label:"Proposal Associate", group:"Delivery", artifact:"Client proposal", prompt:"Generate a value-based proposal from engagement context." },
-  { id:"project-kickoff", label:"Kickoff Associate", group:"Delivery", artifact:"Kickoff plan", prompt:"Turn a signed engagement into a kickoff plan, workstreams, client asks, delivery rhythm, and first-week actions." },
-  { id:"project-status", label:"Status Associate", group:"Delivery", artifact:"Status update", prompt:"Create a client-ready status update, risks, decisions, and next actions." },
-  { id:"demo-builder", label:"Demo Associate", group:"Sales", artifact:"Demo plan", prompt:"Plan and script a client demo tied to buyer pain, proof points, and follow-up close." },
-  { id:"plan-voice-agent", label:"Voice Agent Associate", group:"Voitra", artifact:"Voice agent spec", prompt:"Design a Retell AI voice agent from scratch: persona, flows, tool calls, prompts, and edge cases." },
-  { id:"retell-review", label:"Retell Review Associate", group:"Voitra", artifact:"Retell audit", prompt:"Audit an existing Retell AI agent config for gaps, hallucination risks, broken tool paths, and edge cases." },
-  { id:"office-hours", label:"Office Hours Associate", group:"Operator", artifact:"Decision memo", prompt:"Interrogate this idea, client situation, or decision. Be direct. No cheerleading." },
-  { id:"weekly-retro", label:"Retro Associate", group:"Operator", artifact:"Weekly review", prompt:"Review pipeline health, delivery status, risks, revenue tracking, and next week priorities." },
-  { id:"bd-signal", label:"BD Signal Associate", group:"Operator", artifact:"BD signal brief", prompt:"Surface BD opportunities from current context, market signals, conversations, and client situations." },
-  { id:"second-brain-sync", label:"Memory Associate", group:"Power", artifact:"Memory summary", prompt:"Distill the key session output into reusable Second Brain memory and linked follow-up tasks." },
-];
+// The associate roster moved out of this file and into the `associates` table.
+//
+// It lived here as a flat array of prompt strings, which is why fifteen of the
+// seventeen never actually did anything: an array has no schedule, no memory,
+// no history and no way to say what it needs. An associate is now a ROW —
+// see schema-associates.sql, seed-associates.sql and docs/associates/README.md.
+// Add one with an INSERT, not a code change.
 
 export const DOCUMENT_ENTITY_TYPES = [
   { type:"contact", key:"contacts", label:"Contact", name:r=>r.name },
