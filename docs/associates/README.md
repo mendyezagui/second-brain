@@ -128,7 +128,7 @@ supabase/functions/associate-tick        ← one function, N associates
         ├─ load today's run_keys          ← idempotency
         ├─ planTick()                     ← who is due, in the pure core
         ├─ load ONLY the tables the due associates declared
-        └─ for each due associate:
+        └─ for each due associate (concurrently, in waves of 4):
              planAssociate()              ← context + gaps + prompt (pure)
              call Claude
              write associate_runs
@@ -200,7 +200,7 @@ select cron.schedule('associate-daily-tick', '0 15 * * *', $$
     headers := jsonb_build_object('Content-Type','application/json',
                                   'Authorization','Bearer ' || '<SERVICE_ROLE_KEY>'),
     body    := jsonb_build_object('action','tick'),
-    timeout_milliseconds := 55000);
+    timeout_milliseconds := 120000);
 $$);
 ```
 

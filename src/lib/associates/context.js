@@ -150,8 +150,17 @@ export function buildContext(sources = {}, inputs = {}, link = {}, today = new D
   return { scope, tables, documents, memories, tasks, digest };
 }
 
-/** Total rows handed to the model. Zero means the run should not happen. */
+/**
+ * How much the model was actually handed. Zero means the run should not happen.
+ *
+ * Typed instructions count. Some associates — Office Hours, the Memory
+ * Associate — read nothing from the database by design: the instructions box
+ * IS their input. Counting only rows would classify those as "nothing to read"
+ * and skip them every single time, which is the opposite of the guard's
+ * purpose.
+ */
 export const contextSize = (ctx) =>
   Object.values(ctx?.tables || {}).reduce((n, rows) => n + rows.length, 0) +
   (ctx?.documents?.length || 0) + (ctx?.memories?.length || 0) + (ctx?.tasks?.length || 0) +
-  Object.values(ctx?.scope || {}).filter(Boolean).length;
+  Object.values(ctx?.scope || {}).filter(Boolean).length +
+  (String(ctx?.instructions || "").trim() ? 1 : 0);

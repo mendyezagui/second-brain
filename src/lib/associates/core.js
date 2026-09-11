@@ -188,11 +188,16 @@ export function buildPrompt(associate, context, { instructions = "", gaps = [], 
       : "",
   ].filter(Boolean).join("\n");
 
+  // Instructions live on the context so requirements can point at them, but
+  // they get their own section below — serialising them here too would hand
+  // the model the same text twice.
+  const { instructions: _typed, ...serialisable } = context;
+
   const user = [
     `TODAY: ${today}`,
     `ASSOCIATE: ${associate.label}`,
     `ARTIFACT: ${associate.artifact}`,
-    `SECOND BRAIN CONTEXT:\n${JSON.stringify(context, null, 2)}`,
+    `SECOND BRAIN CONTEXT:\n${JSON.stringify(serialisable, null, 2)}`,
     `ADDITIONAL INSTRUCTIONS FROM MENDY:\n${instructions || "None."}`,
     "Return a complete, usable artifact. Include assumptions, risks, and next actions when relevant. End with a short \"Needs from Mendy\" list if anything is missing; omit that section entirely if nothing is.",
   ].join("\n\n");
@@ -213,6 +218,12 @@ export function planAssociate(associate, sources, {
 } = {}) {
   const today = isoDate(now);
   const context = buildContext(sources, associate.inputs || {}, link, today);
+  // Instructions are part of the context, not a side channel: an associate can
+  // then require them (`{"field":"instructions", "severity":"blocking"}`) the
+  // same way it requires a linked deal, and they count toward contextSize for
+  // the associates whose only real input is what you typed.
+  context.instructions = String(instructions || "").trim();
+  if (context.instructions) context.digest.instructions = context.instructions.length;
   const gaps = computeGaps(associate.requirements, context, answers);
   const size = contextSize(context);
 

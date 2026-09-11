@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "flyer": "node scripts/render-flyer.mjs",
-    "vapid": "node scripts/gen-vapid.mjs"
+    "vapid": "node scripts/gen-vapid.mjs",
+    "test:associates": "node src/lib/associates/core.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",

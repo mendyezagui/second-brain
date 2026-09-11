@@ -30,11 +30,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const SHA = "__PINNED_SHA__";
-const BASE = `https://raw.githubusercontent.com/mendyezagui/second-brain/${SHA}/src/lib/associates`;
-
-const { planTick, planAssociate, isoDate, missingSentence } = await import(`${BASE}/core.js`);
-const { tablesFor } = await import(`${BASE}/context.js`);
+// Pinned deliberately. Bump both URLs together and redeploy when you want the
+// cron to pick up new core logic; a push to main must never change what runs
+// tonight on its own.
+import { planTick, planAssociate, isoDate, missingSentence } from "https://raw.githubusercontent.com/mendyezagui/second-brain/aef7f0867257d5a1b2e4f580c0c4cda7babb9c30/src/lib/associates/core.js";
+import { tablesFor } from "https://raw.githubusercontent.com/mendyezagui/second-brain/aef7f0867257d5a1b2e4f580c0c4cda7babb9c30/src/lib/associates/context.js";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body, null, 2), {
@@ -264,10 +264,22 @@ async function runTick({ dryRun = false, now = new Date() } = {}) {
   const dueAssociates = plan.due.map((d: any) => d.associate);
   const sources = await loadSources(sb, dueAssociates, false);
 
-  const results = [];
-  for (const a of dueAssociates) {
-    const p = planAssociate(a, sources, { now, trigger: "cron" });
-    results.push(await execute(sb, a, p, { dryRun }));
+  // Run them concurrently, in bounded waves. A single associate takes ~45s
+  // end to end, and the cron's pg_net call times out at 55s — sequential
+  // execution would mean the second associate to come due on any given day
+  // silently never finishes. Waves of 4 keep total wall time at roughly one
+  // associate regardless of roster size, without opening 20 model calls at
+  // once. Each run has its own unique run_key, so concurrency cannot make
+  // two associates collide.
+  const WAVE = 4;
+  const results: any[] = [];
+  for (let i = 0; i < dueAssociates.length; i += WAVE) {
+    const wave = dueAssociates.slice(i, i + WAVE);
+    results.push(...await Promise.all(wave.map((a: any) =>
+      execute(sb, a, planAssociate(a, sources, { now, trigger: "cron" }), { dryRun })
+        // One associate blowing up must not take the rest of the tick with it.
+        .catch((e: any) => ({ slug: a.slug, status: "error", error: String(e?.message || e), wrote: null })),
+    )));
   }
 
   if (!dryRun) {
