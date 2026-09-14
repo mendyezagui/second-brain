@@ -178,7 +178,12 @@ export default function App() {
             <div style={{ width:44, height:44, borderRadius:12, background:"var(--red-dim)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><AlertCircle size={22} color="var(--red)"/></div>
             <div><div className="display" style={{ fontSize:16, fontWeight:700 }}>Missing Environment Variables</div></div>
           </div>
-          <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.7 }}>Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel &rarr; Settings &rarr; Environment Variables.</p>
+          {/* This app is served from Cloudflare Pages. The Vercel project this
+              line used to name is a leftover whose api/* routes do not run at
+              this host, so sending someone there means setting variables in a
+              place that cannot affect the build they are looking at — worse
+              than naming no dashboard at all. */}
+          <p style={{ fontSize:12, color:"var(--text-sec)", lineHeight:1.7 }}>Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare &rarr; Workers &amp; Pages &rarr; this project &rarr; Settings &rarr; Variables, then redeploy. They are read at build time, so an existing deployment will not pick them up on its own.</p>
         </div>
       </div>
     </>
