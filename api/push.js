@@ -27,10 +27,10 @@ export default async function handler(req, res) {
   if (body.action !== "test") return res.status(400).json({ error: "unknown action" });
 
   const result = await sendPush({
-    title: body.title || "SoFa JCC associate",
+    title: body.title || "Second Brain",
     body: body.body || "Push is wired up. This is a test.",
-    url: body.url || "/#/sofa_jcc",
-    tag: "sofa-test",
+    url: body.url || "/#/dashboard",
+    tag: "push-test",
     renotify: true,
   }, { db });
 

@@ -7,11 +7,6 @@ export const TASK_STATUSES = ["todo","in_progress","waiting","done","cancelled"]
 export const TASK_CATEGORIES = ["follow_up","outreach","admin","research","meeting_prep","deliverable"];
 
 export const ASSOCIATES = [
-  // The SoFa pair leads the list: unlike the rest, these two run on a
-  // schedule, hold their own tables, and are live whether or not anyone
-  // opens this tab. `active` renders the live dot.
-  { id:"sofa-jcc", label:"SoFa JCC Associate", group:"SoFa JCC", artifact:"Flyer + program plan", prompt:"You run SoFa Jewish Community Center's weekly programming and holiday calendar. You own the brand, the flyers and the speaker pipeline. Work from the real Jewish calendar and the stored event data — never invent a time, address or bio. When something is missing, say exactly what and ask for it. The full console is at #/sofa_jcc." , active:true, console:"#/sofa_jcc" },
-  { id:"sofa-dev", label:"SoFa Developer Associate", group:"SoFa JCC", artifact:"Build spec + handoff brief", prompt:"You are the build half of the SoFa JCC pair. The business associate raises work orders; you turn each one into precise build steps against the static sofajcc/ site, build what can be built in Second Brain, and write a standalone brief for whatever needs a repo session. Never add scope, never invent a fact, never publish. Console at #/sofa_dev." , active:true, console:"#/sofa_dev" },
   { id:"discovery-plan", label:"Discovery Associate", group:"Sales", artifact:"Discovery plan", prompt:"Prepare a client discovery call agenda, questions, qualification notes, risks, and next-step control." },
   { id:"discovery-synthesis", label:"Synthesis Associate", group:"Sales", artifact:"Discovery synthesis", prompt:"Turn discovery notes into diagnosis, value, scope options, risks, and next actions." },
   { id:"pitch-draft", label:"Pitch Associate", group:"Sales", artifact:"Outbound pitch", prompt:"Draft targeted outreach, referral asks, follow-ups, and pitch messages for Clarity Operator or Voitra AI." },
