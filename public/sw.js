@@ -15,10 +15,10 @@ self.addEventListener("push", (event) => {
   const title = d.title || "Second Brain";
   const options = {
     body: d.body || "",
-    // Same crest the flyers use, so a SoFa nudge is recognisable on the
-    // lock screen before it is read.
-    icon: d.icon || "/sofa-jcc/icon-192.png",
-    badge: d.badge || "/sofa-jcc/badge-72.png",
+    // The app's own mark, so a notification is recognisable on the lock
+    // screen before it is read.
+    icon: d.icon || "/favicon.svg",
+    badge: d.badge || "/favicon.svg",
     // `tag` collapses repeats: a re-sent nudge for the same event replaces
     // the old notification instead of stacking a second one.
     tag: d.tag || "second-brain",
